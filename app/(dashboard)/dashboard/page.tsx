@@ -4,11 +4,24 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useState, useEffect } from 'react'
 import { BalanceCard } from '@/components/dashboard/balance-card'
 import { QuickActions } from '@/components/dashboard/quick-actions'
+import { TransactionList } from '@/components/dashboard/transaction-list'
+
+interface Transaction {
+  id: string
+  type: string
+  status: string
+  amount: number
+  currency: string
+  createdAt: string
+  invoice?: { invoiceNumber: string; clientName?: string | null; description: string } | null
+  bankAccount?: { bankName: string; accountNumber: string } | null
+}
 
 export default function DashboardPage() {
   const { getAccessToken } = usePrivy()
   const [balance, setBalance] = useState(null)
   const [profile, setProfile] = useState<{ name?: string } | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -20,13 +33,18 @@ export default function DashboardPage() {
         // Sync wallet first (ensures wallet is stored in DB)
         await fetch('/api/user/sync-wallet', { method: 'POST', headers })
         
-        // Then fetch balance and profile
-        const [balanceRes, profileRes] = await Promise.all([
+        // Then fetch balance, profile, and transactions
+        const [balanceRes, profileRes, transactionsRes] = await Promise.all([
           fetch('/api/user/balance', { headers }),
           fetch('/api/user/profile', { headers }),
+          fetch('/api/transactions', { headers }),
         ])
         if (balanceRes.ok) setBalance(await balanceRes.json())
         if (profileRes.ok) setProfile(await profileRes.json())
+        if (transactionsRes.ok) {
+          const data = await transactionsRes.json()
+          setTransactions(data.transactions || [])
+        }
       } finally {
         setIsLoading(false)
       }
@@ -48,9 +66,7 @@ export default function DashboardPage() {
 
       <div className="bg-white rounded-2xl border border-brand-border p-6">
         <h3 className="text-lg font-semibold text-brand-black mb-4">Recent Activity</h3>
-        <p className="text-brand-gray text-center py-8">
-          No transactions yet. Create your first invoice to get started!
-        </p>
+        <TransactionList transactions={transactions} isLoading={isLoading} />
       </div>
     </div>
   )
