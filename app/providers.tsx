@@ -1,7 +1,6 @@
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
-import { base } from 'viem/chains'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -18,8 +17,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
             createOnLogin: 'all-users',
           },
         },
-        defaultChain: base,
-        supportedChains: [base],
       }}
     >
       {children}

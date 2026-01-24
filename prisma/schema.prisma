@@ -20,6 +20,10 @@ model User {
   bankAccounts BankAccount[]
   invoices     Invoice[]
   transactions Transaction[]
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret  String? // Encrypted 2FA secret
+  backupCodes      String[] // Encrypted backup codes
+  reminderSettings ReminderSettings?
 }
 
 model Wallet {
@@ -66,6 +70,32 @@ model Invoice {
 
   user        User         @relation(fields: [userId], references: [id])
   transaction Transaction?
+  paymentReminders PaymentReminder[]
+}
+
+model PaymentReminder {
+  id           String   @id @default(uuid())
+  invoiceId    String
+  reminderType String   // 'before_due', 'on_due', 'overdue', 'manual'
+  daysOffset   Int?     // e.g., -3, 0, 3. Null for manual.
+  sentAt       DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model ReminderSettings {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  enabled        Boolean  @default(true)
+  beforeDueDays  Int[]    @default([3, 1])
+  onDueEnabled   Boolean  @default(true)
+  afterDueDays   Int[]    @default([1, 3, 7])
+  customMessage  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Transaction {

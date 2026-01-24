@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import speakeasy from 'speakeasy'
+import { decrypt } from '@/lib/crypto'
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -27,7 +29,28 @@ export async function POST(request: NextRequest) {
   const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const { amount, bankAccountId } = await request.json()
+  const requestBody = await request.json()
+  const { amount, bankAccountId, code } = requestBody
+
+  // 2FA Check
+  if (user.twoFactorEnabled) {
+    if (!code) {
+      return NextResponse.json({ error: '2FA code required' }, { status: 401 })
+    }
+    if (user.twoFactorSecret) {
+      const secret = decrypt(user.twoFactorSecret)
+      const verified = speakeasy.totp.verify({
+        secret: secret,
+        encoding: 'base32',
+        token: code,
+        window: 1
+      })
+      if (!verified) {
+        return NextResponse.json({ error: 'Invalid 2FA code' }, { status: 401 })
+      }
+    }
+  }
+
   const bankAccount = await prisma.bankAccount.findFirst({ where: { id: bankAccountId, userId: user.id } })
   if (!bankAccount) return NextResponse.json({ error: 'Bank account not found' }, { status: 404 })
 

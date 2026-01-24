@@ -1,9 +1,12 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
+import { getUsdToNgnRate } from "@/lib/exchange-rate";
 
 export async function GET() {
+  const { rate, lastUpdated } = await getUsdToNgnRate();
+
   return NextResponse.json({
-    rate: 1600,
-    currency: 'NGN',
-    updatedAt: new Date().toISOString(),
-  })
+    rate,
+    currency: "NGN",
+    lastUpdated,
+  });
 }

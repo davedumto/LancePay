@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const formatted = transactions.map(tx => ({
+    const formatted = transactions.map((tx: any) => ({
       id: tx.id,
       type: tx.type,
       status: tx.status,

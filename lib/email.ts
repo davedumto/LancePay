@@ -13,7 +13,7 @@ interface PaymentEmailParams {
 
 export async function sendPaymentReceivedEmail(params: PaymentEmailParams) {
   const { to, freelancerName, clientName, invoiceNumber, amount, currency } = params
-  
+
   try {
     const { error } = await resend.emails.send({
       from: 'LancePay <notifications@lancepay.app>',
@@ -31,6 +31,26 @@ export async function sendPaymentReceivedEmail(params: PaymentEmailParams) {
           <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
         </div>
       `,
+    })
+
+    if (error) console.error('Email error:', error)
+    return { success: !error }
+  } catch (error) {
+    console.error('Email send failed:', error)
+    return { success: false }
+  }
+}
+
+
+export async function sendEmail(params: { to: string; subject: string; template: string }) {
+  const { to, subject, template } = params
+
+  try {
+    const { error } = await resend.emails.send({
+      from: 'LancePay <notifications@lancepay.app>',
+      to: [to],
+      subject,
+      html: template,
     })
 
     if (error) console.error('Email error:', error)
