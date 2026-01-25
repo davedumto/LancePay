@@ -15,7 +15,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     async function fetchInvoice() {
       try {
         const token = await getAccessToken()
-        const res = await fetch(`/api/invoices/${id}`, { headers: { Authorization: `Bearer ${token}` } })
+        const res = await fetch(`/api/routes-d/invoices/${id}`, { headers: { Authorization: `Bearer ${token}` } })
         if (res.ok) setInvoice(await res.json())
       } finally {
         setIsLoading(false)
@@ -29,7 +29,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const downloadPDF = async () => {
     setIsDownloading(true)
     try {
-      const res = await fetch(`/api/invoices/${id}/pdf`)
+      const res = await fetch(`/api/routes-d/invoices/${id}/pdf`)
       if (!res.ok) throw new Error('Failed to generate PDF')
       
       const blob = await res.blob()

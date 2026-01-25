@@ -18,7 +18,7 @@ export function InvoiceForm() {
 
     try {
       const token = await getAccessToken()
-      const res = await fetch('/api/invoices', {
+      const res = await fetch('/api/routes-d/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }),
