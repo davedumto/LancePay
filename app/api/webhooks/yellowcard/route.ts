@@ -21,29 +21,83 @@ export async function POST(request: NextRequest) {
 
         // Handle different events
         if (event.type === 'withdrawal.completed') {
-            await prisma.transaction.update({
-                where: { externalId: event.data.transaction_id },
-                data: { status: 'completed' }
+            // Check if this is an advance disbursement
+            const advance = await prisma.paymentAdvance.findFirst({
+                where: { yellowCardTransactionId: event.data.transaction_id },
+                include: { user: true }
             })
 
-            await sendEmail({
-                to: event.data.user_email,
-                subject: 'Withdrawal Completed ✅',
-                template: 'withdrawal-success'
-            })
+            if (advance) {
+                // This is an advance disbursement
+                await prisma.paymentAdvance.update({
+                    where: { id: advance.id },
+                    data: {
+                        status: 'disbursed',
+                        disbursedAt: new Date(),
+                    },
+                })
+
+                await sendEmail({
+                    to: advance.user.email,
+                    subject: 'Payment Advance Disbursed ✅',
+                    html: `<p>Your advance of ₦${Number(advance.advancedAmountNGN).toLocaleString()} has been sent to your bank account.</p>`,
+                })
+            } else {
+                // Regular auto-swap transaction
+                await prisma.transaction.update({
+                    where: { externalId: event.data.transaction_id },
+                    data: { status: 'completed' }
+                })
+
+                await sendEmail({
+                    to: event.data.user_email,
+                    subject: 'Withdrawal Completed ✅',
+                    template: 'withdrawal-success'
+                })
+            }
         }
 
         if (event.type === 'withdrawal.failed') {
-            await prisma.transaction.update({
-                where: { externalId: event.data.transaction_id },
-                data: { status: 'failed', error: event.data.error_message }
+            // Check if this is an advance disbursement
+            const advance = await prisma.paymentAdvance.findFirst({
+                where: { yellowCardTransactionId: event.data.transaction_id },
+                include: { user: true, invoice: true }
             })
 
-            await sendEmail({
-                to: event.data.user_email,
-                subject: 'Withdrawal Failed',
-                template: 'withdrawal-failed'
-            })
+            if (advance) {
+                // Advance disbursement failed - mark as failed and release lien
+                await prisma.$transaction([
+                    prisma.paymentAdvance.update({
+                        where: { id: advance.id },
+                        data: {
+                            status: 'failed',
+                            error: event.data.error_message,
+                        },
+                    }),
+                    prisma.invoice.update({
+                        where: { id: advance.invoiceId },
+                        data: { lienActive: false },
+                    }),
+                ])
+
+                await sendEmail({
+                    to: advance.user.email,
+                    subject: 'Payment Advance Failed',
+                    html: `<p>Your advance request could not be processed: ${event.data.error_message}. The lien on your invoice has been released.</p>`,
+                })
+            } else {
+                // Regular transaction failure
+                await prisma.transaction.update({
+                    where: { externalId: event.data.transaction_id },
+                    data: { status: 'failed', error: event.data.error_message }
+                })
+
+                await sendEmail({
+                    to: event.data.user_email,
+                    subject: 'Withdrawal Failed',
+                    template: 'withdrawal-failed'
+                })
+            }
         }
 
         return NextResponse.json({ received: true })
