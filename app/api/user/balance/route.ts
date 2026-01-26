@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getAccountBalance } from '@/lib/stellar'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,40 +12,33 @@ export async function GET(request: NextRequest) {
     if (!claims) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
 
     // Find or create user
-    let user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-    
+    let user = await prisma.user.findUnique({
+      where: { privyId: claims.userId },
+      include: { wallet: true },
+    })
+
     if (!user) {
       const email = (claims as any).email || `${claims.userId}@privy.local`
       user = await prisma.user.create({
         data: { privyId: claims.userId, email },
+        include: { wallet: true },
       })
     }
 
-    const paidInvoices = await prisma.invoice.aggregate({
-      where: { userId: user.id, status: 'paid' },
-      _sum: { amount: true },
-    })
+    if (!user.wallet) {
+      return NextResponse.json({
+        usd: '0',
+        xlm: '0',
+        address: null,
+      })
+    }
 
-    const withdrawals = await prisma.transaction.aggregate({
-      where: { userId: user.id, type: 'withdrawal', status: 'completed' },
-      _sum: { amount: true },
-    })
-
-    const totalIncoming = Number(paidInvoices._sum.amount || 0)
-    const totalWithdrawn = Number(withdrawals._sum.amount || 0)
-    const usdAmount = totalIncoming - totalWithdrawn
-    const exchangeRate = 1600
-    const ngnAmount = usdAmount * exchangeRate
-
-    const pendingInvoices = await prisma.invoice.aggregate({
-      where: { userId: user.id, status: 'pending' },
-      _sum: { amount: true },
-    })
+    const { xlm, usdc } = await getAccountBalance(user.wallet.address)
 
     return NextResponse.json({
-      available: { amount: usdAmount, currency: 'USD', display: `$${usdAmount.toFixed(2)}` },
-      localEquivalent: { amount: ngnAmount, currency: 'NGN', display: `₦${ngnAmount.toLocaleString()}`, rate: exchangeRate },
-      pending: { amount: Number(pendingInvoices._sum.amount || 0), currency: 'USD' },
+      usd: usdc,
+      xlm: xlm,
+      address: user.wallet.address,
     })
   } catch (error) {
     console.error('Balance GET error:', error)

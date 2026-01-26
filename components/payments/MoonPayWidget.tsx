@@ -13,7 +13,7 @@ export function useMoonPayWidget() {
   const openWidget = useCallback(async ({
     walletAddress,
     amount,
-    currencyCode = 'usdc_base',
+    currencyCode = 'usdc_xlm',
     invoiceId
   }: MoonPayWidgetProps) => {
     const { loadMoonPay } = await import('@moonpay/moonpay-js')
