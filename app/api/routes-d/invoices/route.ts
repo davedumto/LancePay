@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createInvoiceSchema } from '@/lib/validations'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { logAuditEvent, extractRequestMetadata } from '@/lib/audit'
 
 async function getOrCreateUser(claims: AuthTokenClaims, referralCode?: string) {
   let user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
@@ -74,6 +75,9 @@ export async function POST(request: NextRequest) {
     const invoice = await prisma.invoice.create({
       data: { userId: user.id, invoiceNumber, clientEmail, clientName, description, amount, dueDate: dueDate ? new Date(dueDate) : null, paymentLink },
     })
+
+    // Log audit event
+    await logAuditEvent(invoice.id, 'invoice.created', user.id, extractRequestMetadata(request.headers))
 
     return NextResponse.json(invoice, { status: 201 })
   } catch (error) {

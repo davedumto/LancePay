@@ -8,32 +8,35 @@ datasource db {
 }
 
 model User {
-  id               String            @id @default(uuid())
-  privyId          String            @unique
-  email            String            @unique
+  id               String   @id @default(uuid())
+  privyId          String   @unique
+  email            String   @unique
   name             String?
   phone            String?
-  referralCode     String?           @unique
+  referralCode     String?  @unique
   referredById     String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  backupCodes      String[]          @default([])
-  twoFactorEnabled Boolean           @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  backupCodes      String[] @default([])
+  twoFactorEnabled Boolean  @default(false)
   twoFactorSecret  String?
 
-  wallet            Wallet?
-  bankAccounts      BankAccount[]
-  invoices          Invoice[]
-  transactions      Transaction[]
-  reminderSettings  ReminderSettings?
-  autoSwapRule      AutoSwapRule?
-  referredBy        User?               @relation("UserReferrals", fields: [referredById], references: [id])
-  referrals         User[]              @relation("UserReferrals")
-  referralEarnings  ReferralEarning[]   @relation("ReferrerEarnings")
-  earningsFromMe    ReferralEarning[]   @relation("ReferredUserEarnings")
-  paymentAdvances   PaymentAdvance[]
-  apiKeys           ApiKey[]
-  webhooks          UserWebhook[]
+  wallet           Wallet?
+  bankAccounts     BankAccount[]
+  invoices         Invoice[]
+  transactions     Transaction[]
+  reminderSettings ReminderSettings?
+  autoSwapRule     AutoSwapRule?
+  referredBy       User?             @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals        User[]            @relation("UserReferrals")
+  referralEarnings ReferralEarning[] @relation("ReferrerEarnings")
+  earningsFromMe   ReferralEarning[] @relation("ReferredUserEarnings")
+  paymentAdvances  PaymentAdvance[]
+  apiKeys          ApiKey[]
+  brandingSettings BrandingSettings?
+  webhooks         UserWebhook[]
+  auditEvents      AuditEvent[]
+  savingsGoals     SavingsGoal[]
 }
 
 model Wallet {
@@ -89,6 +92,7 @@ model Invoice {
   escrowEvents            EscrowEvent[]
   lienActive              Boolean           @default(false)
   advances                PaymentAdvance[]
+  auditEvents      AuditEvent[]
 
   // Confidential invoice fields (Zero-Knowledge encryption)
   isConfidential     Boolean  @default(false)
@@ -122,22 +126,22 @@ model ReminderSettings {
 }
 
 model Transaction {
-  id                String       @id @default(uuid())
+  id                String    @id @default(uuid())
   userId            String
   type              String
-  status            String       @default("pending")
-  amount            Decimal      @db.Decimal(10, 2)
-  currency          String       @default("USD")
-  ngnAmount         Decimal?     @db.Decimal(15, 2)
-  exchangeRate      Decimal?     @db.Decimal(10, 4)
-  invoiceId         String?      @unique
+  status            String    @default("pending")
+  amount            Decimal   @db.Decimal(10, 2)
+  currency          String    @default("USD")
+  ngnAmount         Decimal?  @db.Decimal(15, 2)
+  exchangeRate      Decimal?  @db.Decimal(10, 4)
+  invoiceId         String?   @unique
   bankAccountId     String?
   txHash            String?
-  createdAt         DateTime     @default(now())
+  createdAt         DateTime  @default(now())
   completedAt       DateTime?
-  autoSwapTriggered Boolean      @default(false)
+  autoSwapTriggered Boolean   @default(false)
   error             String?
-  externalId        String?      @unique
+  externalId        String?   @unique
 
   user        User         @relation(fields: [userId], references: [id])
   invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
@@ -180,13 +184,13 @@ model ApiKey {
 }
 
 model AutoSwapRule {
-  id            String      @id @default(uuid())
-  userId        String      @unique
-  percentage    Int         // e.g., 70 (for 70%)
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  percentage    Int
   bankAccountId String
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
@@ -195,7 +199,7 @@ model AutoSwapRule {
 model BulkInvoiceJob {
   id           String    @id @default(uuid())
   userId       String
-  status       String    @default("processing") // processing, completed, failed
+  status       String    @default("processing")
   totalCount   Int
   successCount Int       @default(0)
   failedCount  Int       @default(0)
@@ -229,7 +233,7 @@ model Dispute {
 model DisputeMessage {
   id          String   @id @default(uuid())
   disputeId   String
-  senderType  String   // 'freelancer', 'client', 'admin'
+  senderType  String
   senderEmail String
   message     String
   attachments Json     @default("[]")
@@ -243,8 +247,8 @@ model DisputeMessage {
 model EscrowEvent {
   id         String   @id @default(uuid())
   invoiceId  String
-  eventType  String   // e.g., 'created', 'funded', 'released', 'disputed'
-  actorType  String   // 'freelancer', 'client', 'admin', 'system'
+  eventType  String
+  actorType  String
   actorEmail String
   notes      String?
   metadata   Json?    @default("{}")
@@ -255,16 +259,29 @@ model EscrowEvent {
   @@index([invoiceId])
 }
 
+model BrandingSettings {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  logoUrl      String?
+  primaryColor String   @default("#000000")
+  footerText   String?
+  signatureUrl String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model UserWebhook {
-  id             String    @id @default(uuid())
-  userId         String
-  targetUrl      String    @db.VarChar(512)
-  signingSecret  String    @db.VarChar(255)
-  description     String?   @db.VarChar(100)
-  isActive       Boolean   @default(true)
-  subscribedEvents String[] @default(["invoice.paid"])
-  lastTriggeredAt DateTime?
-  createdAt      DateTime  @default(now())
+  id               String    @id @default(uuid())
+  userId           String
+  targetUrl        String    @db.VarChar(512)
+  signingSecret    String    @db.VarChar(255)
+  description      String?   @db.VarChar(100)
+  isActive         Boolean   @default(true)
+  subscribedEvents String[]  @default(["invoice.paid"])
+  lastTriggeredAt  DateTime?
+  createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -280,7 +297,7 @@ model PaymentAdvance {
   advancedAmountUSDC      Decimal   @db.Decimal(10, 2)
   advancedAmountNGN       Decimal   @db.Decimal(15, 2)
   exchangeRate            Decimal   @db.Decimal(10, 4)
-  feePercentage           Decimal   @db.Decimal(5, 2) @default(2.00)
+  feePercentage           Decimal   @default(2.00) @db.Decimal(5, 2)
   feeAmountUSDC           Decimal   @db.Decimal(10, 2)
   totalRepaymentUSDC      Decimal   @db.Decimal(10, 2)
   status                  String    @default("pending")
@@ -296,5 +313,50 @@ model PaymentAdvance {
 
   @@index([userId])
   @@index([invoiceId])
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  invoiceId String
+  eventType String   @db.VarChar(50)
+  actorId   String?
+  metadata  Json?
+  signature String
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  actor   User?   @relation(fields: [actorId], references: [id])
+
+  @@index([invoiceId])
+  @@index([eventType])
+  @@index([createdAt])
+model SavingsGoal {
+  id                String   @id @default(uuid())
+  userId            String
+  title             String   @db.VarChar(100)
+  targetAmountUsdc  Decimal  @db.Decimal(18, 6)
+  currentAmountUsdc Decimal  @default(0) @db.Decimal(18, 6)
+  savingsPercentage Int
+  isActive          Boolean  @default(true)
+  status            String   @default("in_progress")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([status])
+}
+
+model ClientReputation {
+  id            String    @id @default(uuid())
+  clientEmail   String    @unique @map("client_email")
+  domainType    String?   @map("domain_type") // 'corporate' | 'personal' | 'disposable'
+  paymentScore  Int       @default(0) @map("payment_score")
+  isVerified    Boolean   @default(false) @map("is_verified")
+  lastCheckedAt DateTime  @default(now()) @map("last_checked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([clientEmail])
+  @@map("client_reputations")
 }

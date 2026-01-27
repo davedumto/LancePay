@@ -10,7 +10,7 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Find invoice by ID or invoice number
+    // Include brandingSettings in the user relation
     const invoice = await prisma.invoice.findFirst({
       where: {
         OR: [
@@ -20,9 +20,8 @@ export async function GET(
       },
       include: {
         user: {
-          select: {
-            name: true,
-            email: true,
+          include: {
+            brandingSettings: true
           }
         }
       }
@@ -32,11 +31,13 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
+    const { user } = invoice
+
     // Prepare invoice data for PDF
     const invoiceData = {
       invoiceNumber: invoice.invoiceNumber,
-      freelancerName: invoice.user.name || 'Freelancer',
-      freelancerEmail: invoice.user.email,
+      freelancerName: user?.name || 'Freelancer',
+      freelancerEmail: user?.email,
       clientName: invoice.clientName || 'Client',
       clientEmail: invoice.clientEmail,
       description: invoice.description,
@@ -49,9 +50,14 @@ export async function GET(
       paymentLink: invoice.paymentLink,
     }
 
+    const branding = user?.brandingSettings
+
     // Generate PDF buffer
     const pdfBuffer = await renderToBuffer(
-      InvoicePDF({ invoice: invoiceData })
+      InvoicePDF({ 
+        invoice: invoiceData,
+        branding: branding || undefined
+      })
     )
 
     // Return PDF response (convert Buffer to Uint8Array for NextResponse)

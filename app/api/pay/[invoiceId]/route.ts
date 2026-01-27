@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createReferralEarning } from '@/lib/referral'
 import { dispatchWebhooks } from '@/lib/webhooks'
+import { logAuditEvent, extractRequestMetadata } from '@/lib/audit'
+import { processSavingsOnPayment } from '@/lib/savings'
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
   const { invoiceId } = await params
   const invoice = await prisma.invoice.findUnique({
     where: { invoiceNumber: invoiceId },
@@ -11,6 +13,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   })
 
   if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+
+  // Log audit event for invoice view (async, non-blocking)
+  logAuditEvent(invoice.id, 'invoice.viewed', null, extractRequestMetadata(request.headers)).catch((error) => {
+    console.error('Failed to log invoice.viewed audit event:', error)
+  })
 
   // Dispatch webhook for invoice.viewed event (async, non-blocking)
   dispatchWebhooks(invoice.userId, 'invoice.viewed', {
@@ -35,7 +42,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   })
 }
 
-export async function POST(_request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
   const { invoiceId } = await params
   const invoice = await prisma.invoice.findUnique({
     where: { invoiceNumber: invoiceId },
@@ -70,11 +77,14 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       }
     })
   ])
-  const updatedInvoice = await prisma.invoice.update({ 
-    where: { id: invoice.id }, 
+  const updatedInvoice = await prisma.invoice.update({
+    where: { id: invoice.id },
     data: { status: 'paid', paidAt: new Date() },
     include: { user: true }
   })
+
+  // Log audit event for payment
+  await logAuditEvent(invoice.id, 'invoice.paid', null, extractRequestMetadata(request.headers))
 
   if (invoice.user.referredById) {
     await createReferralEarning({
@@ -84,6 +94,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       invoiceAmount: Number(invoice.amount)
     })
   }
+
+  // Process savings goals auto-deduction
+  await processSavingsOnPayment(updatedInvoice.userId, Number(updatedInvoice.amount))
 
   // Process auto-swap
   const { processAutoSwap } = await import('@/lib/auto-swap')

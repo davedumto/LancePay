@@ -15,7 +15,7 @@ export default function InvoicesPage() {
     async function fetchInvoices() {
       try {
         const token = await getAccessToken()
-        const res = await fetch('/api/invoices', { headers: { Authorization: `Bearer ${token}` } })
+        const res = await fetch('/api/routes-d/invoices', { headers: { Authorization: `Bearer ${token}` } })
         if (res.ok) setInvoices((await res.json()).invoices)
       } finally {
         setIsLoading(false)

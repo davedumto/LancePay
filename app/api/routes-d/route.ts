@@ -17,8 +17,22 @@ export async function GET() {
           delete: '/api/routes-d/notifications/webhooks/{id}',
         },
       },
+      branding: {
+        get: '/api/routes-d/branding',
+        update: '/api/routes-d/branding',
+      },
+      invoices: {
+        list: '/api/routes-d/invoices',
+        create: '/api/routes-d/invoices',
+        details: '/api/routes-d/invoices/{id}',
+        delete: '/api/routes-d/invoices/{id}',
+        pdf: '/api/routes-d/invoices/{id}/pdf',
+      },
       utils: {
         feeQuote: '/api/routes-d/utils/fee-quote?amount={usd_amount}',
+      },
+      verification: {
+        clientCheck: '/api/routes-d/verification/client-check?email={email}',
       },
     },
   })
