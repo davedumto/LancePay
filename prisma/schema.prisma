@@ -302,3 +302,16 @@ model PaymentAdvance {
   @@index([invoiceId])
   @@index([status])
 }
+
+model ClientReputation {
+  id            String    @id @default(uuid())
+  clientEmail   String    @unique @map("client_email")
+  domainType    String?   @map("domain_type") // 'corporate' | 'personal' | 'disposable'
+  paymentScore  Int       @default(0) @map("payment_score")
+  isVerified    Boolean   @default(false) @map("is_verified")
+  lastCheckedAt DateTime  @default(now()) @map("last_checked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([clientEmail])
+  @@map("client_reputations")
+}
