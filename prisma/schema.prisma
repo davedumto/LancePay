@@ -34,6 +34,7 @@ model User {
   paymentAdvances   PaymentAdvance[]
   apiKeys           ApiKey[]
   webhooks          UserWebhook[]
+  trustScore        UserTrustScore?
 }
 
 model Wallet {
@@ -292,4 +293,18 @@ model PaymentAdvance {
   @@index([userId])
   @@index([invoiceId])
   @@index([status])
+}
+
+model UserTrustScore {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  score             Int      @default(50)
+  totalVolumeUsdc   Decimal  @db.Decimal(18, 6) @default(0)
+  disputeCount      Int      @default(0)
+  successfulInvoices Int    @default(0)
+  lastUpdatedAt     DateTime @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

@@ -6,6 +6,7 @@ import {
   isAdminEmail,
 } from '@/app/api/routes-d/disputes/_shared'
 import { sendDisputeResolvedEmail } from '@/lib/email'
+import { updateUserTrustScore } from '@/lib/reputation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,6 +116,16 @@ export async function POST(request: NextRequest) {
         refundAmount: action === 'refund_partial' ? computedRefund : undefined,
         currency: dispute.invoice.currency,
       })
+    }
+
+    // Update trust score if freelancer lost the dispute (refund_full or refund_partial)
+    if (action === 'refund_full' || action === 'refund_partial') {
+      try {
+        await updateUserTrustScore(dispute.invoice.userId)
+      } catch (error) {
+        console.error('Failed to update trust score after dispute resolution:', error)
+        // Don't fail the dispute resolution if score update fails
+      }
     }
 
     return NextResponse.json({

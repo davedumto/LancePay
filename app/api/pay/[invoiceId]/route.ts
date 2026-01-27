@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createReferralEarning } from '@/lib/referral'
 import { dispatchWebhooks } from '@/lib/webhooks'
+import { updateUserTrustScore } from '@/lib/reputation'
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
   const { invoiceId } = await params
@@ -53,12 +54,14 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: 'Invalid invoice' }, { status: 400 })
   }
 
-  await prisma.$transaction([
-    prisma.invoice.update({
+  // Update invoice and create transaction in a single transaction
+  const updatedInvoice = await prisma.$transaction(async (tx) => {
+    await tx.invoice.update({
       where: { id: invoice.id },
       data: { status: 'paid', paidAt: new Date() }
-    }),
-    prisma.transaction.create({
+    })
+    
+    await tx.transaction.create({
       data: {
         userId: invoice.userId,
         type: 'incoming',
@@ -69,12 +72,17 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
         completedAt: new Date()
       }
     })
-  ])
-  const updatedInvoice = await prisma.invoice.update({ 
-    where: { id: invoice.id }, 
-    data: { status: 'paid', paidAt: new Date() },
-    include: { user: true }
+
+    // Return the updated invoice with user data
+    return tx.invoice.findUnique({
+      where: { id: invoice.id },
+      include: { user: true }
+    })
   })
+
+  if (!updatedInvoice) {
+    return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
+  }
 
   if (invoice.user.referredById) {
     await createReferralEarning({
@@ -104,6 +112,14 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     clientName: updatedInvoice.clientName,
     paidAt: new Date().toISOString(),
   })
+
+  // Update trust score (synchronous as per requirements)
+  try {
+    await updateUserTrustScore(updatedInvoice.userId)
+  } catch (error) {
+    console.error('Failed to update trust score after payment:', error)
+    // Don't fail the payment if score update fails
+  }
 
   return NextResponse.json({ success: true })
 }

@@ -4,6 +4,7 @@ import { sendPaymentReceivedEmail } from '@/lib/email'
 import { createReferralEarning } from '@/lib/referral'
 import { processAutoSwap } from '@/lib/auto-swap'
 import { dispatchWebhooks } from '@/lib/webhooks'
+import { updateUserTrustScore } from '@/lib/reputation'
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,14 +62,6 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (invoice.user.email) {
-      await sendPaymentReceivedEmail({
-        to: invoice.user.email,
-        freelancerName: invoice.user.name || 'Freelancer',
-        clientName: invoice.clientName || 'Client',
-        invoiceNumber: invoice.invoiceNumber,
-        amount: Number(invoice.amount),
-        currency: invoice.currency,
     const paymentAmount = Number(invoice.amount)
 
     // Process auto-swap if user has an active rule
@@ -110,6 +103,14 @@ export async function POST(request: NextRequest) {
       clientName: invoice.clientName,
       paidAt: new Date().toISOString(),
     })
+
+    // Update trust score (synchronous as per requirements)
+    try {
+      await updateUserTrustScore(invoice.userId)
+    } catch (error) {
+      console.error('Failed to update trust score after payment:', error)
+      // Don't fail the payment if score update fails
+    }
 
     return NextResponse.json({ received: true })
   } catch (error) {
