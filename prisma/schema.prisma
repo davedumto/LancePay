@@ -89,6 +89,24 @@ model Invoice {
   escrowEvents            EscrowEvent[]
   lienActive              Boolean           @default(false)
   advances                PaymentAdvance[]
+  messages                InvoiceMessage[]
+}
+
+model InvoiceMessage {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  senderId      String?  // null for guest clients
+  senderType    String   // 'freelancer', 'client'
+  senderName    String
+  content       String   @db.Text
+  attachmentUrl String?  @db.VarChar(512)
+  isInternal    Boolean  @default(false) // if true, only freelancer sees
+  createdAt     DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([createdAt])
 }
 
 model PaymentReminder {

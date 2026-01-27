@@ -76,8 +76,8 @@ export async function sendAdminAlertEmail(params: AdminAlertParams) {
         <div style="margin-top:16px;">
           <strong style="color:#111;">Context:</strong>
           <pre style="background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto;font-size:12px;">${escapeHtml(
-            JSON.stringify(params.context, null, 2)
-          )}</pre>
+        JSON.stringify(params.context, null, 2)
+      )}</pre>
         </div>
       `
       : ''
@@ -271,7 +271,7 @@ export async function sendDisputeResolvedEmail(params: {
   const refundText = params.action === 'refund_partial' && params.refundAmount
     ? `<p><strong>Refund Amount:</strong> $${params.refundAmount.toFixed(2)} ${params.currency || 'USD'}</p>`
     : ''
-  
+
   return sendEmail({
     to: params.to,
     subject: `✅ Dispute Resolved - ${params.invoiceNumber}`,
@@ -362,3 +362,30 @@ export async function sendDisputeMessageEmail(params: {
     `,
   })
 }
+
+// Invoice chat message email
+export async function sendInvoiceMessageEmail(params: {
+  to: string
+  name?: string
+  invoiceNumber: string
+  message: string
+  senderName: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `💬 New Message on Invoice ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2>New Message</h2>
+        <p>Hi ${params.name || 'there'},</p>
+        <p>You have a new message on invoice <strong>${params.invoiceNumber}</strong>.</p>
+        <p><strong>From:</strong> ${params.senderName}</p>
+        <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p style="margin: 0;">${params.message}</p>
+        </div>
+        <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+

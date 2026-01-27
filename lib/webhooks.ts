@@ -4,11 +4,12 @@ import { prisma } from './db'
 /**
  * Supported webhook event types
  */
-export type WebhookEventType = 
+export type WebhookEventType =
   | 'invoice.paid'
   | 'invoice.viewed'
   | 'invoice.created'
   | 'invoice.disputed'
+  | 'invoice.message'
   | 'withdrawal.completed'
   | 'withdrawal.failed'
 
@@ -183,12 +184,12 @@ export function verifyWebhookSignature(
   secret: string
 ): boolean {
   const expectedSignature = computeWebhookSignature(payload, secret)
-  
+
   // Ensure both signatures have the same length
   if (signature.length !== expectedSignature.length) {
     return false
   }
-  
+
   return crypto.timingSafeEqual(
     Buffer.from(signature, 'hex'),
     Buffer.from(expectedSignature, 'hex')
