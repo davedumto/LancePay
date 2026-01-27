@@ -75,7 +75,7 @@ export async function getOrCreateUserFromRequest(request: NextRequest) {
 
   let user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
   if (!user) {
-    const email = claims.email || `${claims.userId}@privy.local`
+    const email = (claims as { email?: string }).email || `${claims.userId}@privy.local`
     user = await prisma.user.create({ data: { privyId: claims.userId, email } })
   }
 
@@ -119,7 +119,7 @@ export async function processBulkInvoices(params: {
       userId,
       totalCount,
       status: 'processing',
-      results: preResults,
+      results: JSON.parse(JSON.stringify(preResults)),
     },
     select: { id: true },
   })
@@ -151,7 +151,7 @@ export async function processBulkInvoices(params: {
           dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
           paymentLink,
         },
-        select: { id: true, invoiceNumber: true, paymentLink: true, clientName: true, description: true, amount: true, currency: true, dueDate: true },
+        select: { id: true, invoiceNumber: true, paymentLink: true, clientName: true, clientEmail: true, description: true, amount: true, currency: true, dueDate: true },
       })
 
       let warning: string | undefined
@@ -199,7 +199,7 @@ export async function processBulkInvoices(params: {
       successCount,
       failedCount,
       status,
-      results,
+      results: JSON.parse(JSON.stringify(results)),
       completedAt: new Date(),
     },
   })
