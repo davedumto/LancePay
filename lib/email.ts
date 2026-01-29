@@ -389,3 +389,66 @@ export async function sendInvoiceMessageEmail(params: {
   })
 }
 
+// Manual payment notification - freelancer receives when client submits receipt
+export async function sendManualPaymentNotification(params: {
+  to: string
+  freelancerName: string
+  invoiceNumber: string
+  clientName: string
+  amountPaid: number
+  currency: string
+  notes?: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `🔔 Payment Proof Received - ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2>Payment Proof Received</h2>
+        <p>Hi ${params.freelancerName},</p>
+        <p>A client has submitted proof of bank transfer payment for invoice <strong>${params.invoiceNumber}</strong>.</p>
+
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <p style="margin: 5px 0;"><strong>Client:</strong> ${params.clientName}</p>
+          <p style="margin: 5px 0;"><strong>Amount:</strong> ${params.currency} ${params.amountPaid.toLocaleString()}</p>
+          ${params.notes ? `<p style="margin: 5px 0;"><strong>Notes:</strong> ${params.notes}</p>` : ''}
+        </div>
+
+        <p><strong>Action Required:</strong> Please review the payment receipt and confirm or reject it from your dashboard.</p>
+
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">LancePay - Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+
+// Manual payment verified - client receives confirmation
+export async function sendManualPaymentVerifiedEmail(params: {
+  to: string
+  clientName: string
+  invoiceNumber: string
+  amountPaid: number
+  currency: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `✅ Payment Confirmed - ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #10B981;">Payment Confirmed! ✅</h2>
+        <p>Hi ${params.clientName},</p>
+        <p>Great news! Your bank transfer payment for invoice <strong>${params.invoiceNumber}</strong> has been verified.</p>
+
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <p style="margin: 5px 0; color: #065F46;"><strong>Amount Paid:</strong> ${params.currency} ${params.amountPaid.toLocaleString()}</p>
+          <p style="margin: 5px 0; color: #065F46;"><strong>Status:</strong> Verified & Credited</p>
+        </div>
+
+        <p>The freelancer has received the payment in USDC on the Stellar network.</p>
+
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">Thank you for using LancePay!</p>
+      </div>
+    `,
+  })
+}
+
