@@ -425,3 +425,18 @@ model UserBadge {
   @@index([userId])
   @@index([badgeId])
 }
+
+model IncomeVerification {
+  id            String   @id @default(uuid())
+  userId        String
+  tokenHash     String   @unique
+  recipientName String?
+  expiresAt     DateTime
+  accessCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
