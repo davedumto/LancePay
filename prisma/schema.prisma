@@ -347,6 +347,8 @@ model AuditEvent {
   @@index([invoiceId])
   @@index([eventType])
   @@index([createdAt])
+}
+
 model SavingsGoal {
   id                String   @id @default(uuid())
   userId            String
