@@ -103,12 +103,27 @@ export function isValidStellarAddress(address: string): boolean {
   return StrKey.isValidEd25519PublicKey(address);
 }
 
+const STELLAR_TEXT_MEMO_MAX_BYTES = 28;
+
+function sanitizeStellarTextMemo(memo?: string): string | null {
+  if (!memo) return null;
+  let trimmed = memo.trim();
+  if (!trimmed) return null;
+
+  while (Buffer.byteLength(trimmed, "utf8") > STELLAR_TEXT_MEMO_MAX_BYTES) {
+    trimmed = trimmed.slice(0, -1);
+  }
+
+  return trimmed || null;
+}
+
 /**
  * Send USDC payment from one Stellar account to another
  * @param fromPublicKey Sender public key
  * @param fromSecretKey Sender secret key
  * @param toPublicKey Recipient public key
  * @param amount Amount of USDC to send (string)
+ * @param memo Optional transaction memo (truncated to 28 bytes)
  * @returns transaction hash
  * @throws StellarError
  */
@@ -117,6 +132,7 @@ export async function sendUSDCPayment(
   fromSecretKey: string,
   toPublicKey: string,
   amount: string,
+  memo?: string,
 ): Promise<string> {
   if (!isValidStellarAddress(toPublicKey)) {
     throw {
@@ -129,7 +145,7 @@ export async function sendUSDCPayment(
     const senderKeypair = Keypair.fromSecret(fromSecretKey);
     const account = await server.loadAccount(fromPublicKey);
 
-    const transaction = new TransactionBuilder(account, {
+    const builder = new TransactionBuilder(account, {
       fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
     })
@@ -140,8 +156,14 @@ export async function sendUSDCPayment(
           amount,
         }),
       )
-      .setTimeout(30)
-      .build();
+      .setTimeout(30);
+
+    const safeMemo = sanitizeStellarTextMemo(memo);
+    if (safeMemo) {
+      builder.addMemo(Memo.text(safeMemo));
+    }
+
+    const transaction = builder.build();
 
     transaction.sign(senderKeypair);
 
@@ -338,4 +360,3 @@ export async function hasBadge(
     return false;
   }
 }
-

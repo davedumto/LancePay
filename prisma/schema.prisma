@@ -39,9 +39,13 @@ model User {
   auditEvents      AuditEvent[]
   savingsGoals     SavingsGoal[]
   incomeVerifications IncomeVerification[]  
-  payoutBatches    PayoutBatch[]
-  manualPayments   ManualPayment[] @relation("ManualPaymentVerifier")
+  payoutBatches       PayoutBatch[]
+  manualPayments      ManualPayment[] @relation("ManualPaymentVerifier")
   collaborations   InvoiceCollaborator[] @relation("SubContractorCollaborations")
+
+  walletSigners        WalletSigner[]
+  multisigProposals    MultisigProposal[] @relation("MultisigProposer")
+  proposalSignatures   ProposalSignature[]
 }
 
 model Wallet {
@@ -472,4 +476,133 @@ model InvoiceCollaborator {
   @@index([invoiceId])
   @@index([subContractorId])
   @@index([payoutStatus])
+}
+
+model ManualPayment {
+  id         String   @id @default(uuid())
+  invoiceId  String   @map("invoice_id")
+  clientName String   @db.VarChar(100) @map("client_name")
+  amountPaid Decimal  @db.Decimal(18, 6) @map("amount_paid")
+  currency   String   @default("NGN") @db.VarChar(10)
+  receiptUrl String   @db.VarChar(512) @map("receipt_url")
+  notes      String?  @db.Text
+  status     String   @default("pending") @db.VarChar(20)
+  verifiedBy String?  @map("verified_by")
+  verifiedAt DateTime? @map("verified_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  verifier User?   @relation("ManualPaymentVerifier", fields: [verifiedBy], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("manual_payments")
+}
+
+model PayoutBatch {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  totalAmount Decimal @db.Decimal(18, 6) @map("total_amount")
+  itemCount  Int      @map("item_count")
+  status     String   @default("processing") @db.VarChar(30)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items PayoutItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("payout_batches")
+}
+
+model PayoutItem {
+  id                 String   @id @default(uuid())
+  batchId            String   @map("batch_id")
+  recipientIdentifier String  @db.VarChar(255) @map("recipient_identifier")
+  amount             Decimal  @db.Decimal(18, 6)
+  payoutType         String   @db.VarChar(30) @map("payout_type")
+  status             String   @default("pending") @db.VarChar(30)
+  txHash             String?  @db.VarChar(255) @map("tx_hash")
+  errorMessage       String?  @db.Text @map("error_message")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  batch PayoutBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([status])
+  @@map("payout_items")
+}
+
+model CollectiveWallet {
+  id                 String   @id @default(uuid())
+  name               String   @db.VarChar(100)
+  threshold          Int      @default(2)
+  stellarAddress     String   @unique @db.VarChar(56) @map("stellar_address")
+  encryptedSecretKey String?  @db.Text @map("encrypted_secret_key")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  signers   WalletSigner[]
+  proposals MultisigProposal[]
+
+  @@map("collective_wallets")
+}
+
+model WalletSigner {
+  id        String   @id @default(uuid())
+  walletId  String   @map("wallet_id")
+  userId    String   @map("user_id")
+  weight    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  wallet CollectiveWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, userId])
+  @@index([walletId])
+  @@index([userId])
+  @@map("wallet_signers")
+}
+
+model MultisigProposal {
+  id                 String    @id @default(uuid())
+  walletId            String    @map("wallet_id")
+  proposerId          String    @map("proposer_id")
+  destinationAddress  String    @db.VarChar(255) @map("destination_address")
+  amountUsdc          Decimal   @db.Decimal(18, 6) @map("amount_usdc")
+  memo                String?   @db.Text
+  status              String    @default("pending") @db.VarChar(20)
+  expiresAt           DateTime  @map("expires_at")
+  executedAt          DateTime? @map("executed_at")
+  executionStartedAt  DateTime? @map("execution_started_at")
+  stellarTxHash       String?   @db.VarChar(255) @map("stellar_tx_hash")
+  lastError           String?   @db.Text @map("last_error")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  wallet     CollectiveWallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  proposer   User                @relation("MultisigProposer", fields: [proposerId], references: [id], onDelete: Cascade)
+  signatures ProposalSignature[]
+
+  @@index([walletId])
+  @@index([proposerId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("multisig_proposals")
+}
+
+model ProposalSignature {
+  id         String   @id @default(uuid())
+  proposalId String   @map("proposal_id")
+  signerId   String   @map("signer_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  proposal MultisigProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  signer   User             @relation(fields: [signerId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, signerId])
+  @@index([proposalId])
+  @@index([signerId])
+  @@map("proposal_signatures")
 }
