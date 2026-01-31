@@ -1,6 +1,9 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
 
+pub mod auth;
+
+
 #[derive(Clone, Copy)]
 #[contracttype]
 pub enum Status {
