@@ -2,6 +2,8 @@
 use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
 
 pub mod auth;
+pub mod monitor;
+
 
 
 #[derive(Clone, Copy)]
