@@ -20,18 +20,18 @@ model User {
   backupCodes      String[] @default([])
   twoFactorEnabled Boolean  @default(false)
   twoFactorSecret  String?
-
-  virtualAccount      VirtualAccount?
+  
+  virtualAccount      VirtualAccount? 
   wallet              Wallet?
   bankAccounts        BankAccount[]
   invoices            Invoice[]
   transactions        Transaction[]
   reminderSettings    ReminderSettings?
   autoSwapRule        AutoSwapRule?
-  referredBy          User?                 @relation("UserReferrals", fields: [referredById], references: [id])
-  referrals           User[]                @relation("UserReferrals")
-  referralEarnings    ReferralEarning[]     @relation("ReferrerEarnings")
-  earningsFromMe      ReferralEarning[]     @relation("ReferredUserEarnings")
+  referredBy          User?             @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals           User[]            @relation("UserReferrals")
+  referralEarnings    ReferralEarning[] @relation("ReferrerEarnings")
+  earningsFromMe      ReferralEarning[] @relation("ReferredUserEarnings")
   paymentAdvances     PaymentAdvance[]
   apiKeys             ApiKey[]
   brandingSettings    BrandingSettings?
@@ -39,9 +39,9 @@ model User {
   userBadges          UserBadge[]
   auditEvents         AuditEvent[]
   savingsGoals        SavingsGoal[]
-  incomeVerifications IncomeVerification[]
+  incomeVerifications IncomeVerification[]  
   payoutBatches       PayoutBatch[]
-  manualPayments      ManualPayment[]       @relation("ManualPaymentVerifier")
+  manualPayments      ManualPayment[] @relation("ManualPaymentVerifier")
   collaborations      InvoiceCollaborator[] @relation("SubContractorCollaborations")
 }
 
@@ -106,22 +106,22 @@ model Invoice {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  user                    User                  @relation(fields: [userId], references: [id])
+  user                    User              @relation(fields: [userId], references: [id])
   transaction             Transaction?
   paymentReminders        PaymentReminder[]
   dispute                 Dispute?
   collaborators           InvoiceCollaborator[]
-  escrowEnabled           Boolean               @default(false)
-  escrowStatus            String                @default("none")
+  escrowEnabled           Boolean           @default(false)
+  escrowStatus            String            @default("none")
   escrowReleaseConditions String?
   escrowReleasedAt        DateTime?
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
-  lienActive              Boolean               @default(false)
+  lienActive              Boolean           @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
-  isConfidential          Boolean               @default(false)
-  encryptedPayload        String?               @db.Text
+  isConfidential          Boolean           @default(false)
+  encryptedPayload        String?           @db.Text
   decryptionSalt          String?
   messages                InvoiceMessage[]
   manualPayments          ManualPayment[]
@@ -188,10 +188,10 @@ model Transaction {
   externalId        String?   @unique
   virtualAccountId  String?
 
-  user           User            @relation(fields: [userId], references: [id])
-  invoice        Invoice?        @relation(fields: [invoiceId], references: [id])
-  bankAccount    BankAccount?    @relation("WithdrawalBank", fields: [bankAccountId], references: [id])
-  virtualAccount VirtualAccount? @relation("VirtualAccountDeposits", fields: [virtualAccountId], references: [id])
+  user           User             @relation(fields: [userId], references: [id])
+  invoice        Invoice?         @relation(fields: [invoiceId], references: [id])
+  bankAccount    BankAccount?     @relation("WithdrawalBank", fields: [bankAccountId], references: [id])
+  virtualAccount VirtualAccount?  @relation("VirtualAccountDeposits", fields: [virtualAccountId], references: [id])
 }
 
 model ReferralEarning {
@@ -397,13 +397,13 @@ model SavingsGoal {
 }
 
 model ClientReputation {
-  id            String   @id @default(uuid())
-  clientEmail   String   @unique @map("client_email")
-  domainType    String?  @map("domain_type")
-  paymentScore  Int      @default(0) @map("payment_score")
-  isVerified    Boolean  @default(false) @map("is_verified")
-  lastCheckedAt DateTime @default(now()) @map("last_checked_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id            String    @id @default(uuid())
+  clientEmail   String    @unique @map("client_email")
+  domainType    String?   @map("domain_type")
+  paymentScore  Int       @default(0) @map("payment_score")
+  isVerified    Boolean   @default(false) @map("is_verified")
+  lastCheckedAt DateTime  @default(now()) @map("last_checked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   @@index([clientEmail])
   @@map("client_reputations")
@@ -415,19 +415,21 @@ model BadgeDefinition {
   description      String?
   criteriaJson     Json
   imageUrl         String?  @db.VarChar(512)
-  stellarAssetCode String   @unique @db.VarChar(12)
+  stellarAssetCode String   @db.VarChar(12)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
 
   userBadges UserBadge[]
+
+  @@index([stellarAssetCode])
 }
 
 model UserBadge {
-  id            String   @id @default(uuid())
-  userId        String
-  badgeId       String
-  stellarTxHash String   @db.VarChar(255)
-  issuedAt      DateTime @default(now())
+  id             String   @id @default(uuid())
+  userId         String
+  badgeId        String
+  stellarTxHash  String   @db.VarChar(255)
+  issuedAt       DateTime @default(now())
 
   user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   badge BadgeDefinition @relation(fields: [badgeId], references: [id], onDelete: Cascade)
