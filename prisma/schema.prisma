@@ -42,6 +42,8 @@ model User {
   payoutBatches    PayoutBatch[]
   manualPayments   ManualPayment[] @relation("ManualPaymentVerifier")
   collaborations   InvoiceCollaborator[] @relation("SubContractorCollaborations")
+  withdrawalTransactions WithdrawalTransaction[]
+  anchorSessions   AnchorSession[]
 }
 
 model Wallet {
@@ -472,4 +474,82 @@ model InvoiceCollaborator {
   @@index([invoiceId])
   @@index([subContractorId])
   @@index([payoutStatus])
+}
+
+model PayoutBatch {
+  id          String   @id @default(uuid())
+  userId      String
+  status      String   @default("pending") @db.VarChar(20)
+  totalAmount Decimal  @db.Decimal(18, 6)
+  currency    String   @default("USD") @db.VarChar(10)
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model ManualPayment {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  verifierId  String?
+  amount      Decimal  @db.Decimal(18, 6)
+  currency    String   @default("USD") @db.VarChar(10)
+  proofUrl    String?  @db.Text
+  notes       String?  @db.Text
+  status      String   @default("pending") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  verifiedAt  DateTime?
+
+  invoice  Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  verifier User?   @relation("ManualPaymentVerifier", fields: [verifierId], references: [id])
+
+  @@index([invoiceId])
+  @@index([verifierId])
+  @@index([status])
+}
+
+model WithdrawalTransaction {
+  id                String    @id @default(uuid())
+  userId            String
+  anchorId          String    @db.VarChar(50) // 'moneygram' | 'yellowcard'
+  stellarTxId       String?   @db.VarChar(255) // SEP-24 transaction ID from anchor
+  stellarTxHash     String?   @db.VarChar(255) // On-chain transaction hash
+  amount            Decimal   @db.Decimal(18, 7)
+  asset             String    @default("USDC") @db.VarChar(12)
+  status            String    @default("pending") @db.VarChar(20) // pending, interactive, submitted, completed, failed
+  interactiveUrl    String?   @db.Text // Anchor's interactive URL
+  withdrawAddress   String?   @db.VarChar(56) // Anchor's Stellar address to send to
+  withdrawMemo      String?   @db.VarChar(255) // Memo for payment to anchor
+  withdrawMemoType  String?   @db.VarChar(10) // text, id, hash
+  withdrawType      String    @default("bank_transfer") @db.VarChar(20) // bank_transfer, cash
+  error             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  completedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([stellarTxId])
+  @@index([anchorId])
+  @@index([createdAt])
+}
+
+model AnchorSession {
+  id          String   @id @default(uuid())
+  userId      String
+  anchorId    String   @db.VarChar(50) // 'moneygram' | 'yellowcard'
+  jwtToken    String   @db.Text
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, anchorId])
+  @@index([userId])
+  @@index([expiresAt])
 }
