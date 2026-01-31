@@ -35,7 +35,16 @@ export async function GET(request: NextRequest) {
 
     const { xlm, usdc } = await getAccountBalance(user.wallet.address)
 
+    // XLM reserve (Stellar base reserve is 1 XLM + 0.5 XLM per trustline/entry)
+    // Default is ~1.5 XLM for a typical account with USDC trustline
+    const xlmReserve = 1.5
+
     return NextResponse.json({
+
+      available: { amount: usdAmount, currency: 'USD', display: `$${usdAmount.toFixed(2)}` },
+      localEquivalent: { amount: ngnAmount, currency: 'NGN', display: `₦${ngnAmount.toLocaleString()}`, rate: exchangeRate },
+      pending: { amount: Number(pendingInvoices._sum.amount || 0), currency: 'USD' },
+      xlm: xlmReserve,
       usd: usdc,
       xlm: xlm,
       address: user.wallet.address,
