@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -33,6 +33,10 @@
     "sonner": "^2.0.7",
     "speakeasy": "^2.0.0",
     "tailwind-merge": "^3.4.0",
+
+    "viem": "^2.43.2",
+    "yellowcard": "^1.1.4",
+
     "zod": "^4.2.1"
   },
   "devDependencies": {
@@ -43,6 +47,9 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@types/speakeasy": "^2.0.10",
+
+    "cross-env": "^10.1.0",
+
     "eslint": "^9.17.0",
     "eslint-config-next": "15.1.2",
     "tailwindcss": "^4.0.0-beta.9",
