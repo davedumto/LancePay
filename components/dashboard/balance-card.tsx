@@ -1,9 +1,10 @@
 interface BalanceCardProps {
-  balance: { available: { display: string }; localEquivalent: { display: string; rate: number } } | null
+  totalValue: number
+  currency: string
   isLoading: boolean
 }
 
-export function BalanceCard({ balance, isLoading }: BalanceCardProps) {
+export function BalanceCard({ totalValue, currency, isLoading }: BalanceCardProps) {
   if (isLoading) {
     return (
       <div className="bg-white rounded-2xl border border-brand-border p-6 animate-pulse">
@@ -14,15 +15,19 @@ export function BalanceCard({ balance, isLoading }: BalanceCardProps) {
     )
   }
 
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+  });
+
   return (
     <div className="bg-white rounded-2xl border border-brand-border p-6">
-      <p className="text-sm text-brand-gray font-medium mb-1">Available Balance</p>
+      <p className="text-sm text-brand-gray font-medium mb-1">Total Portfolio Value</p>
       <h2 className="text-4xl font-bold text-brand-black mb-2">
-        {balance?.available.display || '$0.00'}
+        {formatter.format(totalValue)}
       </h2>
       <p className="text-sm text-brand-gray">
-        ≈ {balance?.localEquivalent.display || '₦0'}
-        <span className="text-xs ml-1">@ ₦{balance?.localEquivalent.rate?.toLocaleString() || '0'}/$1</span>
+        Across all assets
       </p>
     </div>
   )

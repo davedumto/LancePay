@@ -5,6 +5,7 @@ export const createInvoiceSchema = z.object({
   clientName: z.string().optional(),
   description: z.string().min(1).max(500),
   amount: z.number().positive().max(100000),
+  currency: z.string().optional().default('USD'),
   dueDate: z.string().optional(),
 })
 
