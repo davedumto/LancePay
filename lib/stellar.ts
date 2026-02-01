@@ -18,7 +18,7 @@ export const server = new Horizon.Server(HORIZON_URL);
  * USDC Asset
  * Fallback to testnet USDC issuer if not configured
  */
-const USDC_ISSUER = process.env.NEXT_PUBLIC_USDC_ISSUER || 
+const USDC_ISSUER = process.env.NEXT_PUBLIC_USDC_ISSUER ||
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet USDC issuer
 
 export const USDC_ASSET = new Asset(
@@ -193,13 +193,13 @@ export async function issueSoulboundBadge(
   try {
     const issuerKeypair = Keypair.fromSecret(issuerSecretKey);
     const issuerPublicKey = issuerKeypair.publicKey();
-    
+
     // Create the badge asset
     const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
-    
+
     // Load recipient account
     const recipientAccount = await server.loadAccount(recipientPublicKey);
-    
+
     // Build transaction to establish trustline and send badge
     const transaction = new TransactionBuilder(recipientAccount, {
       fee: (await server.fetchBaseFee()).toString(),
@@ -213,22 +213,22 @@ export async function issueSoulboundBadge(
         }),
       )
       .setTimeout(30);
-    
+
     if (memo) {
       transaction.addMemo(Memo.text(memo));
     }
-    
+
     const builtTx = transaction.build();
-    
+
     // Sign with issuer (to authorize the trustline)
     builtTx.sign(issuerKeypair);
-    
+
     // Submit the trustline transaction
     await server.submitTransaction(builtTx);
-    
+
     // Now send the badge from issuer to recipient
     const issuerAccount = await server.loadAccount(issuerPublicKey);
-    
+
     const paymentTx = new TransactionBuilder(issuerAccount, {
       fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
@@ -241,22 +241,22 @@ export async function issueSoulboundBadge(
         }),
       )
       .setTimeout(30);
-    
+
     if (memo) {
       paymentTx.addMemo(Memo.text(memo));
     }
-    
+
     const paymentTransaction = paymentTx.build();
     paymentTransaction.sign(issuerKeypair);
-    
+
     const result = await server.submitTransaction(paymentTransaction);
-    
+
     return result.hash;
   } catch (err: unknown) {
     console.error("Error issuing soulbound badge:", err);
-    
+
     let message = "Failed to issue soulbound badge.";
-    
+
     if (err && typeof err === "object") {
       const stellarError = err as StellarErrorResponse;
       const opsMessage =
@@ -265,7 +265,7 @@ export async function issueSoulboundBadge(
         message = `${message} Reason: ${opsMessage}`;
       }
     }
-    
+
     throw { type: "payment_failed", message } as StellarError;
   }
 }
@@ -283,7 +283,7 @@ export async function configureBadgeIssuer(
   try {
     const issuerKeypair = Keypair.fromSecret(issuerSecretKey);
     const issuerAccount = await server.loadAccount(issuerKeypair.publicKey());
-    
+
     const transaction = new TransactionBuilder(issuerAccount, {
       fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
@@ -295,9 +295,9 @@ export async function configureBadgeIssuer(
       )
       .setTimeout(30)
       .build();
-    
+
     transaction.sign(issuerKeypair);
-    
+
     const result = await server.submitTransaction(transaction);
     return result.hash;
   } catch (err: unknown) {
@@ -323,7 +323,7 @@ export async function hasBadge(
 ): Promise<boolean> {
   try {
     const account = await server.loadAccount(publicKey);
-    
+
     const badge = account.balances.find(
       (b: any) =>
         b.asset_type !== "native" &&
@@ -331,11 +331,82 @@ export async function hasBadge(
         b.asset_issuer === issuerPublicKey &&
         parseFloat(b.balance) > 0,
     );
-    
+
     return !!badge;
   } catch (error) {
     console.error("Error checking badge ownership:", error);
     return false;
+  }
+}
+
+/**
+ * Fetch full transaction history for a Stellar account with pagination
+ * @param publicKey Stellar account public key
+ * @param start Optional start date (inclusive)
+ * @param end Optional end date (inclusive)
+ * @returns Promise<any[]> Array of transaction records
+ */
+export async function fetchFullTransactionHistory(
+  publicKey: string,
+  start?: Date,
+  end?: Date,
+): Promise<any[]> {
+  const allTransactions: any[] = [];
+  let cursor: string | undefined;
+
+  // Safety limit to prevent infinite loops or timeouts
+  const MAX_PAGES = 50;
+  let pageCount = 0;
+
+  try {
+    while (pageCount < MAX_PAGES) {
+      const builder = server.payments().forAccount(publicKey).limit(100).order("desc");
+
+      if (cursor) {
+        builder.cursor(cursor);
+      }
+
+      const response = await builder.call();
+      const records = response.records;
+
+      if (records.length === 0) {
+        break;
+      }
+
+      for (const record of records) {
+        const txDate = new Date(record.created_at);
+
+        // Filter by date range if provided
+        if (end && txDate > end) continue; // Should not happen with desc order, but safe to check
+        if (start && txDate < start) {
+          // Since we order by desc, if we hit a date older than start, we can stop fetching
+          return allTransactions;
+        }
+
+        allTransactions.push(record);
+      }
+
+      // Update cursor for next page
+      cursor = records[records.length - 1].paging_token;
+      pageCount++;
+
+      // If we got fewer records than limit, we've reached the end
+      if (records.length < 100) {
+        break;
+      }
+    }
+
+    return allTransactions;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      console.log("Stellar account not found or has no history, returning empty list.");
+      return [];
+    }
+    console.error("Error fetching transaction history:", error);
+    throw {
+      type: "network_error",
+      message: "Failed to fetch transaction history from Stellar.",
+    } as StellarError;
   }
 }
 

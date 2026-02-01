@@ -3,6 +3,7 @@
 import { usePrivy } from '@privy-io/react-auth'
 import { useState, useEffect } from 'react'
 import { BalanceCard } from '@/components/dashboard/balance-card'
+import { ReportsSection } from '@/components/dashboard/reports-section'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { TransactionList } from '@/components/dashboard/transaction-list'
 
@@ -29,10 +30,10 @@ export default function DashboardPage() {
       try {
         const token = await getAccessToken()
         const headers = { Authorization: `Bearer ${token}` }
-        
+
         // Sync wallet first (ensures wallet is stored in DB)
         await fetch('/api/user/sync-wallet', { method: 'POST', headers })
-        
+
         // Then fetch balance, profile, and transactions
         const [balanceRes, profileRes, transactionsRes] = await Promise.all([
           fetch('/api/user/balance', { headers }),
@@ -63,6 +64,7 @@ export default function DashboardPage() {
 
       <BalanceCard balance={balance} isLoading={isLoading} />
       <QuickActions />
+      <ReportsSection />
 
       <div className="bg-white rounded-2xl border border-brand-border p-6">
         <h3 className="text-lg font-semibold text-brand-black mb-4">Recent Activity</h3>
