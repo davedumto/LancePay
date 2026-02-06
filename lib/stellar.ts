@@ -21,11 +21,6 @@ export const server = new Horizon.Server(HORIZON_URL);
 const USDC_ISSUER = process.env.NEXT_PUBLIC_USDC_ISSUER || 
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet USDC issuer
 
-export const USDC_ASSET = new Asset(
-  process.env.NEXT_PUBLIC_USDC_CODE || "USDC",
-  USDC_ISSUER,
-);
-
 /**
  * Type definition for account balances
  */
@@ -59,34 +54,51 @@ interface StellarErrorResponse {
 }
 
 /**
- * Get balances of XLM and USDC for a Stellar account
+ * USDC Asset
+ */
+export const USDC_ASSET = new Asset(
+  process.env.NEXT_PUBLIC_USDC_CODE || "USDC",
+  process.env.NEXT_PUBLIC_USDC_ISSUER!,
+);
+
+export interface AssetBalance {
+  asset_type: "native" | "credit_alphanum4" | "credit_alphanum12" | "liquidity_pool_shares";
+  asset_code?: string;
+  asset_issuer?: string;
+  balance: string;
+  limit?: string;
+  buying_liabilities?: string;
+  selling_liabilities?: string;
+}
+
+/**
+ * Get all balances for a Stellar account
  * @param publicKey Stellar account public key
- * @returns Promise<AccountBalance>
+ * @returns Promise<AssetBalance[]>
  * @throws StellarError
  */
 export async function getAccountBalance(
   publicKey: string,
-): Promise<AccountBalance> {
+): Promise<AssetBalance[]> {
   try {
-    const account =
-      await server.loadAccount(publicKey);
+    const account = await server.loadAccount(publicKey);
 
-    const xlmBalance: string =
-      account.balances.find(
-        (b: any) => b.asset_type === "native",
-      )?.balance || "0";
-
-    const usdcBalance: string =
-      account.balances.find(
-        (b: any) =>
-          b.asset_type !== "native" &&
-          b.asset_code === USDC_ASSET.code &&
-          b.asset_issuer === USDC_ASSET.issuer,
-      )?.balance || "0";
-
-    return { xlm: xlmBalance, usdc: usdcBalance };
+    // Map Horizon response to our interface
+    return account.balances.map((b: any) => ({
+      asset_type: b.asset_type,
+      asset_code: b.asset_code || (b.asset_type === 'native' ? 'XLM' : undefined),
+      asset_issuer: b.asset_issuer,
+      balance: b.balance,
+      limit: b.limit,
+      buying_liabilities: b.buying_liabilities,
+      selling_liabilities: b.selling_liabilities
+    }));
   } catch (error: unknown) {
     console.error("Error fetching account balance:", error);
+    // If account doesn't exist yet, return empty balances instead of throwing
+    // This allows the UI to handle "new account" state gracefully if needed
+    // or we can let the caller handle the 404.
+    // For now, let's stick to the existing error handling pattern but maybe refine it.
     throw {
       type: "network_error",
       message: "Failed to fetch Stellar account balance.",
@@ -193,13 +205,13 @@ export async function issueSoulboundBadge(
   try {
     const issuerKeypair = Keypair.fromSecret(issuerSecretKey);
     const issuerPublicKey = issuerKeypair.publicKey();
-    
+
     // Create the badge asset
     const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
-    
+
     // Load recipient account
     const recipientAccount = await server.loadAccount(recipientPublicKey);
-    
+
     // Build transaction to establish trustline and send badge
     const transaction = new TransactionBuilder(recipientAccount, {
       fee: (await server.fetchBaseFee()).toString(),
@@ -213,22 +225,22 @@ export async function issueSoulboundBadge(
         }),
       )
       .setTimeout(30);
-    
+
     if (memo) {
       transaction.addMemo(Memo.text(memo));
     }
-    
+
     const builtTx = transaction.build();
-    
+
     // Sign with issuer (to authorize the trustline)
     builtTx.sign(issuerKeypair);
-    
+
     // Submit the trustline transaction
     await server.submitTransaction(builtTx);
-    
+
     // Now send the badge from issuer to recipient
     const issuerAccount = await server.loadAccount(issuerPublicKey);
-    
+
     const paymentTx = new TransactionBuilder(issuerAccount, {
       fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
@@ -241,22 +253,22 @@ export async function issueSoulboundBadge(
         }),
       )
       .setTimeout(30);
-    
+
     if (memo) {
       paymentTx.addMemo(Memo.text(memo));
     }
-    
+
     const paymentTransaction = paymentTx.build();
     paymentTransaction.sign(issuerKeypair);
-    
+
     const result = await server.submitTransaction(paymentTransaction);
-    
+
     return result.hash;
   } catch (err: unknown) {
     console.error("Error issuing soulbound badge:", err);
-    
+
     let message = "Failed to issue soulbound badge.";
-    
+
     if (err && typeof err === "object") {
       const stellarError = err as StellarErrorResponse;
       const opsMessage =
@@ -265,7 +277,7 @@ export async function issueSoulboundBadge(
         message = `${message} Reason: ${opsMessage}`;
       }
     }
-    
+
     throw { type: "payment_failed", message } as StellarError;
   }
 }
@@ -283,7 +295,7 @@ export async function configureBadgeIssuer(
   try {
     const issuerKeypair = Keypair.fromSecret(issuerSecretKey);
     const issuerAccount = await server.loadAccount(issuerKeypair.publicKey());
-    
+
     const transaction = new TransactionBuilder(issuerAccount, {
       fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
@@ -295,9 +307,9 @@ export async function configureBadgeIssuer(
       )
       .setTimeout(30)
       .build();
-    
+
     transaction.sign(issuerKeypair);
-    
+
     const result = await server.submitTransaction(transaction);
     return result.hash;
   } catch (err: unknown) {
@@ -323,7 +335,7 @@ export async function hasBadge(
 ): Promise<boolean> {
   try {
     const account = await server.loadAccount(publicKey);
-    
+
     const badge = account.balances.find(
       (b: any) =>
         b.asset_type !== "native" &&
@@ -331,11 +343,97 @@ export async function hasBadge(
         b.asset_issuer === issuerPublicKey &&
         parseFloat(b.balance) > 0,
     );
-    
+
     return !!badge;
   } catch (error) {
     console.error("Error checking badge ownership:", error);
     return false;
+  }
+}
+
+/**
+ * Add a trustline for an asset
+ * @param secretKey User's secret key
+ * @param assetCode Asset code
+ * @param assetIssuer Asset issuer
+ * @returns transaction hash
+ */
+export async function addTrustline(
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<string> {
+  try {
+    const keypair = Keypair.fromSecret(secretKey);
+    const account = await server.loadAccount(keypair.publicKey());
+    const asset = new Asset(assetCode, assetIssuer);
+
+    const transaction = new TransactionBuilder(account, {
+      fee: (await server.fetchBaseFee()).toString(),
+      networkPassphrase: STELLAR_NETWORK,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset,
+          source: keypair.publicKey(),
+        })
+      )
+      .setTimeout(30)
+      .build();
+
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return result.hash;
+  } catch (error) {
+    console.error("Error adding trustline:", error);
+    throw {
+      type: "network_error", // Simplify error type for now
+      message: "Failed to add trustline.",
+    } as StellarError;
+  }
+}
+
+/**
+ * Remove a trustline for an asset
+ * @param secretKey User's secret key
+ * @param assetCode Asset code
+ * @param assetIssuer Asset issuer
+ * @returns transaction hash
+ */
+export async function removeTrustline(
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<string> {
+  try {
+    const keypair = Keypair.fromSecret(secretKey);
+    const account = await server.loadAccount(keypair.publicKey());
+    const asset = new Asset(assetCode, assetIssuer);
+
+    // To remove a trustline, you set the limit to 0
+    const transaction = new TransactionBuilder(account, {
+      fee: (await server.fetchBaseFee()).toString(),
+      networkPassphrase: STELLAR_NETWORK,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset,
+          limit: "0",
+          source: keypair.publicKey(),
+        })
+      )
+      .setTimeout(30)
+      .build();
+
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return result.hash;
+  } catch (error) {
+    console.error("Error removing trustline:", error);
+    throw {
+      type: "network_error",
+      message: "Failed to remove trustline.",
+    } as StellarError;
   }
 }
 

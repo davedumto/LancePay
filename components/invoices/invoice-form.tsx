@@ -9,7 +9,7 @@ export function InvoiceForm() {
   const { getAccessToken } = usePrivy()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ clientEmail: '', clientName: '', description: '', amount: '', dueDate: '' })
+  const [form, setForm] = useState({ clientEmail: '', clientName: '', description: '', amount: '', currency: 'USD', dueDate: '' })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,7 +34,7 @@ export function InvoiceForm() {
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
@@ -60,10 +60,23 @@ export function InvoiceForm() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-brand-black mb-2">Amount (USD) *</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-gray">$</span>
-            <input type="number" name="amount" value={form.amount} onChange={handleChange} required min="1" step="0.01" className="w-full pl-8 pr-4 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none" placeholder="0.00" />
+          <label className="block text-sm font-medium text-brand-black mb-2">Amount *</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input type="number" name="amount" value={form.amount} onChange={handleChange} required min="1" step="0.01" className="w-full px-4 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none" placeholder="0.00" />
+            </div>
+            <select
+              name="currency"
+              value={form.currency}
+              onChange={handleChange}
+              className="w-24 px-2 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none bg-white"
+            >
+              <option value="USD">USD</option>
+              <option value="USDC">USDC</option>
+              <option value="XLM">XLM</option>
+              <option value="EUR">EUR</option>
+              {/* In a real app, populate this from user's trustlines or supported assets */}
+            </select>
           </div>
         </div>
         <div>

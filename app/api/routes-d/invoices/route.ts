@@ -68,12 +68,12 @@ export async function POST(request: NextRequest) {
     const parsed = createInvoiceSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 })
 
-    const { clientEmail, clientName, description, amount, dueDate } = parsed.data
+    const { clientEmail, clientName, description, amount, currency, dueDate } = parsed.data
     const invoiceNumber = generateInvoiceNumber()
     const paymentLink = `${process.env.NEXT_PUBLIC_APP_URL}/pay/${invoiceNumber}`
 
     const invoice = await prisma.invoice.create({
-      data: { userId: user.id, invoiceNumber, clientEmail, clientName, description, amount, dueDate: dueDate ? new Date(dueDate) : null, paymentLink },
+      data: { userId: user.id, invoiceNumber, clientEmail, clientName, description, amount, currency, dueDate: dueDate ? new Date(dueDate) : null, paymentLink },
     })
 
     // Log audit event
