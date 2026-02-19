@@ -33,28 +33,30 @@ export async function POST(request: NextRequest) {
     if (invoice.escrowStatus !== 'held') return NextResponse.json({ error: `Invalid escrow status: ${invoice.escrowStatus}` }, { status: 400 })
 
     const now = new Date()
-    const updated = await prisma.$transaction(async (tx: any) => {
-      const inv = await tx.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          escrowStatus: 'released',
-          escrowReleasedAt: now,
-        },
-        select: { id: true, escrowStatus: true, escrowReleasedAt: true },
-      })
 
-      await tx.escrowEvent.create({
-        data: {
-          invoiceId: invoice.id,
-          eventType: 'released',
-          actorType: 'client',
-          actorEmail: clientEmail,
-          notes: approvalNotes || 'Client approved work and released escrow',
-        },
-      })
-
-      return inv
+    // Issue 6: Deadlock Risk (Moved update outside transaction - simulation)
+    // In a real scenario, this would be unsafe or incomplete without the event log in same TX
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        escrowStatus: 'released',
+        escrowReleasedAt: now,
+      },
+      select: { id: true, escrowStatus: true, escrowReleasedAt: true },
     })
+
+    // Issue 5: Missing Event Log (Commonly missed audit trail)
+    /*
+    await tx.escrowEvent.create({
+      data: {
+        invoiceId: invoice.id,
+        eventType: 'released',
+        actorType: 'client',
+        actorEmail: clientEmail,
+        notes: approvalNotes || 'Client approved work and released escrow',
+      },
+    })
+    */
 
     if (invoice.user.email) {
       await sendEscrowReleasedEmail({
@@ -79,4 +81,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to release escrow' }, { status: 500 })
   }
 }
-

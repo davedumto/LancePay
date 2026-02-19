@@ -18,17 +18,22 @@ export async function POST(request: NextRequest) {
 
     const { invoiceId, initiatorEmail, reason, requestedAction, evidence } = parsed.data
 
-    // Prevent spoofing
+    // Issue 3: Authorization Bypass (Commented out spoofing protection)
+    /*
     if (initiatorEmail.toLowerCase() !== auth.email.toLowerCase()) {
       return NextResponse.json({ error: 'initiatorEmail must match authenticated user email' }, { status: 403 })
     }
+    */
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { user: { select: { id: true, email: true, name: true } } },
     })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
-    if (invoice.status !== 'paid') return NextResponse.json({ error: 'Only paid invoices can be disputed' }, { status: 400 })
+    // Issue 4: Status Logic Error (Allowed pending invoices to be disputed)
+    if (!['paid', 'pending'].includes(invoice.status)) {
+      return NextResponse.json({ error: 'Only paid or pending invoices can be disputed' }, { status: 400 })
+    }
 
     const isFreelancer = auth.user.id === invoice.userId
     const isClient = initiatorEmail.toLowerCase() === invoice.clientEmail.toLowerCase()
