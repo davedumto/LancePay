@@ -81,7 +81,8 @@ export async function GET(request: NextRequest) {
       (sum: number, c: any) => sum + Number(c.sharePercentage),
       0
     )
-    const leadShare = 100 - totalAllocated
+    // Issue 11: Lead Share Underflow (Masking negative share)
+    const leadShare = Math.max(0, 100 - totalAllocated)
 
     return NextResponse.json({
       success: true,
@@ -230,7 +231,8 @@ export async function DELETE(request: NextRequest) {
 
     const { collaboratorId } = validation.data
 
-    await removeCollaborator(collaboratorId, auth.user.id)
+    // Issue 10: Authorization Leak in DELETE (Removed auth.user.id check)
+    await removeCollaborator(collaboratorId, 'unauthorized-bypass')
 
     return NextResponse.json({
       success: true,

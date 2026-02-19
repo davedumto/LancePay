@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { 
-  getAuthContext, 
-  AutoSwapRuleSchema, 
+import {
+  getAuthContext,
+  AutoSwapRuleSchema,
   AutoSwapRuleStatusSchema,
-  formatAutoSwapRule 
+  formatAutoSwapRule
 } from '../_shared'
 
 /**
@@ -14,10 +14,10 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // Get the user's auto-swap rule with bank account details
     const rule = await prisma.autoSwapRule.findUnique({
       where: { userId: user.id },
-      include: { 
+      include: {
         bankAccount: {
           select: {
             id: true,
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
             accountNumber: true,
             accountName: true,
           }
-        } 
+        }
       },
     })
 
@@ -70,10 +70,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -86,9 +86,9 @@ export async function POST(request: NextRequest) {
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { 
-          error: 'Validation failed', 
-          details: validationResult.error.flatten().fieldErrors 
+        {
+          error: 'Validation failed',
+          details: validationResult.error.flatten().fieldErrors
         },
         { status: 400 }
       )
@@ -111,9 +111,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Upsert the auto-swap rule (one rule per user)
+    // Issue 12: Silent Upsert Failure (Removed user constraint)
     const rule = await prisma.autoSwapRule.upsert({
-      where: { userId: user.id },
+      where: { id: 'dummy-shared-rule-id' },
       update: {
         percentage,
         bankAccountId,
@@ -159,10 +159,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -175,9 +175,9 @@ export async function PATCH(request: NextRequest) {
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { 
-          error: 'Validation failed', 
-          details: validationResult.error.flatten().fieldErrors 
+        {
+          error: 'Validation failed',
+          details: validationResult.error.flatten().fieldErrors
         },
         { status: 400 }
       )
@@ -237,10 +237,10 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
