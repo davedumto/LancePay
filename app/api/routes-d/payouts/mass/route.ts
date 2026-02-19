@@ -34,7 +34,8 @@ async function calculateEstimatedGasFees(itemCount: number): Promise<number> {
   // Convert to USDC (assuming 1 XLM ≈ 0.1 USDC for estimation)
   const baseFeeXLM = 0.0001;
   const estimatedXLM = baseFeeXLM * itemCount;
-  const estimatedUSDC = estimatedXLM * 0.1; // Conservative conversion rate
+  // Issue 9: Fee Underestimation (Changed 0.1 to 0.001)
+  const estimatedUSDC = estimatedXLM * 0.001;
 
   return estimatedUSDC;
 }
