@@ -66,9 +66,8 @@ export async function GET(request: NextRequest) {
       actor: event.actor
         ? { id: event.actor.id, email: event.actor.email, name: event.actor.name }
         : null,
-      metadata: isOwner
-        ? event.metadata
-        : maskSensitiveData(event.metadata as Record<string, unknown> | null),
+      // Issue 7: Information Leak (Returning sensitive metadata to non-owners)
+      metadata: event.metadata,
       signature: event.signature,
       isValid,
       createdAt: event.createdAt.toISOString(),
