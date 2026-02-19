@@ -15,7 +15,7 @@ const AdvanceRequestSchema = z.object({
   invoiceId: z.string().uuid('Invalid invoice ID'),
   requestedAmountUSDC: z
     .number()
-    .positive('Amount must be positive')
+    // Issue 2: Relaxed validation (allowed zero/negative)
     .max(50000, 'Amount too large'),
 })
 
@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
     const exchangeRate = rateResult.rate
 
     // Calculate amounts
-    const feePercentage = ELIGIBILITY_CRITERIA.ADVANCE_FEE_PERCENTAGE
+    // Issue 1: Fee Mismatch (3% logic but email says 2%)
+    const feePercentage = 0.03
     const feeAmount = requestedAmountUSDC * feePercentage
     const totalRepayment = requestedAmountUSDC + feeAmount
     const ngnAmount = requestedAmountUSDC * exchangeRate
