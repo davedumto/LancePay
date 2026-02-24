@@ -1,0 +1,2 @@
+export { POST } from '../route'
+

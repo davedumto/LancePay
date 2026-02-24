@@ -25,8 +25,9 @@ export async function GET(request: NextRequest) {
     const { user } = authResult
 
     
-    const rule = await prisma.autoSwapRule.findUnique({
+    const rule = await prisma.autoSwapRule.findFirst({
       where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
       include: { 
         bankAccount: {
           select: {
@@ -111,32 +112,52 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Upsert the auto-swap rule (one rule per user)
-    const rule = await prisma.autoSwapRule.upsert({
+    // Save one rule per user (update existing, otherwise create).
+    // This is resilient to environments where `userId` uniqueness has drifted.
+    const existingRule = await prisma.autoSwapRule.findFirst({
       where: { userId: user.id },
-      update: {
-        percentage,
-        bankAccountId,
-        isActive,
-        updatedAt: new Date(),
-      },
-      create: {
-        userId: user.id,
-        percentage,
-        bankAccountId,
-        isActive,
-      },
-      include: {
-        bankAccount: {
-          select: {
-            id: true,
-            bankName: true,
-            accountNumber: true,
-            accountName: true,
-          }
-        }
-      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
     })
+
+    const rule = existingRule
+      ? await prisma.autoSwapRule.update({
+          where: { id: existingRule.id },
+          data: {
+            percentage,
+            bankAccountId,
+            isActive,
+            updatedAt: new Date(),
+          },
+          include: {
+            bankAccount: {
+              select: {
+                id: true,
+                bankName: true,
+                accountNumber: true,
+                accountName: true,
+              }
+            }
+          },
+        })
+      : await prisma.autoSwapRule.create({
+          data: {
+            userId: user.id,
+            percentage,
+            bankAccountId,
+            isActive,
+          },
+          include: {
+            bankAccount: {
+              select: {
+                id: true,
+                bankName: true,
+                accountNumber: true,
+                accountName: true,
+              }
+            }
+          },
+        })
 
     return NextResponse.json({
       success: true,
@@ -186,8 +207,9 @@ export async function PATCH(request: NextRequest) {
     const { isActive } = validationResult.data
 
     // Check if user has a rule
-    const existingRule = await prisma.autoSwapRule.findUnique({
+    const existingRule = await prisma.autoSwapRule.findFirst({
       where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
     })
 
     if (!existingRule) {
@@ -199,7 +221,7 @@ export async function PATCH(request: NextRequest) {
 
     // Update the rule status
     const rule = await prisma.autoSwapRule.update({
-      where: { userId: user.id },
+      where: { id: existingRule.id },
       data: {
         isActive,
         updatedAt: new Date(),
@@ -248,8 +270,9 @@ export async function DELETE(request: NextRequest) {
     const { user } = authResult
 
     // Check if user has a rule
-    const existingRule = await prisma.autoSwapRule.findUnique({
+    const existingRule = await prisma.autoSwapRule.findFirst({
       where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
     })
 
     if (!existingRule) {
@@ -261,7 +284,7 @@ export async function DELETE(request: NextRequest) {
 
     // Delete the rule
     await prisma.autoSwapRule.delete({
-      where: { userId: user.id },
+      where: { id: existingRule.id },
     })
 
     return NextResponse.json({

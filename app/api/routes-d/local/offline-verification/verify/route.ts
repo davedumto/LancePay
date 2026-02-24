@@ -137,8 +137,8 @@ export async function PATCH(request: NextRequest) {
     const ngnAmount = Number(manualPayment.amountPaid);
     const usdcAmount = ngnAmount / exchangeRate;
 
-    // Round to 2 decimal places for USDC
-    const usdcAmountRounded = Math.floor(usdcAmount * 100) / 100;
+    // Round to nearest cent to avoid systematic truncation loss
+    const usdcAmountRounded = Math.round(usdcAmount * 100) / 100;
 
     if (usdcAmountRounded <= 0) {
       return NextResponse.json(

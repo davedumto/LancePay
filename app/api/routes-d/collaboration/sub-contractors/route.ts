@@ -86,6 +86,17 @@ export async function GET(request: NextRequest) {
       (sum: number, c: any) => sum + Number(c.sharePercentage),
       0,
     );
+    if (totalAllocated > 100) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid collaborator allocation: total allocated share exceeds 100%",
+          totalAllocatedPercentage: totalAllocated,
+        },
+        { status: 409 },
+      );
+    }
+
     const leadShare = 100 - totalAllocated;
 
     return NextResponse.json({

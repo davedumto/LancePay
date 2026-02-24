@@ -44,7 +44,7 @@ function calculateEstimatedFees(items: MassPayoutItem[]): number {
     const platformFee = amount * PLATFORM_FEE_RATE;
 
     // Stellar gas fee per transaction (conservative USDC estimate)
-    const gasFeeUSDC = 0.001;
+    const gasFeeUSDC = 0.1;
 
     if (item.type === 'BANK') {
       // BANK payouts incur Yellow Card withdrawal fee on top
@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           totalAmount,
-          itemCount: body.items.length,
+          totalRecipients: body.items.length,
           status: 'processing'
         }
       });
@@ -317,9 +317,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Update batch status
-    const finalStatus = failureCount === 0 ? 'completed' :
-      successCount === 0 ? 'partial_failure' :
-        'partial_failure';
+    const finalStatus =
+      failureCount === 0
+        ? 'completed'
+        : successCount === 0
+          ? 'failed'
+          : 'partial_failure';
 
     await prisma.payoutBatch.update({
       where: { id: batch.batch.id },

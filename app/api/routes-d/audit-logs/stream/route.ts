@@ -19,27 +19,44 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   }
 
-  // Check if user is authenticated (owner)
+  // Check if user is authenticated
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  let isOwner = false
-  let userId: string | null = null
-
-  if (authToken) {
-    const claims = await verifyAuthToken(authToken)
-    if (claims) {
-      const user = await prisma.user.findUnique({
-        where: { privyId: claims.userId },
-        select: { id: true },
-      })
-      if (user) {
-        userId = user.id
-        isOwner = user.id === invoice.userId
-      }
-    }
+  if (!authToken) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Only owner can view full audit stream
-  if (!isOwner) {
+  let isOwner = false
+  let canView = false
+
+  const claims = await verifyAuthToken(authToken)
+  if (!claims) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { privyId: claims.userId },
+    select: { id: true },
+  })
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  isOwner = user.id === invoice.userId
+  if (isOwner) {
+    canView = true
+  } else {
+    const collaboration = await prisma.invoiceCollaborator.findFirst({
+      where: {
+        invoiceId,
+        subContractorId: user.id,
+      },
+      select: { id: true },
+    })
+    canView = Boolean(collaboration)
+  }
+
+  if (!canView) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
