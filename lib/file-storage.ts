@@ -6,6 +6,7 @@ import { randomBytes } from 'crypto'
 const UPLOAD_BASE_DIR = path.join(process.cwd(), 'uploads')
 const RECEIPTS_DIR = path.join(UPLOAD_BASE_DIR, 'receipts')
 const EXPENSE_RECEIPTS_DIR = path.join(RECEIPTS_DIR, 'expenses')
+const BRANDING_LOGOS_DIR = path.join(UPLOAD_BASE_DIR, 'branding-logos')
 
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -45,6 +46,36 @@ export function validateReceiptFile(file: File): FileValidationResult {
   const ext = path.extname(file.name).toLowerCase()
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
     return { valid: false, error: 'Invalid file extension' }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Validate branding logo file (stricter limits: images only, max 2MB)
+ */
+export function validateLogoFile(file: File): FileValidationResult {
+  const MAX_LOGO_SIZE = 2 * 1024 * 1024 // 2MB
+
+  if (file.size > MAX_LOGO_SIZE) {
+    return { valid: false, error: 'File too large (max 2MB)' }
+  }
+
+  if (file.size === 0) {
+    return { valid: false, error: 'File is empty' }
+  }
+
+  if (!file.type.startsWith('image/')) {
+    return {
+      valid: false,
+      error: 'Invalid file type. Logo must be an image (JPG, PNG, WEBP, HEIC)',
+    }
+  }
+
+  const ext = path.extname(file.name).toLowerCase()
+  const allowedLogoExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic']
+  if (!allowedLogoExtensions.includes(ext)) {
+    return { valid: false, error: 'Invalid file extension for logo' }
   }
 
   return { valid: true }
@@ -137,6 +168,30 @@ export async function storeExpenseReceiptFile(
 }
 
 /**
+ * Store branding logo file for a user.
+ * Returns relative path for database storage.
+ */
+export async function storeBrandingLogoFile(
+  userId: string,
+  file: File,
+): Promise<string> {
+  const userDir = path.join(BRANDING_LOGOS_DIR, userId)
+  if (!existsSync(userDir)) {
+    await mkdir(userDir, { recursive: true })
+  }
+
+  const filename = generateUniqueFilename(file.name)
+  const filePath = path.join(userDir, filename)
+
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
+  await writeFile(filePath, buffer)
+
+  return `/branding-logos/${userId}/${filename}`
+}
+
+/**
  * Get absolute path from relative receipt URL
  * Validates path to prevent traversal attacks
  */
@@ -152,6 +207,24 @@ export function getReceiptAbsolutePath(receiptUrl: string): string | null {
   // Security: ensure resolved path is within UPLOAD_BASE_DIR
   const normalizedPath = path.normalize(absolutePath)
   if (!normalizedPath.startsWith(UPLOAD_BASE_DIR)) {
+    return null
+  }
+
+  return normalizedPath
+}
+
+/**
+ * Get absolute path from relative branding logo URL.
+ * Validates path to prevent traversal attacks.
+ */
+export function getBrandingLogoAbsolutePath(logoUrl: string): string | null {
+  if (!logoUrl.startsWith('/branding-logos/')) {
+    return null
+  }
+
+  const absolutePath = path.join(UPLOAD_BASE_DIR, logoUrl.slice(1))
+  const normalizedPath = path.normalize(absolutePath)
+  if (!normalizedPath.startsWith(path.normalize(UPLOAD_BASE_DIR))) {
     return null
   }
 

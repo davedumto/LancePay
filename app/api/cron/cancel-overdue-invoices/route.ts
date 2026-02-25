@@ -28,7 +28,16 @@ export async function GET(request: Request) {
                 escrowEnabled: false,
             },
             include: {
-                user: true,
+                user: {
+                    include: {
+                        brandingSettings: true,
+                        invoiceTemplates: {
+                            where: { isDefault: true },
+                            orderBy: { createdAt: 'asc' },
+                            take: 1,
+                        },
+                    },
+                },
             },
         })
 
@@ -63,6 +72,26 @@ export async function GET(request: Request) {
 
                 // Send cancellation email to freelancer
                 if (invoice.user?.name && invoice.user?.email) {
+                    const brandingSettings = invoice.user.brandingSettings
+                    const defaultTemplate = invoice.user.invoiceTemplates?.[0]
+
+                    const branding = defaultTemplate
+                        ? {
+                              logoUrl: defaultTemplate.logoUrl ?? brandingSettings?.logoUrl ?? null,
+                              primaryColor: defaultTemplate.primaryColor,
+                              accentColor: defaultTemplate.accentColor,
+                              footerText:
+                                  defaultTemplate.footerText ?? brandingSettings?.footerText ?? null,
+                          }
+                        : brandingSettings
+                        ? {
+                              logoUrl: brandingSettings.logoUrl ?? null,
+                              primaryColor: brandingSettings.primaryColor,
+                              accentColor: '#059669',
+                              footerText: brandingSettings.footerText ?? null,
+                          }
+                        : undefined
+
                     const emailSent = await sendInvoiceCancelledEmail({
                         to: invoice.user.email,
                         freelancerName: invoice.user.name,
@@ -71,6 +100,7 @@ export async function GET(request: Request) {
                         dueDate: invoice.dueDate!,
                         daysOverdue,
                         clientEmail: invoice.clientEmail,
+                        branding,
                     })
 
                     if (!emailSent || !emailSent.success) {

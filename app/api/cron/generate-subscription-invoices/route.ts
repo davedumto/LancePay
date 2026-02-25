@@ -23,7 +23,16 @@ export async function GET(request: Request) {
                 },
             },
             include: {
-                user: true,
+                user: {
+                    include: {
+                        brandingSettings: true,
+                        invoiceTemplates: {
+                            where: { isDefault: true },
+                            orderBy: { createdAt: 'asc' },
+                            take: 1,
+                        },
+                    },
+                },
             },
         })
 
@@ -68,6 +77,26 @@ export async function GET(request: Request) {
                 })
 
                 // Send notification email
+                const brandingSettings = sub.user.brandingSettings
+                const defaultTemplate = sub.user.invoiceTemplates?.[0]
+
+                const branding = defaultTemplate
+                    ? {
+                          logoUrl: defaultTemplate.logoUrl ?? brandingSettings?.logoUrl ?? null,
+                          primaryColor: defaultTemplate.primaryColor,
+                          accentColor: defaultTemplate.accentColor,
+                          footerText:
+                              defaultTemplate.footerText ?? brandingSettings?.footerText ?? null,
+                      }
+                    : brandingSettings
+                    ? {
+                          logoUrl: brandingSettings.logoUrl ?? null,
+                          primaryColor: brandingSettings.primaryColor,
+                          accentColor: '#059669',
+                          footerText: brandingSettings.footerText ?? null,
+                      }
+                    : undefined
+
                 await sendInvoiceCreatedEmail({
                     to: sub.clientEmail,
                     clientName: sub.clientName || undefined,
@@ -78,6 +107,7 @@ export async function GET(request: Request) {
                     currency: invoice.currency,
                     paymentLink: invoice.paymentLink,
                     dueDate: invoice.dueDate!,
+                    branding,
                 })
 
                 // Log audit event

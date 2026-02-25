@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { InvoicePDF } from '@/lib/pdf'
+import { InvoicePDF, type InvoiceTemplateConfig } from '@/lib/invoice-renderer'
+import { getBrandingLogoAbsolutePath } from '@/lib/file-storage'
 
 export async function GET(
   request: NextRequest,
@@ -10,7 +11,7 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Include brandingSettings in the user relation
+    // Include branding settings and invoice templates in the user relation
     const invoice = await prisma.invoice.findFirst({
       where: {
         OR: [
@@ -21,7 +22,12 @@ export async function GET(
       include: {
         user: {
           include: {
-            brandingSettings: true
+            brandingSettings: true,
+            invoiceTemplates: {
+              where: { isDefault: true },
+              orderBy: { createdAt: 'asc' },
+              take: 1,
+            },
           }
         }
       }
@@ -52,12 +58,57 @@ export async function GET(
 
     const branding = user?.brandingSettings
 
+    let template: InvoiceTemplateConfig | undefined
+
+    const defaultTemplate = user?.invoiceTemplates?.[0]
+
+    if (defaultTemplate) {
+      const rawLogoUrl = defaultTemplate.logoUrl ?? branding?.logoUrl ?? null
+      const logoUrlForPdf =
+        rawLogoUrl && rawLogoUrl.startsWith('/branding-logos/')
+          ? getBrandingLogoAbsolutePath(rawLogoUrl) ?? rawLogoUrl
+          : rawLogoUrl
+
+      template = {
+        id: defaultTemplate.id,
+        name: defaultTemplate.name,
+        logoUrl: logoUrlForPdf,
+        primaryColor: defaultTemplate.primaryColor,
+        accentColor: defaultTemplate.accentColor,
+        showLogo: defaultTemplate.showLogo,
+        showFooter: defaultTemplate.showFooter,
+        footerText: defaultTemplate.footerText ?? branding?.footerText ?? null,
+        layout:
+          (defaultTemplate.layout as 'modern' | 'classic' | 'minimal') ?? 'modern',
+        signatureUrl: branding?.signatureUrl ?? null,
+      }
+    } else if (branding) {
+      const rawLogoUrl = branding.logoUrl ?? null
+      const logoUrlForPdf =
+        rawLogoUrl && rawLogoUrl.startsWith('/branding-logos/')
+          ? getBrandingLogoAbsolutePath(rawLogoUrl) ?? rawLogoUrl
+          : rawLogoUrl
+
+      // Backwards-compatible "implicit" template from branding settings
+      template = {
+        name: 'Default',
+        logoUrl: logoUrlForPdf,
+        primaryColor: branding.primaryColor ?? '#000000',
+        accentColor: '#059669',
+        showLogo: !!branding.logoUrl,
+        showFooter: true,
+        footerText: branding.footerText ?? null,
+        layout: 'modern',
+        signatureUrl: branding.signatureUrl ?? null,
+      }
+    }
+
     // Generate PDF buffer
     const pdfBuffer = await renderToBuffer(
-      InvoicePDF({ 
+      InvoicePDF({
         invoice: invoiceData,
-        branding: branding || undefined
-      })
+        template,
+      }),
     )
 
     // Return PDF response (convert Buffer to Uint8Array for NextResponse)
