@@ -8,11 +8,111 @@ const THRESHOLD_MS = 50
 const TEST_USER_ID = process.env.TEST_USER_ID ?? 'perf-test-user'
 const TEST_CLIENT_EMAIL = process.env.TEST_CLIENT_EMAIL ?? 'perf-client@example.com'
 
+const seededInvoiceIds: string[] = []
+const seededTransactionIds: string[] = []
+const seededDisputeIds: string[] = []
+const seededPaymentAdvanceIds: string[] = []
+
 beforeAll(async () => {
   await prisma.$connect()
+
+  const now = new Date()
+
+  // Seed invoices (150+ records) for various performance scenarios
+  for (let i = 0; i < 150; i++) {
+    const isPaid = i % 3 === 0
+    const isPending = i % 3 === 1
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        userId: TEST_USER_ID,
+        status: isPaid ? 'paid' : isPending ? 'pending' : 'canceled',
+        clientEmail: TEST_CLIENT_EMAIL,
+        createdAt: new Date(now.getTime() - i * 60_000), // spread over time
+        dueDate: new Date(now.getTime() - (i - 30) * 24 * 60_60 * 1000), // some overdue, some future
+      },
+    })
+    // @ts-expect-error id shape depends on schema but is expected to exist
+    seededInvoiceIds.push(invoice.id)
+  }
+
+  // Additional pending/overdue invoices without clientEmail for overdue/admin scenarios
+  for (let i = 0; i < 50; i++) {
+    const invoice = await prisma.invoice.create({
+      data: {
+        userId: TEST_USER_ID,
+        status: 'pending',
+        createdAt: new Date(now.getTime() - (i + 150) * 60_000),
+        dueDate: new Date(now.getTime() - (i + 1) * 24 * 60 * 60 * 1000), // definitely overdue
+      },
+    })
+    // @ts-expect-error id shape depends on schema but is expected to exist
+    seededInvoiceIds.push(invoice.id)
+  }
+
+  // Seed transactions for the user
+  for (let i = 0; i < 100; i++) {
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId: TEST_USER_ID,
+        status: i % 2 === 0 ? 'completed' : 'pending',
+        createdAt: new Date(now.getTime() - i * 30_000),
+      },
+    })
+    // @ts-expect-error id shape depends on schema but is expected to exist
+    seededTransactionIds.push(transaction.id)
+  }
+
+  // Seed disputes
+  for (let i = 0; i < 50; i++) {
+    const dispute = await prisma.dispute.create({
+      data: {
+        status: i % 2 === 0 ? 'open' : 'closed',
+        createdAt: new Date(now.getTime() - i * 45_000),
+      },
+    })
+    // @ts-expect-error id shape depends on schema but is expected to exist
+    seededDisputeIds.push(dispute.id)
+  }
+
+  // Seed payment advances
+  for (let i = 0; i < 20; i++) {
+    const paymentAdvance = await prisma.paymentAdvance.create({
+      data: {
+        userId: TEST_USER_ID,
+        status: i % 2 === 0 ? 'pending' : 'approved',
+      },
+    })
+    // @ts-expect-error id shape depends on schema but is expected to exist
+    seededPaymentAdvanceIds.push(paymentAdvance.id)
+  }
 })
 
 afterAll(async () => {
+  // Best-effort cleanup of seeded data
+  if (seededInvoiceIds.length > 0) {
+    await prisma.invoice.deleteMany({
+      where: { id: { in: seededInvoiceIds } as any },
+    })
+  }
+
+  if (seededTransactionIds.length > 0) {
+    await prisma.transaction.deleteMany({
+      where: { id: { in: seededTransactionIds } as any },
+    })
+  }
+
+  if (seededDisputeIds.length > 0) {
+    await prisma.dispute.deleteMany({
+      where: { id: { in: seededDisputeIds } as any },
+    })
+  }
+
+  if (seededPaymentAdvanceIds.length > 0) {
+    await prisma.paymentAdvance.deleteMany({
+      where: { id: { in: seededPaymentAdvanceIds } as any },
+    })
+  }
   await prisma.$disconnect()
 })
 
