@@ -147,6 +147,12 @@ model Invoice {
 
   subscriptionId          String?
   subscription            Subscription?         @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([userId, paidAt(sort: Desc)])
+  @@index([clientEmail, status])
+  @@index([dueDate])
+  @@index([status, createdAt(sort: Desc)])
 }
 
 model Subscription {
@@ -242,6 +248,9 @@ model Transaction {
   @@index([status])
   @@index([type])
   @@index([bankAccountId])
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([invoiceId])
+  @@index([type, status])
 }
 
 model ReferralEarning {
@@ -324,6 +333,7 @@ model Dispute {
   messages DisputeMessage[]
 
   @@index([invoiceId])
+  @@index([status, createdAt(sort: Desc)])
 }
 
 model DisputeMessage {
@@ -435,6 +445,7 @@ model PaymentAdvance {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
+  @@index([userId, status])
   @@index([userId])
   @@index([invoiceId])
 }
@@ -451,6 +462,8 @@ model AuditEvent {
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   actor   User?   @relation(fields: [actorId], references: [id])
 
+  @@index([invoiceId, createdAt(sort: Desc)])
+  @@index([actorId])
   @@index([invoiceId])
   @@index([eventType])
   @@index([createdAt])
