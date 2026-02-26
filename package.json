@@ -6,7 +6,7 @@
     "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**'",
+    "lint": "next lint",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
     "audit": "npm audit --audit-level=moderate"
