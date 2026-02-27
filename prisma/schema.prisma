@@ -55,6 +55,7 @@ model User {
   anchorSessions         AnchorSession[]
   expenses              Expense[]
   subscriptions         Subscription[]
+  invoiceTemplates       InvoiceTemplate[]
 }
 
 model Wallet {
@@ -798,4 +799,22 @@ model PaymentMethod {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model InvoiceTemplate {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String   @default("Default")
+  isDefault    Boolean  @default(false)
+  logoUrl      String?
+  primaryColor String   @default("#000000")
+  accentColor  String   @default("#6366f1")
+  showLogo     Boolean  @default(true)
+  showFooter   Boolean  @default(true)
+  footerText   String?
+  layout       String   @default("modern")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
