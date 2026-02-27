@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
 import { getUserBadgeStatus, checkBadgeEligibility, BadgeCriteria } from "@/lib/badges";
 import { issueSoulboundBadge } from "@/lib/stellar";
+import { logger } from '@/lib/logger'
 
 async function getOrCreateUser(claims: AuthTokenClaims) {
   let user = await prisma.user.findUnique({ where: { privyId: claims.userId } });
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ badges });
   } catch (error) {
-    console.error("Badges GET error:", error);
+    logger.error({ err: error }, "Badges GET error:");
     return NextResponse.json(
       { error: "Failed to get badges" },
       { status: 500 },
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
     // Get the badge issuer secret key from environment
     const issuerSecretKey = process.env.BADGE_ISSUER_SECRET_KEY;
     if (!issuerSecretKey) {
-      console.error("BADGE_ISSUER_SECRET_KEY not configured");
+      logger.error("BADGE_ISSUER_SECRET_KEY not configured");
       return NextResponse.json(
         { error: "Badge minting not configured" },
         { status: 500 },
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
         { status: 201 },
       );
     } catch (stellarError: any) {
-      console.error("Stellar badge minting error:", stellarError);
+      logger.error({ err: stellarError }, "Stellar badge minting error:");
       return NextResponse.json(
         {
           error: "Failed to mint badge on Stellar",
@@ -201,7 +202,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error("Badges POST error:", error);
+    logger.error({ err: error }, "Badges POST error:");
     return NextResponse.json(
       { error: "Failed to claim badge" },
       { status: 500 },

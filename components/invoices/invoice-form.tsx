@@ -3,11 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
+import { Wand2, Loader2 } from 'lucide-react'
+import { logger } from '@/lib/logger'
 
 export function InvoiceForm() {
   const router = useRouter()
   const { getAccessToken } = usePrivy()
   const [isLoading, setIsLoading] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ clientEmail: '', clientName: '', description: '', amount: '', currency: 'USD', dueDate: '' })
   const [isRecurring, setIsRecurring] = useState(false)
@@ -46,6 +49,33 @@ export function InvoiceForm() {
     }
   }
 
+  const handleMagicWrite = async () => {
+    if (!form.description.trim()) {
+      setError('Please enter some keywords first')
+      return
+    }
+
+    setIsGenerating(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/ai/generate-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: form.description }),
+      })
+
+      if (!res.ok) throw new Error('Failed to generate description')
+      const data = await res.json()
+      setForm(prev => ({ ...prev, description: data.description }))
+    } catch (err) {
+      logger.error({ err }, 'Magic Write failed')
+      setError('Failed to generate professional description')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
@@ -66,8 +96,24 @@ export function InvoiceForm() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-brand-black mb-2">Description *</label>
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-brand-black">Description *</label>
+          <button
+            type="button"
+            onClick={handleMagicWrite}
+            disabled={isGenerating || !form.description.trim()}
+            className="flex items-center gap-1.5 text-xs font-semibold text-brand-black bg-brand-light px-3 py-1.5 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50"
+          >
+            {isGenerating ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Wand2 className="w-3.5 h-3.5" />
+            )}
+            Magic Write
+          </button>
+        </div>
         <textarea name="description" value={form.description} onChange={handleChange} required rows={3} className="w-full px-4 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none resize-none" placeholder="Logo design, website development, etc." />
+        <p className="mt-1 text-xs text-gray-500 italic">Enter keywords and click 'Magic Write' for a professional touch.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

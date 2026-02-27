@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getOrCreateUserFromRequest, round2 } from '@/app/api/routes-d/finance/_shared'
 import { storeExpenseReceiptFile, validateReceiptFile } from '@/lib/file-storage'
 import { Decimal } from '@prisma/client/runtime/library'
+import { logger } from '@/lib/logger'
 
 const EXPENSE_CATEGORIES = [
   'Software',
@@ -166,7 +167,7 @@ export async function GET(request: NextRequest) {
       expenses: expenses.map(serializeExpense),
     })
   } catch (error) {
-    console.error('Expenses GET error:', error)
+    logger.error({ err: error }, 'Expenses GET error:')
     return NextResponse.json({ error: 'Failed to list expenses' }, { status: 500 })
   }
 }
@@ -213,7 +214,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Expenses POST error:', error)
+    logger.error({ err: error }, 'Expenses POST error:')
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 })
   }
 }

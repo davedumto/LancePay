@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 import {
   calculateTrustScore,
   getTotalOutstandingAdvances,
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Eligibility check error:', error)
+    logger.error({ err: error }, 'Eligibility check error:')
     return NextResponse.json(
       { error: 'Failed to check eligibility' },
       { status: 500 }

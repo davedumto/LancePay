@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthContext } from '@/app/api/routes-d/disputes/_shared'
 import { getUserTrustScoreData } from '@/lib/reputation'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
       lastUpdatedAt: scoreData.lastUpdatedAt.toISOString(),
     })
   } catch (error) {
-    console.error('Error fetching trust score:', error)
+    logger.error({ err: error }, 'Error fetching trust score:')
     return NextResponse.json(
       { 
         error: 'Failed to fetch trust score',

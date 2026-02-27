@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClaimableBalances, getTotalClaimableAmount } from "@/lib/claimable-balances";
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/claimable-balances
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
       count: balances.length,
     });
   } catch (error) {
-    console.error("Error fetching claimable balances:", error);
+    logger.error({ err: error }, "Error fetching claimable balances:");
     return NextResponse.json(
       { error: "Failed to fetch claimable balances" },
       { status: 500 }

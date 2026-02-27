@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 const supportTicketSchema = z.object({
     subject: z.string().min(1, 'Subject is required').max(100),
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
         // In a real application, we would save this to a 'SupportTicket' table
         const ticketId = `TKT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
 
-        console.log(`[Support Ticket Submission] User: ${user?.email || claims.userId}, Ticket: ${ticketId}, Subject: ${subject}`)
+        logger.info(`[Support Ticket Submission] User: ${user?.email || claims.userId}, Ticket: ${ticketId}, Subject: ${subject}`)
 
         // Simulate some "processing" time
         // await new Promise(resolve => setTimeout(resolve, 500))
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
             },
         }, { status: 201 })
     } catch (error) {
-        console.error('Support Ticket POST error:', error)
+        logger.error({ err: error }, 'Support Ticket POST error:')
         return NextResponse.json({ error: 'Failed to submit support ticket' }, { status: 500 })
     }
 }

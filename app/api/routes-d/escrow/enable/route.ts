@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { deployAndInitEscrow, EscrowEnableSchema, getAuthContext } from '@/app/api/routes-d/escrow/_shared'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
         invoiceId: invoice.id,
       })
     } catch (deployError) {
-      console.error('Contract deployment failed:', deployError)
+      logger.error({ err: deployError }, 'Contract deployment failed:')
       return NextResponse.json({ error: 'Failed to deploy escrow contract on-chain' }, { status: 500 })
     }
 
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Escrow enable error:', error)
+    logger.error({ err: error }, 'Escrow enable error:')
     return NextResponse.json({ error: 'Failed to enable escrow' }, { status: 500 })
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 import {
   classifyDomain,
   getDomainFromEmail,
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
       lastCheckedAt: now.toISOString(),
     })
   } catch (error) {
-    console.error('Verification client-check error:', error)
+    logger.error({ err: error }, 'Verification client-check error:')
     return NextResponse.json({ error: 'Verification check failed' }, { status: 500 })
   }
 }

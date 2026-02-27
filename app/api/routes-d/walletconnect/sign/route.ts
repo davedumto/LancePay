@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signTransaction, signAndSubmitTransaction } from "@/lib/walletconnect";
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/walletconnect/sign
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
       data: result,
     });
   } catch (error) {
-    console.error("WalletConnect signing error:", error);
+    logger.error({ err: error }, "WalletConnect signing error:");
     return NextResponse.json(
       { error: "Failed to sign transaction" },
       { status: 500 }

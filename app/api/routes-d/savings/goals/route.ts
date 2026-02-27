@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 import {
   getAuthContext,
   CreateSavingsGoalSchema,
   formatSavingsGoal,
+  validateTotalSavingsPercentage,
 } from '../_shared'
 
 export async function GET(request: NextRequest) {
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error fetching savings goals:', error)
+    logger.error({ err: error }, 'Error fetching savings goals:')
     return NextResponse.json({ error: 'Failed to fetch savings goals' }, { status: 500 })
   }
 }
@@ -59,17 +61,10 @@ export async function POST(request: NextRequest) {
 
     const { title, targetAmount, savingsPercentage } = validationResult.data
 
-    // Check total percentage across all active goals
-    const activeGoals = await prisma.savingsGoal.findMany({
-      where: { userId: user.id, isActive: true, status: 'in_progress' },
-    })
-    const currentTotal = activeGoals.reduce((sum, g) => sum + g.savingsPercentage, 0)
-
-    if (currentTotal + savingsPercentage > 50) {
+    const validation = await validateTotalSavingsPercentage(user.id, savingsPercentage)
+    if (!validation.valid) {
       return NextResponse.json(
-        {
-          error: `Cannot exceed 50% total savings. Current: ${currentTotal}%, Requested: ${savingsPercentage}%, Available: ${50 - currentTotal}%`,
-        },
+        { error: validation.error },
         { status: 400 }
       )
     }
@@ -88,7 +83,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Error creating savings goal:', error)
+    logger.error({ err: error }, 'Error creating savings goal:')
     return NextResponse.json({ error: 'Failed to create savings goal' }, { status: 500 })
   }
 }

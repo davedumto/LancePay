@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/privacy/encrypted-invoice/[id]
@@ -57,7 +58,7 @@ export async function GET(
             walletAddress: invoice.user.wallet?.address || null,
         })
     } catch (error) {
-        console.error('Encrypted invoice GET [id] error:', error)
+        logger.error({ err: error }, 'Encrypted invoice GET [id] error:')
         return NextResponse.json(
             { error: 'Failed to fetch invoice' },
             { status: 500 }

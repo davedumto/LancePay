@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUsdToNgnRate } from "@/lib/exchange-rate";
 import { server } from "@/lib/stellar";
+import { logger } from '@/lib/logger'
 
 /**
  * Fee Configuration Constants
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error("Error calculating fee quote:", error);
+    logger.error({ err: error }, "Error calculating fee quote:");
     
     return NextResponse.json(
       { error: "Failed to calculate fee quote. Please try again later." },

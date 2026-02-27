@@ -4,6 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import { decrypt } from '@/lib/crypto'
 import { sendEmail } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
     try {
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, message: '2FA disabled' })
 
     } catch (error) {
-        console.error(error)
+        logger.error(error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

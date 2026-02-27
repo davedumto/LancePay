@@ -3,6 +3,10 @@
         {
             "path": "/api/cron/cancel-overdue-invoices",
             "schedule": "0 2 * * *"
+        },
+        {
+            "path": "/api/cron/process-webhook-retries",
+            "schedule": "*/5 * * * *"
         }
     ]
 }

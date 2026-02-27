@@ -4,6 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 import { sendMessageSchema } from '@/lib/chat-validation'
 import { dispatchWebhooks } from '@/lib/webhooks'
 import { sendInvoiceMessageEmail } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/collaboration/chat?invoiceId={id}
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ messages, invoiceNumber: invoice.invoiceNumber })
     } catch (error) {
-        console.error('Chat GET error:', error)
+        logger.error({ err: error }, 'Chat GET error:')
         return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
     }
 }
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
                     invoiceNumber: invoice.invoiceNumber,
                     message: content,
                     senderName: finalSenderName,
-                }).catch((err) => console.error('Failed to send message email to client:', err))
+                }).catch((err) => logger.error({ err: err }, 'Failed to send message email to client:'))
             } else {
                 // Notify freelancer
                 await sendInvoiceMessageEmail({
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
                     invoiceNumber: invoice.invoiceNumber,
                     message: content,
                     senderName: finalSenderName,
-                }).catch((err) => console.error('Failed to send message email to freelancer:', err))
+                }).catch((err) => logger.error({ err: err }, 'Failed to send message email to freelancer:'))
             }
 
             // Dispatch webhook
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
                 content,
                 hasAttachment: !!attachmentUrl,
                 createdAt: message.createdAt.toISOString(),
-            }).catch((err) => console.error('Failed to dispatch message webhook:', err))
+            }).catch((err) => logger.error({ err: err }, 'Failed to dispatch message webhook:'))
         }
 
         return NextResponse.json(
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
             { status: 201 }
         )
     } catch (error) {
-        console.error('Chat POST error:', error)
+        logger.error({ err: error }, 'Chat POST error:')
         return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
     }
 }

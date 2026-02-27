@@ -6,6 +6,7 @@ import { decrypt } from '@/lib/crypto'
 import { isValidStellarAddress, sendUSDCPayment } from '@/lib/stellar'
 import { Keypair } from '@stellar/stellar-sdk'
 import { computeProposalProgress, expireProposalIfStale, progressSummary } from '../_shared'
+import { logger } from '@/lib/logger'
 
 const ApproveSchema = z.object({
   proposalId: z.string().min(1),
@@ -212,7 +213,7 @@ export async function POST(request: NextRequest) {
       progress: { ...refreshedProgress, summary: progressSummary(refreshedProgress) },
     })
   } catch (error) {
-    console.error('Teams multisig approve error:', error)
+    logger.error({ err: error }, 'Teams multisig approve error:')
     return NextResponse.json({ error: 'Failed to approve proposal' }, { status: 500 })
   }
 }

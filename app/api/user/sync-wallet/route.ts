@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 import { PrivyClient } from '@privy-io/server-auth'
 
 const privyClient = new PrivyClient(
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
       address: wallet.address
     })
   } catch (error) {
-    console.error('Wallet sync error:', error)
+    logger.error({ err: error }, 'Wallet sync error')
     return NextResponse.json({ error: 'Failed to sync wallet' }, { status: 500 })
   }
 }

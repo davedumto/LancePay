@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getAuthContext, isAdminEmail } from '@/app/api/routes-d/disputes/_shared'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       })),
     })
   } catch (error) {
-    console.error('Dispute get error:', error)
+    logger.error({ err: error }, 'Dispute get error:')
     return NextResponse.json({ error: 'Failed to get dispute' }, { status: 500 })
   }
 }

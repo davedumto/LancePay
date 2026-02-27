@@ -5,6 +5,7 @@ import { sendUSDCPayment } from '@/lib/stellar'
 import { lookupRecipient, hasSufficientBalance } from '@/app/api/routes-d/transfers/_shared'
 import { sendTransferReceivedEmail } from '@/lib/email'
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
 
 const TransferInternalSchema = z.object({
   recipientIdentifier: z.string().min(1, 'recipientIdentifier is required'),
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
     try {
       txHash = await sendUSDCPayment(sender.wallet.address, senderSecretKey, recipientAddress, amount)
     } catch (error: any) {
-      console.error('Stellar transfer error:', error)
+      logger.error({ err: error }, 'Stellar transfer error:')
       return NextResponse.json(
         {
           error: 'Transfer failed on Stellar network',
@@ -190,7 +191,7 @@ export async function POST(request: NextRequest) {
       memo: memo || null,
     })
   } catch (error) {
-    console.error('Internal transfer error:', error)
+    logger.error({ err: error }, 'Internal transfer error:')
     return NextResponse.json({ error: 'Failed to process transfer' }, { status: 500 })
   }
 }

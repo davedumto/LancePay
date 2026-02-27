@@ -8,6 +8,7 @@ import {
   getYearBounds,
 } from '@/app/api/routes-d/tax-reports/_shared'
 import { getUsdToNgnRate } from '@/lib/exchange-rate'
+import { logger } from '@/lib/logger'
 
 /**
  * TCC Data Generator - Tax Clearance Certificate Data Generator
@@ -332,7 +333,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('TCC Data Generator Error:', error)
+    logger.error({ err: error }, 'TCC Data Generator Error:')
     return NextResponse.json(
       { error: 'Failed to generate TCC data. Please try again later.' },
       { status: 500 }

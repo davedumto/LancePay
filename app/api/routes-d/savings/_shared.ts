@@ -41,6 +41,35 @@ export const UpdateSavingsGoalSchema = z.object({
 export type CreateSavingsGoalInput = z.infer<typeof CreateSavingsGoalSchema>
 export type UpdateSavingsGoalInput = z.infer<typeof UpdateSavingsGoalSchema>
 
+export async function validateTotalSavingsPercentage(
+  userId: string,
+  requestedPercentage: number,
+  excludeGoalId?: string
+): Promise<{ valid: boolean; currentTotal: number; error?: string }> {
+  const activeGoals = await prisma.savingsGoal.findMany({
+    where: {
+      userId,
+      isActive: true,
+      status: 'in_progress',
+      ...(excludeGoalId ? { id: { not: excludeGoalId } } : {}),
+    },
+    select: { savingsPercentage: true },
+  })
+
+  const currentTotal = activeGoals.reduce((sum, g) => sum + g.savingsPercentage, 0)
+  const newTotal = currentTotal + requestedPercentage
+
+  if (newTotal > 50) {
+    return {
+      valid: false,
+      currentTotal,
+      error: `Cannot exceed 50% total savings. Current: ${currentTotal}%, Requested: ${requestedPercentage}%, Available: ${50 - currentTotal}%`,
+    }
+  }
+
+  return { valid: true, currentTotal }
+}
+
 export function formatSavingsGoal(goal: {
   id: string
   userId: string

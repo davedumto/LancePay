@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { validateReceiptFile, storeReceiptFile } from '@/lib/file-storage'
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
 
 const SubmitPaymentSchema = z.object({
   invoiceNumber: z.string().min(1),
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
     try {
       receiptUrl = await storeReceiptFile(invoice.id, file)
     } catch (error) {
-      console.error('File storage error:', error)
+      logger.error({ err: error }, 'File storage error:')
       return NextResponse.json(
         { error: 'Failed to store receipt file' },
         { status: 500 }
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
         currency,
         notes,
       }).catch((err) => {
-        console.error('Email notification failed:', err)
+        logger.error({ err: err }, 'Email notification failed:')
         // Don't fail the request if email fails
       })
     }
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
         'Payment proof submitted successfully. The freelancer will verify it shortly.',
     })
   } catch (error) {
-    console.error('Manual payment submission error:', error)
+    logger.error({ err: error }, 'Manual payment submission error:')
     return NextResponse.json(
       { error: 'Failed to submit payment proof' },
       { status: 500 }

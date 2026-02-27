@@ -7,6 +7,7 @@ import {
 } from '@/app/api/routes-d/disputes/_shared'
 import { sendDisputeResolvedEmail } from '@/lib/email'
 import { updateUserTrustScore } from '@/lib/reputation'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       try {
         await updateUserTrustScore(dispute.invoice.userId)
       } catch (error) {
-        console.error('Failed to update trust score after dispute resolution:', error)
+        logger.error({ err: error }, 'Failed to update trust score after dispute resolution:')
         // Don't fail the dispute resolution if score update fails
       }
     }
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Dispute resolve error:', error)
+    logger.error({ err: error }, 'Dispute resolve error:')
     return NextResponse.json({ error: 'Failed to resolve dispute' }, { status: 500 })
   }
 }

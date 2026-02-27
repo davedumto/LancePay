@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { EscrowDisputeSchema, getAuthContext } from '@/app/api/routes-d/escrow/_shared'
 import { sendEscrowDisputedEmail } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Escrow dispute error:', error)
+    logger.error({ err: error }, 'Escrow dispute error:')
     return NextResponse.json({ error: 'Failed to dispute escrow' }, { status: 500 })
   }
 }

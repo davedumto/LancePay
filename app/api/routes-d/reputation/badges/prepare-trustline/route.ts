@@ -5,6 +5,7 @@ import { verifyAuthToken } from "@/lib/auth";
 import { checkBadgeEligibility, BadgeCriteria } from "@/lib/badges";
 import { prepareBadgeTrustlineXdr } from "@/lib/stellar";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 async function getOrCreateUser(claims: AuthTokenClaims) {
   let user = await prisma.user.findUnique({ where: { privyId: claims.userId } });
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     const issuerSecretKey = process.env.BADGE_ISSUER_SECRET_KEY;
     if (!issuerSecretKey) {
-      console.error("BADGE_ISSUER_SECRET_KEY not configured");
+      logger.error("BADGE_ISSUER_SECRET_KEY not configured");
       return NextResponse.json({ error: "Badge minting not configured" }, { status: 500 });
     }
 
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ xdr, badgeId });
   } catch (error) {
-    console.error("Prepare trustline error:", error);
+    logger.error({ err: error }, "Prepare trustline error:");
     return NextResponse.json({ error: "Failed to prepare trustline" }, { status: 500 });
   }
 }

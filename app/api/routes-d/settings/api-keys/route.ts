@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getAuthContext } from '@/app/api/routes-d/disputes/_shared'
 import { generateApiKey } from '@/lib/api-keys'
+import { logger } from '@/lib/logger'
 
 const rotateRevokeSchema = z.object({
     apiKeyId: z.string().min(1),
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     } catch (error) {
-        console.error('API key rotation POST error:', error)
+        logger.error({ err: error }, 'API key rotation POST error:')
         return NextResponse.json(
             { error: 'Failed to process API key rotation' },
             { status: 500 }

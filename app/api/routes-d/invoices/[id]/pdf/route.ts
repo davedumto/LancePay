@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { InvoicePDF, type InvoiceTemplateConfig } from '@/lib/invoice-renderer'
 import { getBrandingLogoAbsolutePath } from '@/lib/file-storage'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -120,7 +121,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('PDF generation error:', error)
+    logger.error({ err: error }, 'PDF generation error:')
     return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 })
   }
 }

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { 
-  getAuthContext, 
-  AutoSwapRuleSchema, 
+import { logger } from '@/lib/logger'
+import {
+  getAuthContext,
+  AutoSwapRuleSchema,
   AutoSwapRuleStatusSchema,
-  formatAutoSwapRule 
+  formatAutoSwapRule
 } from '../_shared'
 
 /**
@@ -14,21 +15,21 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
 
     const { user } = authResult
 
-    
+
     const rule = await prisma.autoSwapRule.findFirst({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
-      include: { 
+      include: {
         bankAccount: {
           select: {
             id: true,
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
             accountNumber: true,
             accountName: true,
           }
-        } 
+        }
       },
     })
 
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
       rule: formatAutoSwapRule(rule),
     })
   } catch (error) {
-    console.error('Error fetching auto-swap rule:', error)
+    logger.error({ err: error }, 'Error fetching auto-swap rule:')
     return NextResponse.json(
       { error: 'Failed to fetch auto-swap rule' },
       { status: 500 }
@@ -71,10 +72,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -87,9 +88,9 @@ export async function POST(request: NextRequest) {
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { 
-          error: 'Validation failed', 
-          details: validationResult.error.flatten().fieldErrors 
+        {
+          error: 'Validation failed',
+          details: validationResult.error.flatten().fieldErrors
         },
         { status: 400 }
       )
@@ -122,42 +123,42 @@ export async function POST(request: NextRequest) {
 
     const rule = existingRule
       ? await prisma.autoSwapRule.update({
-          where: { id: existingRule.id },
-          data: {
-            percentage,
-            bankAccountId,
-            isActive,
-            updatedAt: new Date(),
-          },
-          include: {
-            bankAccount: {
-              select: {
-                id: true,
-                bankName: true,
-                accountNumber: true,
-                accountName: true,
-              }
+        where: { id: existingRule.id },
+        data: {
+          percentage,
+          bankAccountId,
+          isActive,
+          updatedAt: new Date(),
+        },
+        include: {
+          bankAccount: {
+            select: {
+              id: true,
+              bankName: true,
+              accountNumber: true,
+              accountName: true,
             }
-          },
-        })
+          }
+        },
+      })
       : await prisma.autoSwapRule.create({
-          data: {
-            userId: user.id,
-            percentage,
-            bankAccountId,
-            isActive,
-          },
-          include: {
-            bankAccount: {
-              select: {
-                id: true,
-                bankName: true,
-                accountNumber: true,
-                accountName: true,
-              }
+        data: {
+          userId: user.id,
+          percentage,
+          bankAccountId,
+          isActive,
+        },
+        include: {
+          bankAccount: {
+            select: {
+              id: true,
+              bankName: true,
+              accountNumber: true,
+              accountName: true,
             }
-          },
-        })
+          }
+        },
+      })
 
     return NextResponse.json({
       success: true,
@@ -165,7 +166,7 @@ export async function POST(request: NextRequest) {
       rule: formatAutoSwapRule(rule),
     }, { status: 201 })
   } catch (error) {
-    console.error('Error saving auto-swap rule:', error)
+    logger.error({ err: error }, 'Error saving auto-swap rule:')
     return NextResponse.json(
       { error: 'Failed to save auto-swap rule' },
       { status: 500 }
@@ -180,10 +181,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -196,9 +197,9 @@ export async function PATCH(request: NextRequest) {
 
     if (!validationResult.success) {
       return NextResponse.json(
-        { 
-          error: 'Validation failed', 
-          details: validationResult.error.flatten().fieldErrors 
+        {
+          error: 'Validation failed',
+          details: validationResult.error.flatten().fieldErrors
         },
         { status: 400 }
       )
@@ -244,7 +245,7 @@ export async function PATCH(request: NextRequest) {
       rule: formatAutoSwapRule(rule),
     })
   } catch (error) {
-    console.error('Error updating auto-swap rule status:', error)
+    logger.error({ err: error }, 'Error updating auto-swap rule status:')
     return NextResponse.json(
       { error: 'Failed to update auto-swap rule status' },
       { status: 500 }
@@ -259,10 +260,10 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const authResult = await getAuthContext(request)
-    
+
     if ('error' in authResult) {
       return NextResponse.json(
-        { error: authResult.error }, 
+        { error: authResult.error },
         { status: 401 }
       )
     }
@@ -292,7 +293,7 @@ export async function DELETE(request: NextRequest) {
       message: 'Auto-swap rule deleted successfully',
     })
   } catch (error) {
-    console.error('Error deleting auto-swap rule:', error)
+    logger.error({ err: error }, 'Error deleting auto-swap rule:')
     return NextResponse.json(
       { error: 'Failed to delete auto-swap rule' },
       { status: 500 }

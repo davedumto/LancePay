@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFeeStats } from "@/lib/fee-estimation";
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/fee-stats
@@ -14,7 +15,7 @@ export async function GET() {
       data: feeData,
     });
   } catch (error) {
-    console.error("Error fetching fee stats:", error);
+    logger.error({ err: error }, "Error fetching fee stats:");
     return NextResponse.json(
       { error: "Failed to fetch fee stats" },
       { status: 500 }

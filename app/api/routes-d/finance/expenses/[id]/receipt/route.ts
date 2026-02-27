@@ -5,6 +5,7 @@ import path from 'path'
 import { prisma } from '@/lib/db'
 import { getOrCreateUserFromRequest } from '@/app/api/routes-d/finance/_shared'
 import { getReceiptAbsolutePath } from '@/lib/file-storage'
+import { logger } from '@/lib/logger'
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -69,7 +70,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Expense receipt GET error:', error)
+    logger.error({ err: error }, 'Expense receipt GET error:')
     return NextResponse.json({ error: 'Failed to retrieve expense receipt' }, { status: 500 })
   }
 }

@@ -12,6 +12,7 @@ import { initiateWithdrawal, getAnchorInfo } from '@/lib/stellar/sep24';
 import { type AnchorId, ANCHOR_CONFIGS } from '@/lib/stellar/anchors';
 import { isTokenExpired } from '@/lib/stellar/sep10';
 import { Decimal } from '@prisma/client/runtime/library';
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/sep24/withdraw
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
       withdraw: info.withdraw,
     });
   } catch (error) {
-    console.error('Error getting anchor info:', error);
+    logger.error({ err: error }, 'Error getting anchor info:');
     return NextResponse.json(
       { error: 'Failed to get anchor info' },
       { status: 500 }
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
       asset,
     });
   } catch (error) {
-    console.error('Withdrawal initiation error:', error);
+    logger.error({ err: error }, 'Withdrawal initiation error:');
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to initiate withdrawal' },
       { status: 500 }

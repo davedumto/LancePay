@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
 
 const hexColorSchema = z
   .string()
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ templates })
   } catch (error) {
-    console.error('Error fetching invoice templates:', error)
+    logger.error({ err: error }, 'Error fetching invoice templates:')
     return NextResponse.json(
       {
         error: 'Internal server error',
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ template }, { status: 201 })
   } catch (error) {
-    console.error('Error creating invoice template:', error)
+    logger.error({ err: error }, 'Error creating invoice template:')
     return NextResponse.json(
       {
         error: 'Internal server error',

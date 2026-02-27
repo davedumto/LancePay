@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/analytics/transactions
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
             select: { id: true, email: true }
         })
 
-        console.log(`[Analytics API] Transaction data requested by ${user?.email || claims.userId}`)
+        logger.info(`[Analytics API] Transaction data requested by ${user?.email || claims.userId}`)
 
         // 2. Generate Mock Analytics Data
         const mockData = {
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
             data: mockData
         })
     } catch (error) {
-        console.error('Transaction Analytics GET error:', error)
+        logger.error({ err: error }, 'Transaction Analytics GET error:')
         return NextResponse.json(
             { error: 'Failed to fetch transaction analytics' },
             { status: 500 }

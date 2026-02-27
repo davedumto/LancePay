@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createEncryptedInvoiceSchema } from '@/lib/encrypted-invoice-validation'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/routes-d/privacy/encrypted-invoice
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
             { status: 201 }
         )
     } catch (error) {
-        console.error('Encrypted invoice POST error:', error)
+        logger.error({ err: error }, 'Encrypted invoice POST error:')
         return NextResponse.json(
             { error: 'Failed to create confidential invoice' },
             { status: 500 }
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
             })),
         })
     } catch (error) {
-        console.error('Encrypted invoice GET error:', error)
+        logger.error({ err: error }, 'Encrypted invoice GET error:')
         return NextResponse.json(
             { error: 'Failed to fetch confidential invoices' },
             { status: 500 }

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { authenticateApiKey } from '@/app/api/routes-d/developers/_shared'
 import { externalInvoiceSchema } from '@/lib/validations'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 
 // Rate limiting map (in production, use Redis or similar)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('External invoice creation error:', error)
+    logger.error({ err: error }, 'External invoice creation error:')
 
     // Handle specific errors
     if (error instanceof Error) {

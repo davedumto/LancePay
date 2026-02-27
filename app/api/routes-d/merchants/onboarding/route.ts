@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 const merchantOnboardingSchema = z.object({
     businessName: z.string().min(2, 'Business name is required').max(200),
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
         // Mock onboarding processing
         const onboardingId = `OBD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`
 
-        console.log(`[Merchant Onboarding Submission] User: ${user?.email || claims.userId}, OBD: ${onboardingId}, Business: ${businessName}`)
+        logger.info(`[Merchant Onboarding Submission] User: ${user?.email || claims.userId}, OBD: ${onboardingId}, Business: ${businessName}`)
 
         // Simulate asynchronous KYB verification logic
         // In production, this would trigger a background job or third-party verification (e.g. SmileID)
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
             }
         }, { status: 201 })
     } catch (error) {
-        console.error('Merchant Onboarding POST error:', error)
+        logger.error({ err: error }, 'Merchant Onboarding POST error:')
         return NextResponse.json({ error: 'Failed to submit onboarding data' }, { status: 500 })
     }
 }

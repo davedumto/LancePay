@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getPublicTrustScoreData } from '@/lib/reputation'
+import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
@@ -35,7 +36,7 @@ export async function GET(
       isVerified: publicData.isVerified,
     })
   } catch (error) {
-    console.error('Error fetching public trust score:', error)
+    logger.error({ err: error }, 'Error fetching public trust score:')
     return NextResponse.json(
       { error: 'Failed to fetch trust score' },
       { status: 500 }

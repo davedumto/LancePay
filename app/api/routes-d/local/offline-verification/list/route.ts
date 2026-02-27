@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ payments: response })
   } catch (error) {
-    console.error('List manual payments error:', error)
+    logger.error({ err: error }, 'List manual payments error:')
     return NextResponse.json(
       { error: 'Failed to fetch payments' },
       { status: 500 }

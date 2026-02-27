@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { hashToken } from "@/lib/crypto";
+import { logger } from '@/lib/logger'
 
 // POST /api/routes-d/finance/income-proof
 export async function POST(req: NextRequest) {
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
       expiresAt: verification.expiresAt,
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

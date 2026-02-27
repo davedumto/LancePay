@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
     try {
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(settings)
     } catch (error) {
-        console.error('Settings GET error:', error)
+        logger.error({ err: error }, 'Settings GET error:')
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }
@@ -63,7 +64,7 @@ export async function PUT(request: NextRequest) {
 
         return NextResponse.json(settings)
     } catch (error) {
-        console.error('Settings PUT error:', error)
+        logger.error({ err: error }, 'Settings PUT error:')
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

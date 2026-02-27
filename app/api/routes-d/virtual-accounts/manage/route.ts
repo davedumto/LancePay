@@ -11,6 +11,7 @@ import {
   createVirtualAccount,
   getVirtualAccountByUserId,
 } from "@/lib/virtual-accounts/service";
+import { logger } from '@/lib/logger'
 import {
   AccountExistsError,
   ProviderError,
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("GET virtual account error:", error);
+    logger.error({ err: error }, "GET virtual account error:");
     return NextResponse.json(
       { error: "Failed to fetch virtual account" },
       { status: 500 },
@@ -113,11 +114,11 @@ export async function POST(request: NextRequest) {
     // Create virtual account
     const virtualAccount = await createVirtualAccount(user.id);
 
-    console.log("Virtual account created:", {
+    logger.info({
       userId: user.id,
       accountNumber: virtualAccount.accountNumber,
       provider: virtualAccount.provider,
-    });
+    }, "Virtual account created:");
 
     return NextResponse.json(
       {
@@ -135,7 +136,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("POST virtual account error:", error);
+    logger.error({ err: error }, "POST virtual account error:");
 
     // Handle duplicate account error
     if (error instanceof AccountExistsError) {

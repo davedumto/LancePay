@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getAuthContext } from '@/app/api/routes-d/escrow/_shared'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
       })),
     })
   } catch (error) {
-    console.error('Escrow status error:', error)
+    logger.error({ err: error }, 'Escrow status error:')
     return NextResponse.json({ error: 'Failed to get escrow status' }, { status: 500 })
   }
 }

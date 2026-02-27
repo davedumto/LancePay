@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { fundNewWallet } from '@/lib/stellar-funding'
 import { sendAdminAlertEmail } from '@/lib/email'
 import { Prisma } from '@prisma/client'
+import { logger } from '@/lib/logger'
 
 type PrivyLinkedAccount = {
   type?: string
@@ -113,26 +114,26 @@ async function runFundingAndAlerts(ctx: FundingContext): Promise<void> {
   const result = await fundNewWallet(ctx.destination)
 
   if (result.status === 'funded') {
-    console.info('Stellar wallet funded', {
+    logger.info({
       eventType: ctx.eventType,
       privyId: ctx.privyId,
       destination: ctx.destination,
       txHash: result.txHash,
-    })
+    }, 'Stellar wallet funded')
   } else if (result.status === 'skipped') {
-    console.info('Stellar wallet funding skipped', {
+    logger.info({
       eventType: ctx.eventType,
       privyId: ctx.privyId,
       destination: ctx.destination,
       reason: result.reason,
-    })
+    }, 'Stellar wallet funding skipped')
   } else {
-    console.error('Stellar wallet funding failed', {
+    logger.error({
       eventType: ctx.eventType,
       privyId: ctx.privyId,
       destination: ctx.destination,
       reason: result.reason,
-    })
+    }, 'Stellar wallet funding failed')
 
     // Send alert for funding failures 
     try {
@@ -147,22 +148,22 @@ async function runFundingAndAlerts(ctx: FundingContext): Promise<void> {
         },
       })
     } catch (err) {
-      console.error('Admin alert email failed (non-blocking)', {
+      logger.error({
         eventType: ctx.eventType,
         privyId: ctx.privyId,
         destination: ctx.destination,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      })
+        err,
+      }, 'Admin alert email failed (non-blocking)')
     }
   }
 
   if (result.lowBalance) {
-    console.error('Stellar funding wallet balance low', {
+    logger.error({
       eventType: ctx.eventType,
       privyId: ctx.privyId,
       destination: ctx.destination,
       impact: 'Funding wallet below threshold',
-    })
+    }, 'Stellar funding wallet balance low')
 
     // Send alert for low balance 
     try {
@@ -178,12 +179,12 @@ async function runFundingAndAlerts(ctx: FundingContext): Promise<void> {
         },
       })
     } catch (err) {
-      console.error('Admin alert email failed (non-blocking)', {
+      logger.error({
         eventType: ctx.eventType,
         privyId: ctx.privyId,
         destination: ctx.destination,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      })
+        err,
+      }, 'Admin alert email failed (non-blocking)')
     }
   }
 }
@@ -197,14 +198,14 @@ async function runFundingAndAlerts(ctx: FundingContext): Promise<void> {
 async function handleUserCreated(event: PrivyEvent): Promise<void> {
   const extracted = extractUserCreated(event)
   if (!extracted) {
-    console.warn('user.created: missing privyId; skipping')
+    logger.warn('user.created: missing privyId; skipping')
     return
   }
 
   const { privyId, email, linkedAccounts } = extracted
   const walletAddress = extractWalletAddressFromLinkedAccounts(linkedAccounts)
 
-  console.info('user.created received', { privyId, hasEmail: Boolean(email), hasWallet: Boolean(walletAddress) })
+  logger.info({ privyId, hasEmail: Boolean(email), hasWallet: Boolean(walletAddress) }, 'user.created received')
 
   // Use a transaction so concurrent webhooks don't create duplicate users.
   let user = null as null | { id: string; privyId: string; email: string }
@@ -231,7 +232,7 @@ async function handleUserCreated(event: PrivyEvent): Promise<void> {
   }
 
   if (!user) {
-    console.error('user.created: user resolution failed unexpectedly', { privyId })
+    logger.error({ privyId }, 'user.created: user resolution failed unexpectedly')
     return
   }
 
@@ -265,7 +266,7 @@ async function handleUserCreated(event: PrivyEvent): Promise<void> {
 async function handleLinkedAccount(event: PrivyEvent): Promise<void> {
   const extracted = extractLinkedAccount(event)
   if (!extracted) {
-    console.warn('user.linked_account: missing required fields; skipping')
+    logger.warn('user.linked_account: missing required fields; skipping')
     return
   }
 
@@ -273,17 +274,17 @@ async function handleLinkedAccount(event: PrivyEvent): Promise<void> {
   const isEmbedded = isPrivyEmbeddedWallet(linkedAccount)
   const walletAddress = extractWalletAddressFromLinkedAccount(linkedAccount)
 
-  console.info('user.linked_account received', {
+  logger.info({
     privyId,
     isEmbeddedWallet: isEmbedded,
     hasWalletAddress: Boolean(walletAddress),
-  })
+  }, 'user.linked_account received')
 
   if (!isEmbedded || !walletAddress) return
 
   const user = await prisma.user.findUnique({ where: { privyId }, include: { wallet: true } })
   if (!user) {
-    console.warn('user.linked_account: user not found; skipping', { privyId })
+    logger.warn({ privyId }, 'user.linked_account: user not found; skipping')
     return
   }
 
@@ -330,7 +331,7 @@ async function handleUserWalletCreated(event: PrivyEvent): Promise<void> {
     return
   }
 
-  console.warn('user.wallet_created: unsupported payload shape; skipping')
+  logger.warn('user.wallet_created: unsupported payload shape; skipping')
 }
 
 export async function POST(request: NextRequest) {
@@ -339,17 +340,17 @@ export async function POST(request: NextRequest) {
     const parsed = parseJsonSafely(body)
 
     if (!parsed.ok) {
-      console.error('Privy webhook: invalid JSON', { error: parsed.error })
+      logger.error({ err: parsed.error }, 'Privy webhook: invalid JSON')
       return NextResponse.json({ received: true })
     }
 
     const event = parsed.value as PrivyEvent
     const eventType = typeof event?.type === 'string' ? event.type : 'unknown'
 
-    console.log('Privy webhook received:', eventType, JSON.stringify(event, null, 2))
+    logger.info({ eventType, event }, 'Privy webhook received')
 
     if (eventType === 'privy.test') {
-      console.log('Test event received, ignoring')
+      logger.info('Test event received, ignoring')
       return NextResponse.json({ received: true })
     }
 
@@ -369,10 +370,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
-    console.info('Privy webhook: unhandled event type; ignoring', { eventType })
+    logger.info({ eventType }, 'Privy webhook: unhandled event type; ignoring')
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error('Privy webhook error:', error)
+    logger.error({ err: error }, 'Privy webhook error')
     return NextResponse.json({ received: true })
   }
 }

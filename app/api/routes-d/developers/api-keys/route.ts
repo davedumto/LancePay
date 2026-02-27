@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getAuthContext } from '@/app/api/routes-d/disputes/_shared'
 import { generateApiKey } from '@/lib/api-keys'
 import { createApiKeySchema } from '@/lib/validations'
+import { logger } from '@/lib/logger'
 
 // GET /api/routes-d/developers/api-keys - List user's API keys
 export async function GET(request: NextRequest) {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ apiKeys })
   } catch (error) {
-    console.error('API keys GET error:', error)
+    logger.error({ err: error }, 'API keys GET error:')
     return NextResponse.json(
       { error: 'Failed to fetch API keys' },
       { status: 500 }
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('API key creation error:', error)
+    logger.error({ err: error }, 'API key creation error:')
     return NextResponse.json(
       { error: 'Failed to create API key' },
       { status: 500 }

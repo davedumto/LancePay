@@ -5,6 +5,7 @@ import {
   calculateRecoverableXLM,
 } from "@/lib/account-merge";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/account/merge/check
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
       recoverableXLM,
     });
   } catch (error) {
-    console.error("Error checking account merge eligibility:", error);
+    logger.error({ err: error }, "Error checking account merge eligibility:");
     return NextResponse.json(
       { error: "Failed to check account" },
       { status: 500 },
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
       ...result,
     });
   } catch (error: any) {
-    console.error("Account merge error:", error);
+    logger.error({ err: error }, "Account merge error:");
     return NextResponse.json(
       { error: error.message || "Failed to merge account" },
       { status: 500 },

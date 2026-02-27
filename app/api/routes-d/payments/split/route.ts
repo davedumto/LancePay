@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSplitPayment, formatFeeBreakdown } from "@/lib/revenue-split";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/payments/split
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       breakdown,
     });
   } catch (error) {
-    console.error("Split payment error:", error);
+    logger.error({ err: error }, "Split payment error:");
     return NextResponse.json(
       { error: "Payment failed" },
       { status: 500 }
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
       breakdown,
     });
   } catch (error) {
-    console.error("Fee preview error:", error);
+    logger.error({ err: error }, "Fee preview error:");
     return NextResponse.json(
       { error: "Failed to calculate fees" },
       { status: 500 }

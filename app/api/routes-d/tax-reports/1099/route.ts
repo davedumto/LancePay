@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchTaxTransactions, getTaxAuth, parseYearParam, round2 } from '@/app/api/routes-d/tax-reports/_shared'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
       invoices,
     })
   } catch (error) {
-    console.error('Tax 1099 error:', error)
+    logger.error({ err: error }, 'Tax 1099 error:')
     return NextResponse.json({ error: 'Failed to generate 1099 report' }, { status: 500 })
   }
 }

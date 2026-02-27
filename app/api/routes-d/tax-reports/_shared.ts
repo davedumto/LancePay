@@ -55,7 +55,7 @@ export async function fetchTaxTransactions(params: { userId: string; year: numbe
       userId,
       status: 'completed',
       type: { in: ['incoming', 'payment'] },
-      completedAt: { gte: start, lt: end },
+      completedAt: { not: null, gte: start, lt: end },
     },
     orderBy: { completedAt: 'asc' },
     include: {
@@ -68,7 +68,7 @@ export async function fetchTaxTransactions(params: { userId: string; year: numbe
       userId,
       status: 'completed',
       type: 'refund',
-      completedAt: { gte: start, lt: end },
+      completedAt: { not: null, gte: start, lt: end },
     },
     orderBy: { completedAt: 'asc' },
   })
@@ -78,7 +78,7 @@ export async function fetchTaxTransactions(params: { userId: string; year: numbe
       userId,
       status: 'completed',
       type: 'withdrawal',
-      completedAt: { gte: start, lt: end },
+      completedAt: { not: null, gte: start, lt: end },
     },
     orderBy: { completedAt: 'asc' },
   })

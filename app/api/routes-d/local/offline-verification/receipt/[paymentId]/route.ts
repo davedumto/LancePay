@@ -5,6 +5,7 @@ import { getReceiptAbsolutePath } from '@/lib/file-storage'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import { logger } from '@/lib/logger'
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -100,7 +101,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Receipt download error:', error)
+    logger.error({ err: error }, 'Receipt download error:')
     return NextResponse.json(
       { error: 'Failed to retrieve receipt' },
       { status: 500 }

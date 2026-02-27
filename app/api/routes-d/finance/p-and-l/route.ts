@@ -10,6 +10,7 @@ import {
 } from "@/app/api/routes-d/finance/_shared";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { FinancialStatementPDF } from "./pdf-template";
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(responseData);
   } catch (error) {
-    console.error("P&L Report Error:", error);
+    logger.error({ err: error }, "P&L Report Error:");
     return NextResponse.json(
       { error: "Failed to generate P&L report" },
       { status: 500 },

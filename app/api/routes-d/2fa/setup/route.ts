@@ -4,6 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import QRCode from 'qrcode'
 import { encrypt } from '@/lib/crypto'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
     try {
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
             backupCodes
         })
     } catch (error) {
-        console.error('2FA Setup Error:', error)
+        logger.error({ err: error }, '2FA Setup Error:')
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { verifyAuthToken } from '@/lib/auth';
 import { getAccountBalance, isValidStellarAddress, sendUSDCPayment } from '@/lib/stellar';
 import { initiateWithdrawal } from '../../yello-card';
+import { logger } from '@/lib/logger'
 
 interface MassPayoutItem {
   amount: string;
@@ -115,7 +116,7 @@ async function processPayoutItem(
       return { success: false, errorMessage: 'Invalid payout type' };
     }
   } catch (error: any) {
-    console.error('Error processing payout item:', error);
+    logger.error({ err: error }, 'Error processing payout item:');
     const errorMessage = error?.message || 'Unknown error occurred';
 
     return { success: false, errorMessage };
@@ -344,7 +345,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Mass payout error:', error);
+    logger.error({ err: error }, 'Mass payout error:');
     return NextResponse.json(
       {
         error: 'Internal server error',
@@ -444,7 +445,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Get batch status error:', error);
+    logger.error({ err: error }, 'Get batch status error:');
     return NextResponse.json(
       {
         error: 'Internal server error',

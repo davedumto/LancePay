@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getAuthContext } from '@/app/api/routes-d/disputes/_shared'
+import { logger } from '@/lib/logger'
 
 // DELETE /api/routes-d/developers/api-keys/[id] - Deactivate API key
 export async function DELETE(
@@ -45,7 +46,7 @@ export async function DELETE(
       apiKey: { id, name: apiKey.name }
     })
   } catch (error) {
-    console.error('API key deactivation error:', error)
+    logger.error({ err: error }, 'API key deactivation error:')
     return NextResponse.json(
       { error: 'Failed to deactivate API key' },
       { status: 500 }

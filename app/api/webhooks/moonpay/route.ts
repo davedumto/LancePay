@@ -5,13 +5,14 @@ import { createReferralEarning } from '@/lib/referral'
 import { processAutoSwap } from '@/lib/auto-swap'
 import { dispatchWebhooks } from '@/lib/webhooks'
 import { updateUserTrustScore } from '@/lib/reputation'
-import { processWaterfallPayments } from '@/lib/waterfall'
-import { processAdvanceRepayment } from '@/lib/advance-repayment'
+import { logger } from '@/lib/logger'
+import { processAdvanceRepayment } from "@/lib/advance-repayment";
+import { processWaterfallPayments } from "@/lib/waterfall";
 
 export async function POST(request: NextRequest) {
   try {
     const event = await request.json();
-    console.log("MoonPay webhook:", event.type);
+    logger.info({ eventType: event.type }, "MoonPay webhook");
 
     if (
       event.type !== "transaction_completed" &&
@@ -103,11 +104,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (autoSwapResult.triggered) {
-      console.log("Auto-swap triggered for user:", invoice.userId, {
+      logger.info({
+        userId: invoice.userId,
         swapAmount: autoSwapResult.swapAmount,
         remainingAmount: autoSwapResult.remainingAmount,
         bankAccountId: autoSwapResult.bankAccountId,
-      });
+      }, "Auto-swap triggered for user");
       // Auto-swap notification is handled within processAutoSwap
     } else {
       // No auto-swap - send regular payment notification
@@ -138,13 +140,13 @@ export async function POST(request: NextRequest) {
     try {
       await updateUserTrustScore(invoice.userId)
     } catch (error) {
-      console.error('Failed to update trust score after payment:', error)
+      logger.error({ err: error, userId: invoice.userId }, 'Failed to update trust score after payment')
       // Don't fail the payment if score update fails
     }
 
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error("MoonPay webhook error:", error);
+    logger.error({ err: error }, "MoonPay webhook error");
     return NextResponse.json({ received: true });
   }
 }

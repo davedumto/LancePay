@@ -6,6 +6,7 @@ import {
   type DisputeParty,
 } from '@/app/api/routes-d/disputes/_shared'
 import { sendDisputeInitiatedEmail } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
     if (error?.code === 'P2002') {
       return NextResponse.json({ error: 'A dispute already exists for this invoice' }, { status: 409 })
     }
-    console.error('Dispute create error:', error)
+    logger.error({ err: error }, 'Dispute create error:')
     return NextResponse.json({ error: 'Failed to create dispute' }, { status: 500 })
   }
 }

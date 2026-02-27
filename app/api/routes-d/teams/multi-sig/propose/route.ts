@@ -5,6 +5,7 @@ import { getAuthContext } from '@/app/api/routes-d/disputes/_shared'
 import { isValidStellarAddress } from '@/lib/stellar'
 import { Decimal } from '@prisma/client/runtime/library'
 import { progressSummary, proposalExpiresAt } from '../_shared'
+import { logger } from '@/lib/logger'
 
 const ProposeSchema = z.object({
   walletId: z.string().min(1),
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Teams multisig propose error:', error)
+    logger.error({ err: error }, 'Teams multisig propose error:')
     return NextResponse.json({ error: 'Failed to create proposal' }, { status: 500 })
   }
 }

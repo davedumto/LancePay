@@ -1,4 +1,4 @@
-generator client {
+﻿generator client {
   provider = "prisma-client-js"
 }
 
@@ -367,10 +367,38 @@ model UserWebhook {
   lastTriggeredAt  DateTime?
   createdAt        DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Retry/status tracking
+  status              String    @default("ACTIVE") @db.VarChar(20)
+  consecutiveFailures Int       @default(0)
+  lastFailureAt       DateTime?
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
 
   @@index([userId])
   @@index([isActive])
+  @@index([status])
+}
+
+model WebhookDelivery {
+  id             String    @id @default(uuid())
+  webhookId      String
+  eventType      String    @db.VarChar(50)
+  payload        String    @db.Text
+  status         String    @default("pending") @db.VarChar(20)
+  attemptCount   Int       @default(0)
+  lastAttemptAt  DateTime?
+  nextRetryAt    DateTime?
+  lastStatusCode Int?
+  lastError      String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  webhook UserWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([status, nextRetryAt])
+  @@index([createdAt])
 }
 
 model PaymentAdvance {
@@ -539,6 +567,7 @@ model InvoiceCollaborator {
   payoutStatus    String    @default("pending") @db.VarChar(20)
   internalTxId    String?   @db.VarChar(255)
   paidAt          DateTime?
+  paymentSource   String?   // 'payment' | 'escrow' | 'advance'
   createdAt       DateTime  @default(now())
 
   invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -559,6 +588,7 @@ model PayoutBatch {
   successCount    Int       @default(0)
   failedCount     Int       @default(0)
   results         Json      @default("[]")
+  scheduledAt     DateTime? // optional timestamp when payout should be executed
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
 

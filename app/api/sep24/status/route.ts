@@ -15,6 +15,7 @@ import {
 } from '@/lib/stellar/sep24';
 import { type AnchorId, ANCHOR_CONFIGS } from '@/lib/stellar/anchors';
 import { isTokenExpired } from '@/lib/stellar/sep10';
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/sep24/status
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
         });
       }
     } catch (error) {
-      console.error('Error fetching anchor status:', error);
+      logger.error({ err: error }, 'Error fetching anchor status:');
       // Continue with cached status
     }
   }

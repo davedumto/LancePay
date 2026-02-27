@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hasBadge, getWalletBadges } from "@/lib/stellar";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/reputation/badges/verify?userId=xxx&badgeId=yyy
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
       walletBadges,
     });
   } catch (error) {
-    console.error("Badge verification error:", error);
+    logger.error({ err: error }, "Badge verification error:");
     return NextResponse.json(
       { error: "Failed to verify badge" },
       { status: 500 },

@@ -2,149 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { submitKYCData } from "@/lib/sep12-kyc";
 import { getAuthContext } from "@/app/api/routes-d/auto-swap/_shared";
 import { prisma } from "@/lib/db";
+import { logger } from '@/lib/logger'
+import { getClientIp, kycSubmitGlobal, kycSubmitHourly, kycSubmitDaily, isKycRateLimitBypassed, buildRateLimitResponse } from "@/lib/rate-limit";
 
+// Type-safe document handling
+type DocumentField = 'photo_id_front' | 'photo_id_back' | 'photo_proof_residence';
+const DOCUMENT_FIELDS: DocumentField[] = ['photo_id_front', 'photo_id_back', 'photo_proof_residence'];
 const MAX_FILE_COUNT = 6;
-const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "application/pdf",
-]);
-const CLOUDINARY_HOST_SUFFIX = "res.cloudinary.com";
-
-const DOCUMENT_FIELDS = [
-  "photo_id_front",
-  "photo_id_back",
-  "photo_proof_residence",
-  "photo_selfie",
-  "photo_additional_1",
-  "photo_additional_2",
-] as const;
-
-type DocumentField = (typeof DOCUMENT_FIELDS)[number];
-
-const MIME_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  pdf: "application/pdf",
-};
 
 class BadRequestError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "BadRequestError";
+    this.name = 'BadRequestError';
   }
 }
 
-function isDocumentField(value: string): value is DocumentField {
-  return (DOCUMENT_FIELDS as readonly string[]).includes(value);
-}
-
-function parseOptionalString(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function parseOptionalIdType(
-  value: unknown
-): "passport" | "drivers_license" | "national_id" | undefined {
-  if (value === "passport") return "passport";
-  if (value === "drivers_license") return "drivers_license";
-  if (value === "national_id") return "national_id";
+function parseOptionalString(val: any): string | undefined {
+  if (typeof val === 'string') return val;
   return undefined;
 }
 
-function inferMimeFromPathname(pathname: string): string | undefined {
-  const extension = pathname.split(".").pop()?.toLowerCase();
-  if (!extension) return undefined;
-  return MIME_BY_EXTENSION[extension];
+function parseOptionalIdType(val: any): "passport" | "drivers_license" | "national_id" | undefined {
+  if (val === 'passport' || val === 'drivers_license' || val === 'national_id') return val;
+  return undefined;
 }
 
-function inferExtensionFromMimeType(mimeType: string): string {
-  if (mimeType === "application/pdf") return "pdf";
-  if (mimeType === "image/png") return "png";
-  return "jpg";
+function isDocumentField(val: string): val is DocumentField {
+  return DOCUMENT_FIELDS.includes(val as DocumentField);
 }
 
-function validateDocumentFile(file: File, field: DocumentField): void {
-  if (file.size <= 0) {
-    throw new BadRequestError(`Document ${field} is empty`);
-  }
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    throw new BadRequestError(`Document ${field} exceeds the 25MB limit`);
-  }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new BadRequestError(
-      `Document ${field} must be JPEG, PNG, or PDF (received ${file.type})`
-    );
-  }
-}
-
-async function toValidatedFileFromUrl(
-  value: string,
-  field: DocumentField
-): Promise<File> {
-  let documentUrl: URL;
-  try {
-    documentUrl = new URL(value);
-  } catch {
-    throw new BadRequestError(`Document URL for ${field} is invalid`);
-  }
-
-  if (documentUrl.protocol !== "https:") {
-    throw new BadRequestError(`Document URL for ${field} must use HTTPS`);
-  }
-
-  if (!documentUrl.hostname.endsWith(CLOUDINARY_HOST_SUFFIX)) {
-    throw new BadRequestError(
-      `Document URL for ${field} must come from Cloudinary storage`
-    );
-  }
-
-  const response = await fetch(documentUrl.toString());
-  if (!response.ok) {
-    throw new BadRequestError(
-      `Unable to download uploaded document for ${field}`
-    );
-  }
-
+async function toValidatedFileFromUrl(url: string, field: string): Promise<File> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch document from ${url}`);
   const blob = await response.blob();
-  const derivedMimeType = blob.type || inferMimeFromPathname(documentUrl.pathname);
-  if (!derivedMimeType || !ALLOWED_MIME_TYPES.has(derivedMimeType)) {
-    throw new BadRequestError(`Document URL for ${field} has unsupported format`);
-  }
-
-  const extension = inferExtensionFromMimeType(derivedMimeType);
-  const file = new File([blob], `${field}.${extension}`, {
-    type: derivedMimeType,
-  });
-  validateDocumentFile(file, field);
-  return file;
+  return new File([blob], `${field}.jpg`, { type: blob.type });
 }
 
-async function resolveDocumentFromFormData(
-  formData: FormData,
-  field: DocumentField
-): Promise<File | undefined> {
-  const rawValue = formData.get(field);
-  if (rawValue instanceof File && rawValue.size > 0) {
-    validateDocumentFile(rawValue, field);
-    return rawValue;
-  }
-
-  const rawUrlValue = parseOptionalString(rawValue);
-  if (rawUrlValue) {
-    return toValidatedFileFromUrl(rawUrlValue, field);
-  }
-
-  const explicitUrl = parseOptionalString(formData.get(`${field}_url`));
-  if (explicitUrl) {
-    return toValidatedFileFromUrl(explicitUrl, field);
-  }
-
-  return undefined;
+async function resolveDocumentFromFormData(formData: FormData, field: string): Promise<File | null> {
+  const file = formData.get(field);
+  if (file instanceof File) return file;
+  return null;
 }
 
 /**
@@ -164,6 +61,34 @@ export async function POST(req: NextRequest) {
         { error: "SEP-10 auth token required" },
         { status: 400 }
       );
+    }
+
+    if (!isKycRateLimitBypassed(auth.user.id)) {
+      const globalCheck = kycSubmitGlobal.check("global");
+      if (!globalCheck.allowed) {
+        console.warn("[rate-limit] KYC submit global limit exceeded", {
+          ip: getClientIp(req),
+        });
+        return buildRateLimitResponse(globalCheck);
+      }
+
+      const hourlyCheck = kycSubmitHourly.check(auth.user.id);
+      if (!hourlyCheck.allowed) {
+        console.warn("[rate-limit] KYC submit hourly limit exceeded", {
+          userId: auth.user.id,
+          ip: getClientIp(req),
+        });
+        return buildRateLimitResponse(hourlyCheck);
+      }
+
+      const dailyCheck = kycSubmitDaily.check(auth.user.id);
+      if (!dailyCheck.allowed) {
+        console.warn("[rate-limit] KYC submit daily limit exceeded", {
+          userId: auth.user.id,
+          ip: getClientIp(req),
+        });
+        return buildRateLimitResponse(dailyCheck);
+      }
     }
 
     // Derive stellarAddress from the authenticated user's wallet — never trust headers
@@ -290,11 +215,7 @@ export async function POST(req: NextRequest) {
       uploadedDocumentCount,
     });
   } catch (error: any) {
-    if (error?.name === "BadRequestError") {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    console.error("Error submitting KYC data:", error);
+    logger.error({ err: error }, "Error submitting KYC data:");
     return NextResponse.json(
       { error: error.message || "Failed to submit KYC data" },
       { status: 500 }

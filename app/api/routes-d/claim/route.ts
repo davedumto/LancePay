@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { claimBalance } from "@/lib/claimable-balances";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/claim
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       transactionHash: result.hash,
     });
   } catch (error) {
-    console.error("Error claiming balance:", error);
+    logger.error({ err: error }, "Error claiming balance:");
     return NextResponse.json(
       { error: "Failed to claim balance" },
       { status: 500 }

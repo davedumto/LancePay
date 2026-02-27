@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import { decrypt } from '@/lib/crypto'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(user)
   } catch (error) {
-    console.error('Profile GET error:', error)
+    logger.error({ err: error }, 'Profile GET error:')
     return NextResponse.json({ error: 'Failed to get profile' }, { status: 500 })
   }
 }
@@ -98,7 +99,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(user)
   } catch (error) {
-    console.error('Profile PUT error:', error)
+    logger.error({ err: error }, 'Profile PUT error:')
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
   }
 }

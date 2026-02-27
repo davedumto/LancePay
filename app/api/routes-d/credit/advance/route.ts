@@ -10,6 +10,7 @@ import { getUsdToNgnRate } from '@/lib/exchange-rate'
 import { initiateYellowCardWithdrawal } from '@/lib/yellow-card'
 import { sendEmail } from '@/lib/email'
 import { Decimal } from '@prisma/client/runtime/library'
+import { logger } from '@/lib/logger'
 
 const AdvanceRequestSchema = z.object({
   invoiceId: z.string().uuid('Invalid invoice ID'),
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
       )
     }
   } catch (error) {
-    console.error('Payment advance error:', error)
+    logger.error({ err: error }, 'Payment advance error:')
     return NextResponse.json(
       { error: 'Failed to process advance request' },
       { status: 500 }
@@ -274,6 +275,6 @@ async function sendAdvanceConfirmationEmail(params: {
       `,
     })
   } catch (error) {
-    console.error('Failed to send advance confirmation email:', error)
+    logger.error({ err: error }, 'Failed to send advance confirmation email:')
   }
 }

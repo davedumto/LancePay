@@ -871,3 +871,5 @@ export async function sendPathPayment(
     throw { type: "payment_failed", message } as StellarError;
   }
 }
+
+export const sendStellarPayment = sendUSDCPayment;

@@ -3,13 +3,8 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import { decrypt, timingSafeEqual } from '@/lib/crypto'
-import { RouteRateLimiter, getClientIp } from '@/lib/rate-limit'
-
-const rateLimiter = new RouteRateLimiter({
-    id: '2fa-verify',
-    maxRequests: 5,
-    windowMs: 15 * 60 * 1000, // 15 minutes
-})
+import { logger } from '@/lib/logger'
+import { getClientIp, twoFactorLimiter as rateLimiter } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
     try {
@@ -95,7 +90,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ valid: false })
 
     } catch (error) {
-        console.error(error)
+        logger.error(error)
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

@@ -7,6 +7,7 @@ import {
   processBulkInvoices,
 } from '@/app/api/routes-d/bulk-invoices/_shared'
 import { z } from 'zod'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response, { status: 200 })
   } catch (error) {
-    console.error('Bulk invoices create error:', error)
+    logger.error({ err: error }, 'Bulk invoices create error:')
     return NextResponse.json({ error: 'Failed to create bulk invoices' }, { status: 500 })
   }
 }

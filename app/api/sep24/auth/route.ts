@@ -16,6 +16,7 @@ import {
   isTokenExpired
 } from '@/lib/stellar/sep10';
 import { type AnchorId, ANCHOR_CONFIGS } from '@/lib/stellar/anchors';
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/sep24/auth
@@ -175,7 +176,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (error) {
-    console.error('SEP-10 auth error:', error);
+    logger.error({ err: error }, 'SEP-10 auth error:');
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Authentication failed' },
       { status: 500 }

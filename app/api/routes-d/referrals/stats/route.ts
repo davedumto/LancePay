@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { AuthTokenClaims } from "@privy-io/server-auth";
 import { verifyAuthToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { logger } from '@/lib/logger'
 import {
   ensureReferralCode,
   getReferralStats,
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
       recentHistory,
     });
   } catch (error) {
-    console.error("Referral stats error:", error);
+    logger.error({ err: error }, "Referral stats error:");
     return NextResponse.json(
       { error: "Failed to fetch referral stats" },
       { status: 500 },

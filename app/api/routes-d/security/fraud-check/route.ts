@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { performFraudCheck, addToWatchlist, removeFromWatchlist, getWatchlist } from '@/lib/fraud'
+import { logger } from '@/lib/logger'
 
 const FraudCheckSchema = z.object({
   type: z.enum(['transaction', 'payout', 'user']),
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       ...result,
     })
   } catch (error) {
-    console.error('Fraud check error:', error)
+    logger.error({ err: error }, 'Fraud check error:')
     return NextResponse.json({ error: 'Fraud check failed' }, { status: 500 })
   }
 }
@@ -102,7 +103,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (error) {
-    console.error('Watchlist management error:', error)
+    logger.error({ err: error }, 'Watchlist management error:')
     return NextResponse.json({ error: 'Watchlist operation failed' }, { status: 500 })
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/credit/advances
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
       })),
     })
   } catch (error) {
-    console.error('Get advances error:', error)
+    logger.error({ err: error }, 'Get advances error:')
     return NextResponse.json(
       { error: 'Failed to fetch advances' },
       { status: 500 }

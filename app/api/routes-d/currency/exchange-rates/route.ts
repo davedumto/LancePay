@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 
 // Base rates relative to USD
 const BASE_RATES = {
@@ -41,7 +42,7 @@ export async function GET() {
             }
         })
     } catch (error) {
-        console.error('Exchange rates GET error:', error)
+        logger.error({ err: error }, 'Exchange rates GET error:')
         return NextResponse.json({ error: 'Failed to fetch exchange rates' }, { status: 500 })
     }
 }

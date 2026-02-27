@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVirtualAccountProvider } from "@/lib/virtual-accounts/provider-factory";
 import { processDeposit } from "@/lib/virtual-accounts/deposit-processor";
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/routes-d/virtual-accounts/webhook
@@ -33,11 +34,11 @@ export async function POST(request: NextRequest) {
       headers["x-paystack-signature"] ||
       "";
 
-    console.log("Webhook received:", {
+    logger.info({
       provider: process.env.VIRTUAL_ACCOUNT_PROVIDER,
       hasSignature: !!signature,
       bodyLength: body.length,
-    });
+    }, "Webhook received:");
 
     // Get provider and verify webhook
     const provider = getVirtualAccountProvider();
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (!verificationResult.isValid) {
-      console.error("Webhook verification failed:", verificationResult.error);
+      logger.error({ err: verificationResult.error }, "Webhook verification failed:");
       return NextResponse.json(
         {
           error: "Invalid webhook signature",
@@ -59,24 +60,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (!verificationResult.payload) {
-      console.error("Webhook payload missing after verification");
+      logger.error("Webhook payload missing after verification");
       return NextResponse.json(
         { error: "Invalid webhook payload" },
         { status: 400 },
       );
     }
 
-    console.log("Webhook verified successfully:", {
+    logger.info({
       accountNumber: verificationResult.payload.accountNumber,
       amount: verificationResult.payload.amount,
       reference: verificationResult.payload.reference,
-    });
+    }, "Webhook verified successfully:");
 
     // Process the deposit
     const result = await processDeposit(verificationResult.payload);
 
     if (!result.success) {
-      console.error("Deposit processing failed:", result);
+      logger.error({ err: result }, "Deposit processing failed:");
 
       // For duplicate deposits, return 200 to prevent retries
       if (result.reason === "duplicate") {
@@ -98,11 +99,11 @@ export async function POST(request: NextRequest) {
 
       // For other errors, return 200 to acknowledge receipt
       // but log the error for manual intervention
-      console.error("CRITICAL: Deposit processing failed:", {
+      logger.error({
         reason: result.reason,
         error: result.error,
         payload: verificationResult.payload,
-      });
+      }, "CRITICAL: Deposit processing failed:");
 
       return NextResponse.json({
         received: true,
@@ -113,13 +114,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Success!
-    console.log("Deposit processed successfully:", {
+    logger.info({
       transactionId: result.transactionId,
       userId: result.userId,
       usdcCredited: result.usdcCredited,
       ngnReceived: result.ngnReceived,
       txHash: result.txHash,
-    });
+    }, "Deposit processed successfully:");
 
     return NextResponse.json({
       received: true,
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
       message: "Deposit processed successfully",
     });
   } catch (error) {
-    console.error("Webhook handler error:", error);
+    logger.error({ err: error }, "Webhook handler error:");
 
     // Always return 200 to prevent webhook retries
     // Log errors for manual investigation

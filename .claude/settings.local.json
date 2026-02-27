@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls f:/LancePay/.env*)",
+      "Bash(npx vitest run tests/lib/rate-limit.test.ts)",
+      "Bash(bun install)"
+    ]
+  }
+}

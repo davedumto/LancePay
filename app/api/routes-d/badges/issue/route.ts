@@ -7,6 +7,7 @@ import {
   lockBadgeMetadata,
 } from "@/lib/sep68-metadata";
 import { Keypair } from "@stellar/stellar-sdk";
+import { logger } from '@/lib/logger'
 
 /**
  * POST /api/routes-d/badges/issue
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
       metadata,
     });
   } catch (error: any) {
-    console.error("Error issuing badge:", error);
+    logger.error({ err: error }, "Error issuing badge:");
     return NextResponse.json(
       { error: error.message || "Failed to issue badge" },
       { status: 500 }

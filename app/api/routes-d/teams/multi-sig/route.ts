@@ -6,6 +6,7 @@ import { encrypt } from '@/lib/crypto'
 import { isValidStellarAddress } from '@/lib/stellar'
 import { Keypair } from '@stellar/stellar-sdk'
 import { computeProposalProgress, expireProposalIfStale, progressSummary } from './_shared'
+import { logger } from '@/lib/logger'
 
 const CreateWalletSchema = z.object({
   name: z.string().min(1).max(100),
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
       })),
     })
   } catch (error) {
-    console.error('Teams multisig GET error:', error)
+    logger.error({ err: error }, 'Teams multisig GET error:')
     return NextResponse.json({ error: 'Failed to fetch multi-sig data' }, { status: 500 })
   }
 }
@@ -277,7 +278,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Teams multisig POST error:', error)
+    logger.error({ err: error }, 'Teams multisig POST error:')
     return NextResponse.json({ error: 'Failed to create collective wallet' }, { status: 500 })
   }
 }

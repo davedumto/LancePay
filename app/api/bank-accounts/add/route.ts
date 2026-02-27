@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyNigerianBankAccount } from '@/lib/bank-verification'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
 const BANKS: Record<string, string> = {
   '044': 'Access Bank',
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Error adding bank account:', error)
+    logger.error({ err: error }, 'Error adding bank account:')
 
     // Handle Prisma unique constraint errors
     if (error instanceof Error && error.message.includes('Unique constraint')) {

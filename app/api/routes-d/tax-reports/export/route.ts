@@ -10,6 +10,7 @@ import {
 import { TaxReportPDF, type TaxAnnualReport } from '@/lib/tax-pdf'
 import { pdf } from '@react-pdf/renderer'
 import React from 'react'
+import { logger } from '@/lib/logger'
 
 function csvEscape(value: string) {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -73,7 +74,8 @@ export async function GET(request: NextRequest) {
       lines.push(toCsvRow(['Date', 'Invoice Number', 'Client', 'Description', 'Amount', 'Fees', 'Net']))
 
       for (const t of income as any[]) {
-        const dt = (t.completedAt as Date).toISOString().slice(0, 10)
+        const completedAt = t.completedAt as Date | null
+        const dt = completedAt ? completedAt.toISOString().slice(0, 10) : 'UNKNOWN_DATE'
         const invNum = t.invoice?.invoiceNumber || ''
         const client = t.invoice?.clientEmail || ''
         const desc = t.invoice?.description || ''
@@ -140,7 +142,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Tax export error:', error)
+    logger.error({ err: error }, 'Tax export error:')
     return NextResponse.json({ error: 'Failed to export tax report' }, { status: 500 })
   }
 }

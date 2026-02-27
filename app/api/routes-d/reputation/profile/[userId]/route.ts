@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { logger } from '@/lib/logger'
 
 /**
  * GET /api/routes-d/reputation/profile/[userId]
@@ -69,7 +70,7 @@ export async function GET(
       stats,
     });
   } catch (error) {
-    console.error("Badge profile error:", error);
+    logger.error({ err: error }, "Badge profile error:");
     return NextResponse.json(
       { error: "Failed to get badge profile" },
       { status: 500 },

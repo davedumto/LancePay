@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWebhookSignature } from '@/lib/webhooks'
+import { logger } from '@/lib/logger'
 
 /**
  * Test webhook receiver endpoint
@@ -12,10 +13,10 @@ export async function POST(request: NextRequest) {
     const body = await request.text()
     const payload = JSON.parse(body)
 
-    console.log('\n📥 Webhook Received:')
-    console.log(`   Event: ${eventType}`)
-    console.log(`   Signature: ${signature?.substring(0, 20)}...`)
-    console.log(`   Payload:`, JSON.stringify(payload, null, 2))
+    logger.info('\n📥 Webhook Received:')
+    logger.info(`   Event: ${eventType}`)
+    logger.info(`   Signature: ${signature?.substring(0, 20)}...`)
+    logger.info({ payload }, "   Payload:")
 
     // Note: In a real test, you'd verify the signature here
     // For now, we'll just log it
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       message: 'Webhook received successfully',
     })
   } catch (error) {
-    console.error('Webhook receiver error:', error)
+    logger.error({ err: error }, 'Webhook receiver error:')
     return NextResponse.json(
       { error: 'Failed to process webhook' },
       { status: 500 }

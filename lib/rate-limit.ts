@@ -1,4 +1,4 @@
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 type RateLimitPolicy = {
   id: string
@@ -192,4 +192,70 @@ export function checkRequestRateLimit(request: NextRequest): RequestRateLimitRes
     remaining: Math.max(policy.maxRequests - existing.count, 0),
     resetAt: existing.resetAt,
   }
+}
+
+// ---------------------------------------------------------------------------
+// KYC-specific rate limiters
+// ---------------------------------------------------------------------------
+
+export const kycSubmitHourly = new RouteRateLimiter({
+  id: 'kyc-submit-hourly',
+  maxRequests: 3,
+  windowMs: 60 * 60_000,
+})
+
+export const kycSubmitDaily = new RouteRateLimiter({
+  id: 'kyc-submit-daily',
+  maxRequests: 10,
+  windowMs: 24 * 60 * 60_000,
+})
+
+export const kycSubmitGlobal = new RouteRateLimiter({
+  id: 'kyc-submit-global',
+  maxRequests: 100,
+  windowMs: 60_000,
+})
+
+export const kycStatusLimiter = new RouteRateLimiter({
+  id: 'kyc-status',
+  maxRequests: 30,
+  windowMs: 60_000,
+})
+
+export const twoFactorLimiter = new RouteRateLimiter({
+  id: '2fa-verify',
+  maxRequests: 5,
+  windowMs: 15 * 60_000, // 5 attempts per 15 minutes
+})
+
+const KYC_BYPASS_IDS: Set<string> = new Set(
+  (process.env.KYC_RATE_LIMIT_BYPASS_USER_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+)
+
+export function isKycRateLimitBypassed(userId: string): boolean {
+  return KYC_BYPASS_IDS.has(userId)
+}
+
+export function buildRateLimitResponse(result: RequestRateLimitResult): NextResponse {
+  const retryAfterSeconds = Math.ceil((result.resetAt - Date.now()) / 1000)
+  return NextResponse.json(
+    {
+      error: 'Rate limit exceeded. Please try again later.',
+      limit: result.limit,
+      remaining: result.remaining,
+      resetAt: new Date(result.resetAt).toISOString(),
+    },
+    {
+      status: 429,
+      headers: {
+        'X-RateLimit-Limit': result.limit.toString(),
+        'X-RateLimit-Remaining': result.remaining.toString(),
+        'X-RateLimit-Reset': result.resetAt.toString(),
+        'Retry-After': Math.max(retryAfterSeconds, 1).toString(),
+      },
+    }
+  )
 }

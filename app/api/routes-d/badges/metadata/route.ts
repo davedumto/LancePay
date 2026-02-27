@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from '@/lib/logger'
 import {
   fetchBadgeMetadata,
   isBadgeMetadataLocked,
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
       isLocked,
     });
   } catch (error) {
-    console.error("Error fetching badge metadata:", error);
+    logger.error({ err: error }, "Error fetching badge metadata:");
     return NextResponse.json(
       { error: "Failed to fetch metadata" },
       { status: 500 }

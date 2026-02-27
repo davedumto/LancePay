@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getAuthContext } from '../savings/_shared'
+import { logger } from '@/lib/logger'
 
 const TAX_VAULT_TITLE = 'Tax Vault'
 
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
         : null,
     })
   } catch (error) {
-    console.error('Tax vault GET error:', error)
+    logger.error({ err: error }, 'Tax vault GET error:')
     return NextResponse.json({ error: 'Failed to get tax vault' }, { status: 500 })
   }
 }
@@ -119,7 +120,7 @@ export async function PUT(request: NextRequest) {
         : null,
     })
   } catch (error) {
-    console.error('Tax vault PUT error:', error)
+    logger.error({ err: error }, 'Tax vault PUT error:')
     return NextResponse.json({ error: 'Failed to update tax vault' }, { status: 500 })
   }
 }
@@ -159,7 +160,7 @@ export async function DELETE(request: NextRequest) {
       releasedAmountUsdc: releasedAmount,
     })
   } catch (error) {
-    console.error('Tax vault DELETE error:', error)
+    logger.error({ err: error }, 'Tax vault DELETE error:')
     return NextResponse.json({ error: 'Failed to release tax vault' }, { status: 500 })
   }
 }

@@ -4,6 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 import { getAccountBalance } from '@/lib/stellar'
 import { resolveAssetMetadata } from '@/lib/assets'
 import { getAssetPrices } from '@/lib/pricing'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
       assets,
     })
   } catch (error) {
-    console.error('Balance GET error:', error)
+    logger.error({ err: error }, 'Balance GET error:')
     return NextResponse.json({ error: 'Failed to get balance' }, { status: 500 })
   }
 }

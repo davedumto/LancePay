@@ -8,6 +8,7 @@ import {
 import { TransactionHistoryPDF } from "@/lib/transaction-pdf";
 import { pdf } from "@react-pdf/renderer";
 import React from "react";
+import { logger } from '@/lib/logger'
 
 // Helper to escape CSV fields
 function csvEscape(value: string | number | null | undefined) {
@@ -270,7 +271,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ error: "Invalid format" }, { status: 400 });
   } catch (error: any) {
-    console.error("Export Error:", error);
+    logger.error({ err: error }, "Export Error:");
     const errorMessage =
       error instanceof Error
         ? error.message

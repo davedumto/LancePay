@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { sendEmail } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
     try {
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
         })
 
     } catch (error) {
-        console.error('Send Reminder error:', error)
+        logger.error({ err: error }, 'Send Reminder error:')
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 }

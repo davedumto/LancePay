@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getOrCreateUserFromRequest } from '@/app/api/routes-d/bulk-invoices/_shared'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
       results: (job.results as any) ?? [],
     })
   } catch (error) {
-    console.error('Bulk invoices status error:', error)
+    logger.error({ err: error }, 'Bulk invoices status error:')
     return NextResponse.json({ error: 'Failed to get job status' }, { status: 500 })
   }
 }
