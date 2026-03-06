@@ -1,4 +1,4 @@
-﻿generator client {
+generator client {
   provider = "prisma-client-js"
 }
 
@@ -39,6 +39,7 @@ model User {
   paymentAdvances        PaymentAdvance[]
   apiKeys                ApiKey[]
   brandingSettings       BrandingSettings?
+  invoiceTemplates       InvoiceTemplate[]
   webhooks               UserWebhook[]
   userBadges             UserBadge[]
   auditEvents            AuditEvent[]
@@ -366,6 +367,26 @@ model BrandingSettings {
   updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvoiceTemplate {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  isDefault    Boolean  @default(false)
+  logoUrl      String?
+  primaryColor String   @default("#000000")
+  accentColor  String   @default("#059669")
+  showLogo     Boolean  @default(true)
+  showFooter   Boolean  @default(true)
+  footerText   String?
+  layout       String   @default("modern")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDefault])
 }
 
 model UserWebhook {

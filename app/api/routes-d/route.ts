@@ -21,8 +21,8 @@ export async function GET() {
         },
       },
       branding: {
-        get: '/api/routes-d/branding',
-        update: '/api/routes-d/branding',
+        templates: '/api/routes-d/branding/templates',
+        templateDetails: '/api/routes-d/branding/templates/{id}',
       },
       invoices: {
         list: '/api/routes-d/invoices',

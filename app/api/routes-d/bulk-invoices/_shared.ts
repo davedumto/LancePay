@@ -192,6 +192,29 @@ export async function executeBulkInvoiceJob(params: {
   const results: BulkInvoiceItemResult[] = [...preResults]
   let successCount = 0
   let failedCount = preResults.filter((r) => !r.success).length
+  const [brandingSettings, defaultTemplate] = await Promise.all([
+    prisma.brandingSettings.findUnique({ where: { userId } }),
+    prisma.invoiceTemplate.findFirst({
+      where: { userId, isDefault: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ])
+
+  const emailBranding = defaultTemplate
+    ? {
+      logoUrl: defaultTemplate.logoUrl ?? brandingSettings?.logoUrl ?? null,
+      primaryColor: defaultTemplate.primaryColor,
+      accentColor: defaultTemplate.accentColor,
+      footerText: defaultTemplate.footerText ?? brandingSettings?.footerText ?? null,
+    }
+    : brandingSettings
+      ? {
+        logoUrl: brandingSettings.logoUrl ?? null,
+        primaryColor: brandingSettings.primaryColor,
+        accentColor: '#059669',
+        footerText: brandingSettings.footerText ?? null,
+      }
+      : undefined
 
   for (const { index, invoice: inv } of items) {
     try {
@@ -236,6 +259,7 @@ export async function executeBulkInvoiceJob(params: {
           currency: invoice.currency,
           paymentLink: invoice.paymentLink,
           dueDate: invoice.dueDate,
+          branding: emailBranding,
         })
         if (!emailRes.success) warning = 'Invoice created but email failed to send'
       }
@@ -369,4 +393,3 @@ export function parseCsvToInvoices(csvText: string) {
 
   return { valid, errors, totalCount: invoicesRaw.length }
 }
-

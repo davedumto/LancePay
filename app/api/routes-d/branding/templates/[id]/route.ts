@@ -17,8 +17,8 @@ const logoUrlSchema = z.union([
 const layoutSchema = z.enum(['modern', 'classic', 'minimal'])
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024
 
-const createTemplateSchema = z.object({
-  name: z.string().min(1).max(100),
+const updateTemplateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
   logoUrl: logoUrlSchema.optional().nullable(),
   primaryColor: hexColorSchema.optional(),
   accentColor: hexColorSchema.optional(),
@@ -76,19 +76,26 @@ async function getAuthenticatedUser(request: NextRequest) {
   return { user }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
     const auth = await getAuthenticatedUser(request)
     if ('error' in auth) return auth.error
 
-    const templates = await prisma.invoiceTemplate.findMany({
-      where: { userId: auth.user.id },
-      orderBy: { createdAt: 'asc' },
+    const { id } = await params
+    const template = await prisma.invoiceTemplate.findFirst({
+      where: { id, userId: auth.user.id },
     })
 
-    return NextResponse.json({ templates })
+    if (!template) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ template })
   } catch (error) {
-    logger.error({ err: error }, 'Error listing invoice templates')
+    logger.error({ err: error }, 'Error fetching invoice template')
     return NextResponse.json(
       {
         error: 'Internal server error',
@@ -99,79 +106,81 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
     const auth = await getAuthenticatedUser(request)
     if ('error' in auth) return auth.error
 
-    const existingCount = await prisma.invoiceTemplate.count({
-      where: { userId: auth.user.id },
+    const { id } = await params
+    const existing = await prisma.invoiceTemplate.findFirst({
+      where: { id, userId: auth.user.id },
     })
 
-    if (existingCount >= 5) {
-      return NextResponse.json(
-        { error: 'You can only have up to 5 invoice templates' },
-        { status: 400 },
-      )
+    if (!existing) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
     }
 
     const body = await request.json()
-    const result = createTemplateSchema.safeParse(body)
+    const parsed = updateTemplateSchema.safeParse(body)
 
-    if (!result.success) {
-      const firstIssue = result.error.issues[0]
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0]
       return NextResponse.json(
         {
           error: 'Validation failed',
           message: firstIssue?.message ?? 'Invalid payload',
-          details: result.error.flatten().fieldErrors,
+          details: parsed.error.flatten().fieldErrors,
         },
         { status: 400 },
       )
     }
 
-    const logoSize = getDataUrlSizeBytes(result.data.logoUrl)
-    if (logoSize !== null && logoSize > MAX_LOGO_SIZE_BYTES) {
-      return NextResponse.json(
-        {
-          error: 'Validation failed',
-          message: 'Logo must be 2MB or less',
-        },
-        { status: 400 },
-      )
+    if (parsed.data.logoUrl !== undefined) {
+      const logoSize = getDataUrlSizeBytes(parsed.data.logoUrl)
+      if (logoSize !== null && logoSize > MAX_LOGO_SIZE_BYTES) {
+        return NextResponse.json(
+          {
+            error: 'Validation failed',
+            message: 'Logo must be 2MB or less',
+          },
+          { status: 400 },
+        )
+      }
     }
 
-    const { user } = auth
-    const templateData = result.data
-    const shouldBeDefault = templateData.isDefault === true || existingCount === 0
+    const templateData = parsed.data
+    const shouldBeDefault = templateData.isDefault === true
 
     const template = await prisma.$transaction(async (tx) => {
       if (shouldBeDefault) {
         await tx.invoiceTemplate.updateMany({
-          where: { userId: user.id, isDefault: true },
+          where: { userId: auth.user.id, isDefault: true, id: { not: id } },
           data: { isDefault: false },
         })
       }
 
-      return tx.invoiceTemplate.create({
+      return tx.invoiceTemplate.update({
+        where: { id: existing.id },
         data: {
-          userId: user.id,
-          name: templateData.name,
-          logoUrl: templateData.logoUrl ?? null,
-          primaryColor: templateData.primaryColor ?? '#000000',
-          accentColor: templateData.accentColor ?? '#059669',
-          showLogo: templateData.showLogo ?? true,
-          showFooter: templateData.showFooter ?? true,
-          footerText: templateData.footerText ?? null,
-          layout: templateData.layout ?? 'modern',
-          isDefault: shouldBeDefault,
+          ...(templateData.name !== undefined ? { name: templateData.name } : {}),
+          ...(templateData.logoUrl !== undefined ? { logoUrl: templateData.logoUrl } : {}),
+          ...(templateData.primaryColor !== undefined ? { primaryColor: templateData.primaryColor } : {}),
+          ...(templateData.accentColor !== undefined ? { accentColor: templateData.accentColor } : {}),
+          ...(templateData.showLogo !== undefined ? { showLogo: templateData.showLogo } : {}),
+          ...(templateData.showFooter !== undefined ? { showFooter: templateData.showFooter } : {}),
+          ...(templateData.footerText !== undefined ? { footerText: templateData.footerText } : {}),
+          ...(templateData.layout !== undefined ? { layout: templateData.layout } : {}),
+          ...(templateData.isDefault !== undefined ? { isDefault: templateData.isDefault } : {}),
         },
       })
     })
 
-    return NextResponse.json({ template }, { status: 201 })
+    return NextResponse.json({ template })
   } catch (error) {
-    logger.error({ err: error }, 'Error creating invoice template')
+    logger.error({ err: error }, 'Error updating invoice template')
     return NextResponse.json(
       {
         error: 'Internal server error',

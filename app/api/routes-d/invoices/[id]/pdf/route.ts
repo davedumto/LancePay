@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { InvoicePDF } from '@/lib/pdf'
+import { InvoicePDF, type InvoiceTemplateConfig } from '@/lib/pdf'
 import { logger } from '@/lib/logger'
 
 export async function GET(
@@ -11,7 +11,7 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Include brandingSettings in the user relation
+    // Include brandingSettings and default invoice template in user relation
     const invoice = await prisma.invoice.findFirst({
       where: {
         OR: [
@@ -22,7 +22,12 @@ export async function GET(
       include: {
         user: {
           include: {
-            brandingSettings: true
+            brandingSettings: true,
+            invoiceTemplates: {
+              where: { isDefault: true },
+              orderBy: { createdAt: 'asc' },
+              take: 1,
+            },
           }
         }
       }
@@ -52,12 +57,28 @@ export async function GET(
     }
 
     const branding = user?.brandingSettings
+    const defaultTemplate = user?.invoiceTemplates?.[0]
+    const template: InvoiceTemplateConfig | undefined = defaultTemplate
+      ? {
+          id: defaultTemplate.id,
+          name: defaultTemplate.name,
+          logoUrl: defaultTemplate.logoUrl,
+          primaryColor: defaultTemplate.primaryColor,
+          accentColor: defaultTemplate.accentColor,
+          showLogo: defaultTemplate.showLogo,
+          showFooter: defaultTemplate.showFooter,
+          footerText: defaultTemplate.footerText,
+          layout: defaultTemplate.layout as 'modern' | 'classic' | 'minimal',
+          signatureUrl: branding?.signatureUrl || null,
+        }
+      : undefined
 
     // Generate PDF buffer
     const pdfBuffer = await renderToBuffer(
       InvoicePDF({ 
         invoice: invoiceData,
-        branding: branding || undefined
+        template,
+        branding: branding || undefined,
       })
     )
 

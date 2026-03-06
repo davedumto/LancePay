@@ -15,6 +15,13 @@ interface PaymentEmailParams {
   currency: string
 }
 
+type InvoiceEmailBranding = {
+  logoUrl?: string | null
+  primaryColor?: string
+  accentColor?: string
+  footerText?: string | null
+}
+
 export async function sendPaymentReceivedEmail(params: PaymentEmailParams) {
   const { to, freelancerName, clientName, invoiceNumber, amount, currency } = params
 
@@ -172,20 +179,29 @@ export async function sendInvoiceCreatedEmail(params: {
   currency: string
   paymentLink: string
   dueDate?: Date | null
+  branding?: InvoiceEmailBranding
 }) {
   const dueDateStr = params.dueDate ? new Date(params.dueDate).toLocaleDateString() : null
+  const primaryColor = params.branding?.primaryColor || '#111111'
+  const accentColor = params.branding?.accentColor || '#10b981'
+  const footerText = params.branding?.footerText || 'LancePay - Get paid globally, withdraw locally'
+  const logoHtml = params.branding?.logoUrl
+    ? `<img src="${params.branding.logoUrl}" alt="Brand logo" style="max-width: 140px; max-height: 56px; margin-bottom: 12px;" />`
+    : ''
+
   return sendEmail({
     to: params.to,
     subject: `Invoice ${params.invoiceNumber} from LancePay`,
     html: `
       <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
-        <h2>Invoice ${params.invoiceNumber}</h2>
+        ${logoHtml}
+        <h2 style="color:${primaryColor}; margin: 0 0 12px 0;">Invoice ${params.invoiceNumber}</h2>
         <p>Hi ${params.clientName || 'there'},</p>
         <p>You have received an invoice for <strong>$${params.amount.toFixed(2)} ${params.currency}</strong>.</p>
         ${params.description ? `<p><strong>Description:</strong> ${params.description}</p>` : ''}
         ${dueDateStr ? `<p><strong>Due Date:</strong> ${dueDateStr}</p>` : ''}
-        <a href="${params.paymentLink}" style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Pay Now</a>
-        <p style="color: #666; font-size: 12px; margin-top: 20px;">LancePay - Get paid globally, withdraw locally</p>
+        <a href="${params.paymentLink}" style="display: inline-block; background: ${accentColor}; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">Pay Now</a>
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">${footerText}</p>
       </div>
     `,
   })
