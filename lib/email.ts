@@ -540,24 +540,31 @@ export async function sendInvoiceCancelledEmail(params: {
   daysOverdue: number
   clientEmail: string
 }) {
-  const React = require('react')
-  const { renderToStaticMarkup } = require('react-dom/server')
-  const { InvoiceAutoCancelledEmail } = require('./email-templates/invoice-auto-cancelled')
+  const { to, freelancerName, invoiceNumber, amount, dueDate, daysOverdue, clientEmail } = params
 
-  const html = renderToStaticMarkup(
-    React.createElement(InvoiceAutoCancelledEmail, {
-      freelancerName: params.freelancerName,
-      invoiceNumber: params.invoiceNumber,
-      amount: params.amount,
-      dueDate: params.dueDate,
-      daysOverdue: params.daysOverdue,
-      clientEmail: params.clientEmail,
+  try {
+    const { error } = await resend.emails.send({
+      from: RESEND_FROM,
+      to: [to],
+      subject: `Invoice Auto-Cancelled - ${invoiceNumber}`,
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #111;">Hey ${freelancerName},</h2>
+          <p>Your invoice <strong>${invoiceNumber}</strong> has been automatically cancelled because it has been overdue for <strong>${daysOverdue} days</strong>.</p>
+          <div style="background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;padding:24px;border-radius:12px;text-align:center;margin:20px 0;">
+            <div style="font-size: 32px; font-weight: bold;">$${amount.toFixed(2)}</div>
+            <div style="margin-top: 8px;">Due: ${dueDate.toLocaleDateString()}</div>
+          </div>
+          <p style="color: #666;">Client: ${clientEmail}</p>
+          <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
+        </div>
+      `,
     })
-  )
 
-  return sendEmail({
-    to: params.to,
-    subject: `❌ Invoice Auto-Cancelled - ${params.invoiceNumber}`,
-    html,
-  })
+    if (error) console.error('Email error:', error)
+    return { success: !error }
+  } catch (error) {
+    console.error('Email send failed:', error)
+    return { success: false }
+  }
 }

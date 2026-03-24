@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { renderToStream } from '@react-pdf/renderer'
+import { renderToStream, type DocumentProps } from '@react-pdf/renderer'
 import { InvoicePDF } from '@/lib/pdf'
-import React from 'react'
+import React, { type JSXElementConstructor, type ReactElement } from 'react'
 
 export const runtime = 'nodejs'
 
@@ -61,7 +61,7 @@ export async function GET(
     : undefined
 
   const stream = await renderToStream(
-    React.createElement(InvoicePDF, { invoice: invoiceData, branding }),
+    React.createElement(InvoicePDF, { invoice: invoiceData, branding }) as unknown as ReactElement<DocumentProps, JSXElementConstructor<DocumentProps>>,
   )
 
   return new NextResponse(stream as unknown as ReadableStream, {
