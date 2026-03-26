@@ -57,6 +57,7 @@ model User {
   anchorSessions         AnchorSession[]
   expenses              Expense[]
   subscriptions         Subscription[]
+  tags                  Tag[]
 }
 
 model Wallet {
@@ -135,6 +136,7 @@ model Invoice {
   escrowReleasedAt        DateTime?
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
+  invoiceTags             InvoiceTag[]
   lienActive              Boolean               @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
@@ -815,4 +817,32 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String   @db.VarChar(50)
+  color     String   @default("#6366f1") @db.VarChar(7)
+  createdAt DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceTags InvoiceTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model InvoiceTag {
+  id        String   @id @default(uuid())
+  invoiceId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, tagId])
+  @@index([invoiceId])
+  @@index([tagId])
 }
