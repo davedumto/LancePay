@@ -14,6 +14,7 @@ model User {
   role             String   @default("freelancer")
   name             String?
   phone            String?
+  avatarUrl        String?  @db.VarChar(512)
   referralCode     String?  @unique
   referredById     String?
   createdAt        DateTime @default(now())
