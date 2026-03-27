@@ -4,8 +4,9 @@ import { verifyAuthToken } from '@/lib/auth'
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   // 1. Auth
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
@@ -19,7 +20,7 @@ export async function PATCH(
   }
 
   // 2. Fetch Invoice
-  const invoice = await prisma.invoice.findUnique({ where: { id: params.id } })
+  const invoice = await prisma.invoice.findUnique({ where: { id } })
   if (!invoice) {
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   }
@@ -73,7 +74,7 @@ export async function PATCH(
 
   // 5. Update
   const updated = await prisma.invoice.update({
-    where: { id: params.id },
+    where: { id },
     data: { dueDate: newDueDate },
     select: {
       id: true,

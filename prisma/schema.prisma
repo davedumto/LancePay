@@ -61,6 +61,21 @@ model User {
   tags                  Tag[]
 }
 
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // e.g. "invoice_paid", "withdrawal_complete", "system"
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
 model Wallet {
   id        String   @id @default(uuid())
   userId    String   @unique
@@ -818,21 +833,6 @@ model PaymentMethod {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-}
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String   // e.g. "invoice_paid", "withdrawal_complete", "system"
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, isRead])
-  @@index([createdAt])
 }
 
 model Tag {

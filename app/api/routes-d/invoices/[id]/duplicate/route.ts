@@ -5,8 +5,9 @@ import { generateInvoiceNumber } from '@/lib/utils'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -15,7 +16,7 @@ export async function POST(
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
   const originalInvoice = await prisma.invoice.findUnique({
-    where: { id: params.id },
+    where: { id },
   })
 
   if (!originalInvoice) {

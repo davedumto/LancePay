@@ -4,8 +4,9 @@ import { verifyAuthToken } from '@/lib/auth'
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; tagId: string } }
+  { params }: { params: Promise<{ id: string; tagId: string }> }
 ) {
+  const { id, tagId } = await params
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -14,7 +15,7 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
   const invoice = await prisma.invoice.findUnique({
-    where: { id: params.id },
+    where: { id },
   })
 
   if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
@@ -23,8 +24,8 @@ export async function DELETE(
   const invoiceTag = await prisma.invoiceTag.findUnique({
     where: {
       invoiceId_tagId: {
-        invoiceId: params.id,
-        tagId: params.tagId,
+        invoiceId: id,
+        tagId,
       },
     },
   })
@@ -34,8 +35,8 @@ export async function DELETE(
   await prisma.invoiceTag.delete({
     where: {
       invoiceId_tagId: {
-        invoiceId: params.id,
-        tagId: params.tagId,
+        invoiceId: id,
+        tagId,
       },
     },
   })
