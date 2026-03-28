@@ -22,28 +22,29 @@ export async function GET(
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const bankAccount = await prisma.bankAccount.findUnique({
+  const transaction = await prisma.transaction.findUnique({
     where: { id: params.id },
   });
 
-  if (!bankAccount)
+  if (!transaction)
     return NextResponse.json(
-      { error: "Bank account not found" },
+      { error: "Transaction not found" },
       { status: 404 },
     );
 
-  if (bankAccount.userId !== user.id)
+  if (transaction.userId !== user.id)
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   return NextResponse.json({
-    bankAccount: {
-      id: bankAccount.id,
-      bankName: bankAccount.bankName,
-      bankCode: bankAccount.bankCode,
-      accountNumber: bankAccount.accountNumber,
-      accountName: bankAccount.accountName,
-      isDefault: bankAccount.isDefault,
-      createdAt: bankAccount.createdAt,
+    transaction: {
+      id: transaction.id,
+      type: transaction.type,
+      status: transaction.status,
+      amount: Number(transaction.amount),
+      currency: transaction.currency,
+      description: transaction.error ?? null,
+      stellarTxHash: transaction.txHash ?? null,
+      createdAt: transaction.createdAt,
     },
   });
 }
