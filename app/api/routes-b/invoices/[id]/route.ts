@@ -24,10 +24,11 @@ export async function GET(
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const invoice = await prisma.invoice.findFirst({
-    where: { id, userId: user.id },
+  const invoice = await prisma.invoice.findUnique({
+    where: { id },
     select: {
       id: true,
+      userId: true,
       invoiceNumber: true,
       clientEmail: true,
       clientName: true,
@@ -47,7 +48,26 @@ export async function GET(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   }
 
-  return NextResponse.json({ ...invoice, amount: Number(invoice.amount) })
+  if (invoice.userId !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  return NextResponse.json({
+    invoice: {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      clientName: invoice.clientName,
+      clientEmail: invoice.clientEmail,
+      description: invoice.description,
+      amount: Number(invoice.amount),
+      currency: invoice.currency,
+      status: invoice.status,
+      paymentLink: invoice.paymentLink,
+      dueDate: invoice.dueDate,
+      paidAt: invoice.paidAt,
+      createdAt: invoice.createdAt,
+    },
+  })
 }
 
 export async function PATCH(
