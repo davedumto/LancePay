@@ -1,48 +1,49 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { verifyAuthToken } from "@/lib/auth";
 
-export async function DELETE(
+export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ) {
-  const { id } = await params
+  const authToken = request.headers
+    .get("authorization")
+    ?.replace("Bearer ", "");
+  if (!authToken)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const claims = await verifyAuthToken(authToken);
+  if (!claims)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+  const user = await prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const account = await prisma.bankAccount.findUnique({ where: { id } })
-  if (!account) {
-    return NextResponse.json({ error: 'Bank account not found' }, { status: 404 })
-  }
+  const bankAccount = await prisma.bankAccount.findUnique({
+    where: { id: params.id },
+  });
 
-  if (account.userId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  if (!bankAccount)
+    return NextResponse.json(
+      { error: "Bank account not found" },
+      { status: 404 },
+    );
 
-  if (account.isDefault) {
-    const next = await prisma.bankAccount.findFirst({
-      where: { userId: user.id, id: { not: id } },
-      orderBy: { createdAt: 'asc' },
-    })
+  if (bankAccount.userId !== user.id)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (next) {
-      await prisma.bankAccount.update({
-        where: { id: next.id },
-        data: { isDefault: true },
-      })
-    }
-  }
-
-  await prisma.bankAccount.delete({ where: { id } })
-
-  return new NextResponse(null, { status: 204 })
+  return NextResponse.json({
+    bankAccount: {
+      id: bankAccount.id,
+      bankName: bankAccount.bankName,
+      bankCode: bankAccount.bankCode,
+      accountNumber: bankAccount.accountNumber,
+      accountName: bankAccount.accountName,
+      isDefault: bankAccount.isDefault,
+      createdAt: bankAccount.createdAt,
+    },
+  });
 }
