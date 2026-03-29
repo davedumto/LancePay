@@ -118,3 +118,29 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update branding settings' }, { status: 500 })
   }
 }
+
+// ── DELETE /api/routes-d/branding — reset branding to defaults ───────
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Check if branding exists
+    const branding = await prisma.brandingSettings.findUnique({
+      where: { userId: user.id },
+    })
+
+    if (branding) {
+      await prisma.brandingSettings.delete({
+        where: { userId: user.id },
+      })
+    }
+
+    return new NextResponse(null, { status: 204 })
+  } catch (error) {
+    logger.error({ err: error }, 'Branding DELETE error')
+    return NextResponse.json({ error: 'Failed to reset branding settings' }, { status: 500 })
+  }
+}
+
