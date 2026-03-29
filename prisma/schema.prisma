@@ -14,6 +14,7 @@ model User {
   role             String   @default("freelancer")
   name             String?
   phone            String?
+  avatarUrl        String?  @db.VarChar(512)
   referralCode     String?  @unique
   referredById     String?
   createdAt        DateTime @default(now())
@@ -22,10 +23,11 @@ model User {
   twoFactorEnabled Boolean  @default(false)
   twoFactorSecret  String?
   taxPercentage    Float    @default(0)
-
+  timezone         String?
   virtualAccount         VirtualAccount?
   wallet                 Wallet?
   bankAccounts           BankAccount[]
+  contacts               Contact[]
   invoices               Invoice[]
   clientInvoices         Invoice[]             @relation("ClientInvoices")
   paymentMethods         PaymentMethod[]
@@ -55,6 +57,23 @@ model User {
   anchorSessions         AnchorSession[]
   expenses              Expense[]
   subscriptions         Subscription[]
+  notifications         Notification[]
+  tags                  Tag[]
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // e.g. "invoice_paid", "withdrawal_complete", "system"
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
 }
 
 model Wallet {
@@ -80,6 +99,21 @@ model BankAccount {
   user          User           @relation(fields: [userId], references: [id])
   withdrawals   Transaction[]  @relation("WithdrawalBank")
   autoSwapRules AutoSwapRule[]
+}
+
+model Contact {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  email     String
+  company   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, email])
 }
 
 model VirtualAccount {
@@ -133,6 +167,7 @@ model Invoice {
   escrowReleasedAt        DateTime?
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
+  invoiceTags             InvoiceTag[]
   lienActive              Boolean               @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
@@ -798,4 +833,32 @@ model PaymentMethod {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String   @db.VarChar(50)
+  color     String   @default("#6366f1") @db.VarChar(7)
+  createdAt DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceTags InvoiceTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model InvoiceTag {
+  id        String   @id @default(uuid())
+  invoiceId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, tagId])
+  @@index([invoiceId])
+  @@index([tagId])
 }

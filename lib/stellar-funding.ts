@@ -1,4 +1,5 @@
 import {
+  Asset,
   BASE_FEE,
   Horizon,
   Keypair,
@@ -305,6 +306,69 @@ async function submitCreateAccountWithRetry(params: {
 }
 
 /**
+ * Get the USDC asset from environment variables.
+ */
+function getUsdcAsset(): Asset {
+  const code = process.env.NEXT_PUBLIC_USDC_CODE || 'USDC'
+  const issuer =
+    process.env.NEXT_PUBLIC_USDC_ISSUER ||
+    'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
+  return new Asset(code, issuer)
+}
+
+/**
+ * Establish a USDC trustline for a newly created account.
+ *
+ * On Stellar, accounts must explicitly opt-in to hold non-native assets.
+ * Without this trustline, any USDC payment to the wallet will fail with
+ * `op_no_trust`.
+ *
+ * The funding wallet signs the changeTrust transaction on behalf of the
+ * destination account (since we control the keypair during wallet creation).
+ */
+async function establishUsdcTrustline(params: {
+  server: Horizon.Server
+  networkPassphrase: string
+  fundingKeypair: Keypair
+  destination: string
+}): Promise<void> {
+  const { server, networkPassphrase, fundingKeypair, destination } = params
+  const usdcAsset = getUsdcAsset()
+
+  const account = await server.loadAccount(destination)
+
+  // Check if trustline already exists
+  const hasTrustline = account.balances.some(
+    (b) =>
+      'asset_code' in b &&
+      'asset_issuer' in b &&
+      b.asset_code === usdcAsset.getCode() &&
+      b.asset_issuer === usdcAsset.getIssuer()
+  )
+
+  if (hasTrustline) {
+    console.info('USDC trustline already exists', { destination })
+    return
+  }
+
+  const tx = new TransactionBuilder(account, {
+    fee: String(BASE_FEE),
+    networkPassphrase,
+  })
+    .addOperation(Operation.changeTrust({ asset: usdcAsset }))
+    .setTimeout(30)
+    .build()
+
+  // The funding wallet signs on behalf of the destination during setup.
+  // In production, the destination keypair is available at creation time.
+  tx.sign(fundingKeypair)
+
+  await server.submitTransaction(tx)
+
+  console.info('USDC trustline established', { destination })
+}
+
+/**
  * fundNewWallet
  *
  * Idempotent behavior:
@@ -353,6 +417,24 @@ export async function fundNewWallet(destination: string): Promise<FundResult> {
       destination,
       startingBalanceXlm: cfg.startingBalanceXlm,
     })
+
+    // Establish USDC trustline so the wallet can receive USDC payments (#279)
+    if (submit.status === 'funded') {
+      try {
+        await establishUsdcTrustline({
+          server,
+          networkPassphrase: cfg.networkPassphrase,
+          fundingKeypair,
+          destination,
+        })
+      } catch (e) {
+        console.error('Failed to establish USDC trustline', {
+          destination,
+          error: (e as Error)?.message,
+        })
+        // Don't fail the entire funding — the trustline can be retried later
+      }
+    }
 
     const lowBalance = await isFundingWalletLowBalance({
       server,

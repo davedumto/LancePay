@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
+
+export async function GET(request: NextRequest) {
+  try {
+    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+    if (!authToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const claims = await verifyAuthToken(authToken)
+    if (!claims) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const search = searchParams.get('search')
+
+    const contacts = await prisma.contact.findMany({
+      where: {
+        userId: user.id,
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { email: { contains: search, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        company: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+
+    return NextResponse.json({ contacts })
+  } catch (error) {
+    logger.error({ err: error }, 'Routes B contacts GET error')
+    return NextResponse.json({ error: 'Failed to get contacts' }, { status: 500 })
+  }
+}
