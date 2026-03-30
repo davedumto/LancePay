@@ -2,6 +2,36 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 
+export async function GET(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+    const claims = await verifyAuthToken(authToken || '')
+    if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    const { id } = await params
+
+    const tag = await prisma.tag.findUnique({
+        where: { id },
+        include: { _count: { select: { invoiceTags: true } } },
+    })
+
+    if (!tag) return NextResponse.json({ error: 'Tag not found' }, { status: 404 })
+    if (tag.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    return NextResponse.json({
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        invoiceCount: tag._count.invoiceTags,
+        createdAt: tag.createdAt,
+    })
+}
+
 export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }

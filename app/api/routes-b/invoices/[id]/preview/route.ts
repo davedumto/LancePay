@@ -19,23 +19,32 @@ export async function GET(
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      userId: true,
-      invoiceNumber: true,
-      clientName: true,
-      clientEmail: true,
-      description: true,
-      amount: true,
-      currency: true,
-      status: true,
-      dueDate: true,
-      paymentLink: true,
-      createdAt: true,
-    },
-  })
+  const [invoice, branding] = await Promise.all([
+    prisma.invoice.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        invoiceNumber: true,
+        clientName: true,
+        clientEmail: true,
+        description: true,
+        amount: true,
+        currency: true,
+        status: true,
+        dueDate: true,
+        paymentLink: true,
+      },
+    }),
+    prisma.brandingSettings.findUnique({
+      where: { userId: user.id },
+      select: {
+        logoUrl: true,
+        primaryColor: true,
+        footerText: true,
+      },
+    }),
+  ])
 
   if (!invoice) {
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
@@ -44,24 +53,19 @@ export async function GET(
   if (invoice.userId !== user.id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
-
-  const branding = await prisma.brandingSettings.findUnique({ where: { userId: user.id } })
-
   return NextResponse.json({
     preview: {
-      invoice: {
-        id: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        clientName: invoice.clientName,
-        clientEmail: invoice.clientEmail,
-        description: invoice.description,
-        amount: Number(invoice.amount),
-        currency: invoice.currency,
-        status: invoice.status,
-        dueDate: invoice.dueDate,
-        paymentLink: invoice.paymentLink,
-        createdAt: invoice.createdAt,
-      },
+      invoiceNumber: invoice.invoiceNumber,
+      freelancerName: user.name,
+      freelancerEmail: user.email,
+      clientName: invoice.clientName,
+      clientEmail: invoice.clientEmail,
+      description: invoice.description,
+      amount: Number(invoice.amount),
+      currency: invoice.currency,
+      status: invoice.status,
+      dueDate: invoice.dueDate,
+      paymentLink: invoice.paymentLink,
       branding: branding
         ? {
             logoUrl: branding.logoUrl,
