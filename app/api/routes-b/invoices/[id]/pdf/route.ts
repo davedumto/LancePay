@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { renderToStream } from '@react-pdf/renderer'
+import type { DocumentProps } from '@react-pdf/renderer'
 import { InvoicePDF } from '@/lib/pdf'
 import React from 'react'
 
@@ -71,7 +72,7 @@ export async function GET(
         paymentLink: invoice.paymentLink,
       },
       branding: branding ?? undefined,
-    }),
+    }) as unknown as React.ReactElement<DocumentProps>,
   )
 
   return new NextResponse(stream as unknown as ReadableStream, {

@@ -3,13 +3,8 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: NextRequest) {
   try {
-    const { id: invoiceId } = await params
-
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -29,34 +24,31 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { id: true, userId: true },
+    const trustScore = await prisma.userTrustScore.findUnique({
+      where: { userId: user.id },
     })
 
-    if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    if (!trustScore) {
+      return NextResponse.json({
+        trustScore: {
+          score: 50,
+          totalVolumeUsdc: 0,
+          disputeCount: 0,
+          tier: 'silver',
+        },
+      })
     }
 
-    if (invoice.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    const messages = await prisma.invoiceMessage.findMany({
-      where: { invoiceId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        senderType: true,
-        senderName: true,
-        content: true,
-        createdAt: true,
+    return NextResponse.json({
+      trustScore: {
+        score: trustScore.score,
+        totalVolumeUsdc: Number(trustScore.totalVolumeUsdc),
+        disputeCount: trustScore.disputeCount,
+        tier: 'silver',
       },
     })
-
-    return NextResponse.json({ messages })
   } catch (error) {
-    logger.error({ err: error }, 'GET /api/routes-d/invoices/[id]/messages error')
+    logger.error({ err: error }, 'GET /api/routes-d/trust-score error')
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
-import { prisma } from '@/lib/prisma'; // standard project import path
+import { prisma } from '@/lib/db';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: NextRequest) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
   // 1. Get raw body for signature verification (critical — never use JSON.parse first)
   const rawBody = await req.text();
 
@@ -47,13 +46,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing reference or transactionId' }, { status: 400 });
   }
 
-  // 5. Find Withdrawal record (by reference first — our internal ID — or transactionId)
-  const withdrawal = await prisma.withdrawal.findFirst({
+  // 5. Find WithdrawalTransaction record (by stellarTxId or internal id)
+  const withdrawal = await prisma.withdrawalTransaction.findFirst({
     where: {
       OR: [
-        reference ? { reference } : undefined,
-        transactionId ? { transactionId } : undefined,
-      ].filter(Boolean),
+        transactionId ? { stellarTxId: transactionId } : undefined,
+        reference ? { id: reference } : undefined,
+      ].filter(Boolean) as object[],
     },
   });
 
@@ -77,14 +76,12 @@ export async function POST(req: NextRequest) {
       newStatus = payloadStatus || 'pending';
   }
 
-  // 7. Update record + flag failed withdrawals for manual review
-  await prisma.withdrawal.update({
+  // 7. Update record
+  await prisma.withdrawalTransaction.update({
     where: { id: withdrawal.id },
     data: {
       status: newStatus,
-      ...(reason && { reason }),
-      // Flag for manual review on failure (field assumed present from #280)
-      ...( (payloadStatus === 'failed' || payloadStatus === 'reversed') && { needsManualReview: true } ),
+      ...(reason && { error: reason }),
     },
   });
 
@@ -111,7 +108,7 @@ export async function POST(req: NextRequest) {
 
   // 9. Always return 200 for valid webhooks
   return NextResponse.json(
-    { received: true, withdrawalId: withdrawal.id, status: newStatus },
+    { received: true, withdrawalTransactionId: withdrawal.id, status: newStatus },
     { status: 200 }
   );
 }

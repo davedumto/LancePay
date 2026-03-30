@@ -21,12 +21,11 @@ export async function GET(request: NextRequest) {
   })
 
   return NextResponse.json({
-    tags: tags.map(tag => ({
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-      invoiceCount: tag._count.invoiceTags,
-      createdAt: tag.createdAt,
+    tags: tags.map(t => ({
+      id: t.id,
+      name: t.name,
+      color: t.color,
+      invoiceCount: t._count.invoiceTags
     })),
   })
 }
