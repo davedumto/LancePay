@@ -15,6 +15,57 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
+/**
+ * GET /api/routes-b/invoices/[id]/messages
+ * Returns all messages on an invoice's thread.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { id: invoiceId } = await params
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    select: { id: true, userId: true },
+  })
+
+  if (!invoice) {
+    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+  }
+
+  if (invoice.userId !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const messages = await prisma.invoiceMessage.findMany({
+    where: { invoiceId },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      senderType: true,
+      senderName: true,
+      content: true,
+      createdAt: true,
+    },
+  })
+
+  return NextResponse.json({
+    messages: messages.map((msg) => ({
+      id: msg.id,
+      senderType: msg.senderType,
+      senderName: msg.senderName,
+      content: msg.content,
+      createdAt: msg.createdAt.toISOString(),
+    })),
+  })
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
