@@ -2,7 +2,7 @@
 
 import { usePrivy } from '@privy-io/react-auth'
 import { useState, useEffect, use } from 'react'
-import { Copy, ExternalLink, FileDown } from 'lucide-react'
+import { Copy, ExternalLink, FileDown, XCircle } from 'lucide-react'
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -10,6 +10,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [invoice, setInvoice] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchInvoice() {
@@ -25,7 +28,30 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   }, [id, getAccessToken])
 
   const copyLink = () => navigator.clipboard.writeText(invoice?.paymentLink)
-  
+
+  const cancelInvoice = async () => {
+    setIsCancelling(true)
+    setCancelError(null)
+    try {
+      const token = await getAccessToken()
+      const res = await fetch(`/api/invoices/${id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to cancel invoice')
+      }
+      setInvoice((prev: any) => ({ ...prev, status: 'cancelled' }))
+      setShowCancelConfirm(false)
+    } catch (error: any) {
+      setCancelError(error.message || 'Failed to cancel invoice')
+    } finally {
+      setIsCancelling(false)
+    }
+  }
+
   const downloadPDF = async () => {
     setIsDownloading(true)
     try {
@@ -91,7 +117,54 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <FileDown className="w-5 h-5" />
           {isDownloading ? 'Generating PDF...' : 'Download Invoice PDF'}
         </button>
+
+        {/* Cancel Invoice Button — only for pending invoices */}
+        {invoice.status === 'pending' && (
+          <div className="mt-3">
+            <button
+              onClick={() => { setCancelError(null); setShowCancelConfirm(true) }}
+              disabled={isCancelling}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 border border-red-300 text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+            >
+              <XCircle className="w-4 h-4" />
+              Cancel Invoice
+            </button>
+          </div>
+        )}
+
+        {/* Cancel error message */}
+        {cancelError && (
+          <p className="mt-2 text-sm text-red-600 text-center">{cancelError}</p>
+        )}
       </div>
+
+      {/* Confirmation dialog */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl border border-brand-border p-6 max-w-sm w-full mx-4 shadow-lg">
+            <h2 className="text-lg font-semibold text-brand-black mb-2">Cancel Invoice?</h2>
+            <p className="text-brand-gray text-sm mb-6">
+              Are you sure you want to cancel this invoice? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={isCancelling}
+                className="flex-1 py-2 px-4 border border-brand-border rounded-lg text-sm hover:bg-brand-light disabled:opacity-50 transition-colors"
+              >
+                Keep Invoice
+              </button>
+              <button
+                onClick={cancelInvoice}
+                disabled={isCancelling}
+                className="flex-1 py-2 px-4 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isCancelling ? 'Cancelling...' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

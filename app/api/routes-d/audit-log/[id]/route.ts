@@ -5,9 +5,11 @@ import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -21,7 +23,7 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const event = await prisma.auditEvent.findUnique({
-      where: { id: params.id },
+      where: { id },
     })
 
     if (!event) return NextResponse.json({ error: 'Audit event not found' }, { status: 404 })

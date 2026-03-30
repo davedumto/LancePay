@@ -1,52 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify auth
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    if (!claims) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+
+    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    const url = new URL(request.url)
+    const q = url.searchParams.get('q')?.trim() ?? ''
+    const type = url.searchParams.get('type')
+
+    if (q.length < 2) {
+      return NextResponse.json(
+        { error: 'Query parameter "q" is required and must be at least 2 characters' },
+        { status: 400 }
+      )
     }
 
-    const user = await prisma.user.findUnique({
-      where: { privyId: claims.userId },
-    })
+    const isInvoicesOnly = type === 'invoices'
+    const isBankAccountsOnly = type === 'bank-accounts'
+    const isBoth = !type
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!isBoth && !isInvoicesOnly && !isBankAccountsOnly) {
+      return NextResponse.json(
+        { error: 'Invalid "type". Expected "invoices" or "bank-accounts"' },
+        { status: 400 }
+      )
     }
 
-    // Parse query parameters
-    const { searchParams } = new URL(request.url)
-    const q = searchParams.get('q')
-    const type = searchParams.get('type')
-
-    // Validate query
-    if (!q || q.length < 2) {
-      return NextResponse.json({ error: 'Query must be at least 2 characters' }, { status: 400 })
-    }
-
-    // Validate type if provided
-    if (type && !['invoices', 'bank-accounts'].includes(type)) {
-      return NextResponse.json({ error: 'Invalid type. Must be "invoices" or "bank-accounts"' }, { status: 400 })
-    }
-
-    // Build queries based on type
-    const searchInvoices = !type || type === 'invoices'
-    const searchBankAccounts = !type || type === 'bank-accounts'
-
-    // Run queries in parallel
     const [invoices, bankAccounts] = await Promise.all([
-      searchInvoices
-        ? prisma.invoice.findMany({
+      isBankAccountsOnly
+        ? Promise.resolve([])
+        : prisma.invoice.findMany({
             where: {
               userId: user.id,
               OR: [
@@ -58,11 +51,17 @@ export async function GET(request: NextRequest) {
             },
             take: 10,
             orderBy: { createdAt: 'desc' },
-            select: { id: true, invoiceNumber: true, clientName: true, amount: true, status: true },
-          })
-        : [],
-      searchBankAccounts
-        ? prisma.bankAccount.findMany({
+            select: {
+              id: true,
+              invoiceNumber: true,
+              clientName: true,
+              amount: true,
+              status: true,
+            },
+          }),
+      isInvoicesOnly
+        ? Promise.resolve([])
+        : prisma.bankAccount.findMany({
             where: {
               userId: user.id,
               OR: [
@@ -72,8 +71,8 @@ export async function GET(request: NextRequest) {
               ],
             },
             take: 10,
-          })
-        : [],
+·            orderBy: { createdAt: 'desc' },
+          }),
     ])
 
     return NextResponse.json({
@@ -84,7 +83,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    logger.error({ err: error }, 'Search error')
-    return NextResponse.json({ error: 'Failed to search' }, { status: 500 })
+    logger.error({ err: error }, 'Routes-B search GET error')
+    return NextResponse.json({ error: 'Failed to search records' }, { status: 500 })
   }
 }

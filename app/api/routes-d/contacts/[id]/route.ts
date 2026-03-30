@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 
@@ -6,6 +6,7 @@ type ContactDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<Record<string, unknown> | null>
   findFirst: (args: Record<string, unknown>) => Promise<Record<string, unknown> | null>
   update: (args: Record<string, unknown>) => Promise<Record<string, unknown>>
+  delete: (args: Record<string, unknown>) => Promise<Record<string, unknown>>
 }
 
 function getContactDelegate(): ContactDelegate {
@@ -28,8 +29,10 @@ async function getAuthenticatedUser(request: NextRequest) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
+
   const user = await getAuthenticatedUser(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -37,7 +40,7 @@ export async function GET(
 
   const contactDelegate = getContactDelegate()
   const contact = await contactDelegate.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: {
       id: true,
       userId: true,
@@ -87,8 +90,9 @@ function normalizeOptionalString(value: unknown, maxLength: number): string | nu
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const user = await getAuthenticatedUser(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -97,7 +101,7 @@ export async function PATCH(
   const body = await request.json()
   const contactDelegate = getContactDelegate()
   const existingContact = await contactDelegate.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: {
       id: true,
       userId: true,
@@ -197,7 +201,7 @@ export async function PATCH(
   }
 
   const updatedContact = await contactDelegate.update({
-    where: { id: existingContact.id },
+    where: { id },
     data,
     select: {
       id: true,
@@ -219,4 +223,33 @@ export async function PATCH(
       updatedAt: updatedContact.updatedAt,
     },
   })
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const user = await getAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const contactDelegate = getContactDelegate()
+  const contact = await contactDelegate.findUnique({
+    where: { id },
+    select: { id: true, userId: true },
+  })
+
+  if (!contact) {
+    return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+  }
+
+  if (contact.userId !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  await contactDelegate.delete({ where: { id } })
+
+  return new NextResponse(null, { status: 204 })
 }
