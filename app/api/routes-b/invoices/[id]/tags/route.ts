@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 
-// ── GET /api/routes-b/invoices/[id]/tags — get all tags applied to this invoice ──
+// ── GET /api/routes-b/invoices/[id]/tags — get all tags for an invoice ──
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id: invoiceId } = await params
+        const { id } = await params
         const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
         const claims = await verifyAuthToken(authToken || '')
         if (!claims) {
@@ -21,7 +22,7 @@ export async function GET(
         }
 
         // Verify invoice exists and belongs to this user
-        const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
+        const invoice = await prisma.invoice.findUnique({ where: { id } })
         if (!invoice) {
             return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
         }
@@ -30,30 +31,31 @@ export async function GET(
         }
 
         const invoiceTags = await prisma.invoiceTag.findMany({
-            where: { invoiceId },
+            where: { invoiceId: id },
             include: { tag: { select: { id: true, name: true, color: true } } },
             orderBy: { createdAt: 'asc' },
         })
 
         return NextResponse.json({
-            tags: invoiceTags.map((it: any) => ({
+            tags: invoiceTags.map((it: { tag: { id: string; name: string; color: string } }) => ({
                 id: it.tag.id,
                 name: it.tag.name,
                 color: it.tag.color,
             })),
         })
     } catch (error) {
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+        logger.error({ err: error, invoiceId: (await params).id }, 'Invoice tags GET error')
+        return NextResponse.json({ error: 'Failed to fetch tags' }, { status: 500 })
     }
 }
 
-// ── POST /api/routes-b/invoices/[id]/tags — apply an existing tag to an invoice ──
+// ── POST /api/routes-b/invoices/[id]/tags — apply a tag to an invoice ──
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id: invoiceId } = await params
+        const { id } = await params
         const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
         const claims = await verifyAuthToken(authToken || '')
         if (!claims) {
@@ -71,7 +73,7 @@ export async function POST(
         }
 
         // Verify invoice exists and belongs to this user
-        const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
+        const invoice = await prisma.invoice.findUnique({ where: { id } })
         if (!invoice) {
             return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
         }
@@ -91,7 +93,7 @@ export async function POST(
         let isNew = true
         try {
             await prisma.invoiceTag.create({
-                data: { invoiceId, tagId: body.tagId },
+                data: { invoiceId: id, tagId: body.tagId },
             })
         } catch (err: unknown) {
             const isPrismaUniqueError =
@@ -100,15 +102,16 @@ export async function POST(
                 'code' in err &&
                 (err as { code: string }).code === 'P2002'
             if (!isPrismaUniqueError) throw err
-            // Connection already exists — idempotent
+            // Tag already applied — idempotent
             isNew = false
         }
 
         return NextResponse.json(
-            { invoiceId, tagId: tag.id, tagName: tag.name, tagColor: tag.color },
+            { invoiceId: id, tagId: tag.id, tagName: tag.name, tagColor: tag.color },
             { status: isNew ? 201 : 200 }
         )
     } catch (error) {
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+        logger.error({ err: error, invoiceId: (await params).id }, 'Invoice tags POST error')
+        return NextResponse.json({ error: 'Failed to apply tag' }, { status: 500 })
     }
 }
