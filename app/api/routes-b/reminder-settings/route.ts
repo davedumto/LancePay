@@ -24,16 +24,22 @@ export async function GET(request: NextRequest) {
       where: { userId: user.id },
       select: {
         id: true,
-        enabled: true,
         beforeDueDays: true,
         onDueEnabled: true,
         afterDueDays: true,
-        customMessage: true,
-        createdAt: true,
       },
     })
 
-    return NextResponse.json({ settings: settings ?? null })
+    return NextResponse.json({
+      settings: settings
+        ? {
+            id: settings.id,
+            sendOnDueDate: settings.onDueEnabled,
+            sendDaysBefore: settings.beforeDueDays[0] ?? null,
+            sendDaysAfter: settings.afterDueDays[0] ?? null,
+          }
+        : null,
+    })
   } catch (error) {
     logger.error({ err: error }, 'Routes B reminder-settings GET error')
     return NextResponse.json({ error: 'Failed to get reminder settings' }, { status: 500 })
