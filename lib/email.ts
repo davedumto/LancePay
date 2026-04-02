@@ -161,6 +161,48 @@ export async function sendEmail(params: { to: string; subject: string; template?
   }
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export async function sendInvoiceToClient(params: {
+  clientEmail: string
+  clientName: string | null
+  freelancerName: string
+  invoiceNumber: string
+  amount: number
+  currency: string
+  dueDate: string | null
+  paymentLink: string
+}) {
+  if (!EMAIL_REGEX.test(params.clientEmail)) {
+    console.warn('sendInvoiceToClient: invalid clientEmail, skipping', params.clientEmail)
+    return { success: false, skipped: true as const }
+  }
+
+  const { clientEmail, clientName, freelancerName, invoiceNumber, amount, currency, dueDate, paymentLink } = params
+  const dueDateRow = dueDate
+    ? `<p style="color:#555;margin:4px 0;"><strong>Due:</strong> ${escapeHtml(dueDate)}</p>`
+    : ''
+
+  return sendEmail({
+    to: clientEmail,
+    subject: `Invoice from ${freelancerName} — ${invoiceNumber}`,
+    html: `
+      <div style="font-family:system-ui,sans-serif;max-width:500px;margin:0 auto;padding:24px;">
+        <h2 style="color:#111;">You have a new invoice</h2>
+        <p style="color:#333;">Hi ${escapeHtml(clientName || 'there')},</p>
+        <p style="color:#333;"><strong>${escapeHtml(freelancerName)}</strong> has sent you an invoice.</p>
+        <div style="background:#F9FAFB;border:1px solid #E5E7EB;padding:20px;border-radius:12px;margin:20px 0;">
+          <p style="color:#555;margin:4px 0;"><strong>Invoice:</strong> ${escapeHtml(invoiceNumber)}</p>
+          <p style="color:#555;margin:4px 0;"><strong>Amount:</strong> ${currency} ${amount.toFixed(2)}</p>
+          ${dueDateRow}
+        </div>
+        <a href="${paymentLink}" style="display:inline-block;background:#10b981;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Pay Now</a>
+        <p style="color:#999;font-size:12px;margin-top:24px;">LancePay — Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+
 // Invoice created email
 export async function sendInvoiceCreatedEmail(params: {
   to: string
