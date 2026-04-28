@@ -4,6 +4,8 @@ import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { validateEventTypes, getDefaultEventTypes } from '../_lib/webhook-events'
 import { registerRoute } from '../_lib/openapi'
+import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
+import { generateWebhookSecret } from '../_lib/hmac'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -20,6 +22,7 @@ registerRoute({
       isActive: z.boolean(),
       subscribedEvents: z.array(z.string()),
       lastTriggeredAt: z.string().nullable(),
+      secretFingerprint: z.string(),
       createdAt: z.string()
     }))
   }),
@@ -91,11 +94,18 @@ export async function GET(request: NextRequest) {
         isActive: true,
         subscribedEvents: true,
         lastTriggeredAt: true,
+        signingSecret: true,
         createdAt: true,
       },
     })
 
-    return NextResponse.json({ webhooks })
+    const webhooksWithFingerprint = webhooks.map(webhook => ({
+      ...webhook,
+      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
+      signingSecret: undefined, // Remove raw secret
+    }))
+
+    return NextResponse.json({ webhooks: webhooksWithFingerprint })
   } catch (error) {
     logger.error({ err: error }, 'Routes B webhooks GET error')
     return NextResponse.json({ error: 'Failed to get webhooks' }, { status: 500 })

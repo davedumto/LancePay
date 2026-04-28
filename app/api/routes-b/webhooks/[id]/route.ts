@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { validateEventTypes } from '../../_lib/webhook-events'
 import { registerRoute } from '../../_lib/openapi'
+import { generateSecretFingerprint } from '../../_lib/webhook-fingerprint'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -18,6 +19,7 @@ registerRoute({
       description: z.string().nullable(),
       subscribedEvents: z.array(z.string()),
       isActive: z.boolean(),
+      secretFingerprint: z.string(),
       createdAt: z.string()
     })
   }),
@@ -92,6 +94,7 @@ export async function GET(
       description: true,
       subscribedEvents: true,
       isActive: true,
+      signingSecret: true,
       createdAt: true,
     },
   })
@@ -111,6 +114,7 @@ export async function GET(
       description: webhook.description,
       subscribedEvents: webhook.subscribedEvents,
       isActive: webhook.isActive,
+      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
       createdAt: webhook.createdAt,
     },
   })

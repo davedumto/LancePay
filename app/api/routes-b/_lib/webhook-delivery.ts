@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { signWebhookPayload } from './hmac'
+import { shouldDeadLetter, pushToDeadLetter } from './dead-letter'
 
 type WebhookForDelivery = {
   id: string
@@ -37,17 +38,30 @@ export async function dispatchWebhookDelivery(
     })
 
     const latencyMs = Date.now() - startedAt
+    const deliveryStatus = response.ok ? 'success' : 'failed'
+    
     await prisma.webhookDelivery.create({
       data: {
         webhookId: webhook.id,
         eventType,
         payload: body,
-        status: response.ok ? 'success' : 'failed',
+        status: deliveryStatus,
         attemptCount: 1,
         lastAttemptAt: new Date(),
         lastStatusCode: response.status,
       },
     })
+
+    // Push to dead-letter queue if failed and this would be the final attempt
+    if (!response.ok && shouldDeadLetter(deliveryStatus, 1)) {
+      pushToDeadLetter(webhook.id, {
+        eventType,
+        payload: body,
+        lastError: `Upstream responded with ${response.status}`,
+        attemptCount: 1,
+        lastStatusCode: response.status,
+      })
+    }
     await prisma.userWebhook.update({
       where: { id: webhook.id },
       data: { lastTriggeredAt: new Date() },
@@ -62,6 +76,7 @@ export async function dispatchWebhookDelivery(
   } catch (error) {
     const latencyMs = Date.now() - startedAt
     const message = error instanceof Error ? error.message : 'Failed to dispatch webhook'
+    
     await prisma.webhookDelivery.create({
       data: {
         webhookId: webhook.id,
@@ -73,6 +88,16 @@ export async function dispatchWebhookDelivery(
         lastError: message,
       },
     })
+
+    // Push to dead-letter queue if this would be the final attempt
+    if (shouldDeadLetter('failed', 1)) {
+      pushToDeadLetter(webhook.id, {
+        eventType,
+        payload: body,
+        lastError: message,
+        attemptCount: 1,
+      })
+    }
 
     return {
       ok: false,
