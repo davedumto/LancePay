@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+let cache: { value: number; fetchedAtMs: number } | null = null;
+const MAX_STALE_SECONDS = 3600;
 
 export async function GET() {
   try {
@@ -24,6 +26,7 @@ export async function GET() {
       throw new Error("Invalid rate format");
     }
 
+    cache = { value: usdToNgn, fetchedAtMs: Date.now() };
     return NextResponse.json(
       {
         rate: {
@@ -38,10 +41,29 @@ export async function GET() {
     );
   } catch (error) {
     console.error("Exchange rate fetch error:", error);
+    if (cache) {
+      const stalenessSeconds = Math.floor((Date.now() - cache.fetchedAtMs) / 1000);
+      if (stalenessSeconds <= MAX_STALE_SECONDS) {
+        return NextResponse.json(
+          {
+            rate: {
+              from: "USDC",
+              to: "NGN",
+              value: cache.value,
+              source: "open.er-api.com",
+              fetchedAt: new Date(cache.fetchedAtMs).toISOString(),
+            },
+            stalenessSeconds,
+          },
+          { status: 200, headers: { "X-Stale": "true" } }
+        );
+      }
+    }
 
     return NextResponse.json(
       {
         error: "Unable to fetch exchange rate. Please try again.",
+        code: "RATE_UNAVAILABLE",
       },
       { status: 503 }
     );
