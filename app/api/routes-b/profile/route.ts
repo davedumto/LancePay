@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { redactProfile, parseRevealQuery, isAdminRequest } from '../_lib/redact'
 
 // ── GET /api/routes-b/profile — get current user's profile ──────────
 
@@ -19,11 +20,35 @@ export async function GET(request: NextRequest) {
 
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    return NextResponse.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
+    // Parse reveal query parameters
+    const { searchParams } = new URL(request.url)
+    const revealFields = parseRevealQuery(searchParams)
+    const isAdmin = isAdminRequest(request)
+
+    // Apply redaction
+    const redactedProfile = redactProfile(user, {
+      policy: 'masked',
+      revealFields,
+      isAdmin,
     })
+
+    // Create audit log entry if revealing PII
+    if (revealFields.length > 0 && isAdmin) {
+      await prisma.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'PROFILE_PII_REVEALED',
+          entityType: 'User',
+          entityId: user.id,
+          metadata: {
+            revealedFields: revealFields,
+            revealedAt: new Date().toISOString(),
+          },
+        },
+      })
+    }
+
+    return NextResponse.json(redactedProfile)
   } catch (error) {
     logger.error({ err: error }, 'Profile GET error')
     return NextResponse.json({ error: 'Failed to get profile' }, { status: 500 })
