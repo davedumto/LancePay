@@ -83,6 +83,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid SWIFT/BIC format' }, { status: 400 })
   }
 
+  const existing = await prisma.bankAccount.findFirst({
+    where: {
+      userId: user.id,
+      accountNumber: { equals: accountNumber, mode: 'insensitive' },
+      bankCode: { equals: bankCode, mode: 'insensitive' },
+    },
+  })
+
+  if (existing) {
+    return NextResponse.json(
+      { error: 'Bank account already exists', existingId: existing.id },
+      { status: 409 },
+    )
+  }
+
   const existingCount = await prisma.bankAccount.count({ where: { userId: user.id } })
   const isDefault = existingCount === 0
 
