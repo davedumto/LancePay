@@ -3,6 +3,65 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
 import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/invoices',
+  summary: 'List invoices',
+  description: 'Get paginated list of invoices for the authenticated user, optionally filtered by status.',
+  requestSchema: z.object({
+    status: z.enum(['pending', 'paid', 'overdue', 'cancelled']).optional(),
+    page: z.string().optional().default('1'),
+    limit: z.string().optional().default('20')
+  }),
+  responseSchema: z.object({
+    invoices: z.array(z.object({
+      id: z.string(),
+      invoiceNumber: z.string(),
+      clientName: z.string().nullable(),
+      clientEmail: z.string(),
+      amount: z.number(),
+      currency: z.string(),
+      status: z.string(),
+      dueDate: z.string().nullable(),
+      createdAt: z.string()
+    })),
+    pagination: z.object({
+      page: z.number(),
+      limit: z.number(),
+      total: z.number(),
+      totalPages: z.number()
+    })
+  }),
+  tags: ['invoices']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/invoices',
+  summary: 'Create invoice',
+  description: 'Create a new invoice. Returns 409 if a similar invoice was created recently.',
+  requestSchema: z.object({
+    clientEmail: z.string().email(),
+    clientName: z.string().optional(),
+    description: z.string().min(1),
+    amount: z.number().positive(),
+    currency: z.string().default('USD'),
+    dueDate: z.string().optional()
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    invoiceNumber: z.string(),
+    paymentLink: z.string(),
+    status: z.string(),
+    amount: z.number(),
+    currency: z.string()
+  }),
+  tags: ['invoices']
+})
 
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')

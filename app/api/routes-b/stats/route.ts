@@ -1,6 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/stats',
+  summary: 'Get user statistics',
+  description: 'Returns invoice statistics, total earnings, and pending withdrawals for the authenticated user.',
+  responseSchema: z.object({
+    invoices: z.object({
+      total: z.number(),
+      pending: z.number(),
+      paid: z.number(),
+      cancelled: z.number(),
+      overdue: z.number()
+    }),
+    totalEarned: z.number(),
+    pendingWithdrawals: z.number()
+  }),
+  tags: ['stats']
+})
 
 export async function GET(request: NextRequest) {
   try {

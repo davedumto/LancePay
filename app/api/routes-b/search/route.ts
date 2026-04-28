@@ -3,6 +3,40 @@ import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { validateSearchQuery } from '../_lib/validation'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/search',
+  summary: 'Search invoices and bank accounts',
+  description: 'Search across invoices and bank accounts for the authenticated user.',
+  requestSchema: z.object({
+    q: z.string().min(1).describe('Search query'),
+    type: z.enum(['invoices', 'bank-accounts']).optional().describe('Filter by type')
+  }),
+  responseSchema: z.object({
+    query: z.string(),
+    results: z.object({
+      invoices: z.array(z.object({
+        id: z.string(),
+        invoiceNumber: z.string(),
+        clientName: z.string().nullable(),
+        amount: z.number(),
+        status: z.string()
+      })),
+      bankAccounts: z.array(z.object({
+        id: z.string(),
+        bankName: z.string(),
+        accountName: z.string(),
+        accountNumber: z.string(),
+        isDefault: z.boolean()
+      }))
+    })
+  }),
+  tags: ['search']
+})
 
 export async function GET(request: NextRequest) {
   try {

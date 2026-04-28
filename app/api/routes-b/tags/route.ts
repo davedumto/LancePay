@@ -1,6 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/tags',
+  summary: 'List tags',
+  description: 'Get all tags for the authenticated user with invoice counts.',
+  responseSchema: z.object({
+    tags: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      color: z.string(),
+      invoiceCount: z.number(),
+      createdAt: z.string()
+    }))
+  }),
+  tags: ['tags']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/tags',
+  summary: 'Create tag',
+  description: 'Create a new tag for organizing invoices.',
+  requestSchema: z.object({
+    name: z.string().min(1).max(50),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#6366f1')
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    name: z.string(),
+    color: z.string(),
+    invoiceCount: z.number()
+  }),
+  tags: ['tags']
+})
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')

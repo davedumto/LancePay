@@ -1,6 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'PATCH',
+  path: '/branding',
+  summary: 'Update branding settings',
+  description: 'Update logo, colors, footer text, or signature for invoice branding.',
+  requestSchema: z.object({
+    logoUrl: z.string().url().optional(),
+    primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+    footerText: z.string().max(200).optional(),
+    signatureUrl: z.string().url().optional()
+  }),
+  responseSchema: z.object({
+    branding: z.object({
+      id: z.string(),
+      userId: z.string(),
+      logoUrl: z.string().nullable(),
+      primaryColor: z.string().nullable(),
+      footerText: z.string().nullable(),
+      signatureUrl: z.string().nullable(),
+      createdAt: z.string(),
+      updatedAt: z.string()
+    })
+  }),
+  tags: ['branding']
+})
 
 function isValidHexColor(color: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(color);

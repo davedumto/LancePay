@@ -3,6 +3,49 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { validateEventTypes, getDefaultEventTypes } from '../_lib/webhook-events'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/webhooks',
+  summary: 'List webhooks',
+  description: 'Get all webhooks for the authenticated user.',
+  responseSchema: z.object({
+    webhooks: z.array(z.object({
+      id: z.string(),
+      targetUrl: z.string(),
+      description: z.string().nullable(),
+      isActive: z.boolean(),
+      subscribedEvents: z.array(z.string()),
+      lastTriggeredAt: z.string().nullable(),
+      createdAt: z.string()
+    }))
+  }),
+  tags: ['webhooks']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/webhooks',
+  summary: 'Create webhook',
+  description: 'Create a new webhook. Defaults to all events (*).',
+  requestSchema: z.object({
+    targetUrl: z.string().url(),
+    description: z.string().max(100).optional(),
+    eventTypes: z.array(z.string()).optional()
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    targetUrl: z.string(),
+    description: z.string().nullable(),
+    signingSecret: z.string(),
+    createdAt: z.string()
+  }),
+  tags: ['webhooks']
+})
 
 const MAX_WEBHOOKS_PER_USER = 10
 
@@ -83,6 +126,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate event types
+    let eventTypes: string[]
+    try {
+      eventTypes = body.eventTypes 
+        ? validateEventTypes(body.eventTypes)
+        : getDefaultEventTypes()
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'Invalid eventTypes' },
+        { status: 400 }
+      )
+    }
+
     const existingCount = await prisma.userWebhook.count({
       where: { userId: user.id },
     })
@@ -102,6 +158,7 @@ export async function POST(request: NextRequest) {
         targetUrl: body.targetUrl,
         description: body.description ?? null,
         signingSecret,
+        subscribedEvents: eventTypes,
       },
       select: {
         id: true,
