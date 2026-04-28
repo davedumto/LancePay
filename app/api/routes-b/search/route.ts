@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { validateSearchQuery } from '../_lib/validation'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,16 +16,14 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const url = new URL(request.url)
-    const q = url.searchParams.get('q')?.trim() ?? ''
+    const query = validateSearchQuery(url.searchParams.get('q'))
     const type = url.searchParams.get('type')
 
-    if (q.length < 2) {
-      return NextResponse.json(
-        { error: 'Query parameter "q" is required and must be at least 2 characters' },
-        { status: 400 }
-      )
+    if (!query.ok) {
+      return NextResponse.json({ error: query.error }, { status: 400 })
     }
 
+    const q = query.value
     const isInvoicesOnly = type === 'invoices'
     const isBankAccountsOnly = type === 'bank-accounts'
     const isBoth = !type
