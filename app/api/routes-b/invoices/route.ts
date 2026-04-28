@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { buildInvoiceWhereFilters } from '../_lib/invoice-filters'
+import { getArchiveFilter, parseIncludeArchivedParam } from '../_lib/invoice-archive'
 
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
+  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
   const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
   const limit = Math.min(
     50,
@@ -53,9 +56,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
+  let searchFilters = {}
+  try {
+    searchFilters = buildInvoiceWhereFilters({
+      number: searchParams.get('number'),
+      client: searchParams.get('client'),
+      minAmount: searchParams.get('minAmount'),
+      maxAmount: searchParams.get('maxAmount'),
+      currency: searchParams.get('currency'),
+    })
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 400 })
+  }
+
   const where = {
     userId: auth.user.id,
     ...(status ? { status } : {}),
+    ...getArchiveFilter(includeArchived),
+    ...searchFilters,
   }
 
   const total = await prisma.invoice.count({ where })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { withBodyLimit } from '../_lib/with-body-limit'
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function patchReminderSettings(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -149,3 +150,5 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update reminder settings' }, { status: 500 })
   }
 }
+
+export const PATCH = withBodyLimit(patchReminderSettings, { limitBytes: 1024 * 1024 })

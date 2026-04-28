@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { withBodyLimit } from '../../_lib/with-body-limit'
 
 function isValidHttpsUrl(url: string): boolean {
   try {
@@ -10,7 +11,7 @@ function isValidHttpsUrl(url: string): boolean {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function patchAvatar(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -42,3 +43,5 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ avatarUrl: updatedUser.avatarUrl })
 }
+
+export const PATCH = withBodyLimit(patchAvatar, { limitBytes: 2 * 1024 * 1024 })

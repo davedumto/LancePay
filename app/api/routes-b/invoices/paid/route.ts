@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getArchiveFilter, parseIncludeArchivedParam } from '../../_lib/invoice-archive'
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
+  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
 
   const parsedPage = parseInt(searchParams.get('page') || '1', 10)
   const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage
@@ -24,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   const [invoices, total] = await Promise.all([
     prisma.invoice.findMany({
-      where: { userId: user.id, status: 'paid' },
+      where: { userId: user.id, status: 'paid', ...getArchiveFilter(includeArchived) },
       orderBy: { paidAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
         createdAt: true,
       },
     }),
-    prisma.invoice.count({ where: { userId: user.id, status: 'paid' } }),
+    prisma.invoice.count({ where: { userId: user.id, status: 'paid', ...getArchiveFilter(includeArchived) } }),
   ])
 
   return NextResponse.json({
