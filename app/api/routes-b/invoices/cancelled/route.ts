@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getArchiveFilter, parseIncludeArchivedParam } from '../../_lib/invoice-archive'
 
 export async function GET(request: NextRequest) {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -11,6 +12,7 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const { searchParams } = new URL(request.url)
+  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
     const limit = Math.min(
         50,
@@ -22,6 +24,7 @@ export async function GET(request: NextRequest) {
             where: {
                 userId: user.id,
                 status: 'cancelled',
+                ...getArchiveFilter(includeArchived),
             },
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
@@ -39,6 +42,7 @@ export async function GET(request: NextRequest) {
             where: {
                 userId: user.id,
                 status: 'cancelled',
+                ...getArchiveFilter(includeArchived),
             },
         }),
     ])

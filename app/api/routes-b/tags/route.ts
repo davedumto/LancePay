@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { withBodyLimit } from '../_lib/with-body-limit'
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
   })
 }
 
-export async function POST(request: NextRequest) {
+async function postTag(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -87,3 +88,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export const POST = withBodyLimit(postTag, { limitBytes: 1024 * 1024 })

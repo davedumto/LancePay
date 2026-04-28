@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { withBodyLimit } from '../_lib/with-body-limit'
 
 const MAX_WEBHOOKS_PER_USER = 10
 
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function postWebhook(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
@@ -126,3 +127,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to register webhook' }, { status: 500 })
   }
 }
+
+export const POST = withBodyLimit(postWebhook, { limitBytes: 1024 * 1024 })

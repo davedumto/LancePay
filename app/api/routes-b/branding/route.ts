@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
+import { withBodyLimit } from '../_lib/with-body-limit'
 
 function isValidHexColor(color: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(color);
@@ -10,7 +11,7 @@ function isValidHttpsUrl(url: string): boolean {
   return url.startsWith("https://");
 }
 
-export async function PATCH(request: NextRequest) {
+async function patchBranding(request: NextRequest) {
   const authToken = request.headers
     .get("authorization")
     ?.replace("Bearer ", "");
@@ -83,3 +84,5 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ branding });
 }
+
+export const PATCH = withBodyLimit(patchBranding, { limitBytes: 1024 * 1024 })
