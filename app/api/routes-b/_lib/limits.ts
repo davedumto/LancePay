@@ -1,4 +1,5 @@
 export const TAG_LIMITS = {
   MAX_TAGS_PER_USER: 100,
   MAX_TAG_NAME_LENGTH: 32,
+  MAX_DIGEST_DAYS_IN_PAST: 30,
 } as const;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { POST } from '../route';
-import { prisma } from '@/lib/db'
+import { prisma } from '@/lib/prisma';
 
 // Mock auth and prisma
 vi.mock('@/lib/prisma', () => ({
