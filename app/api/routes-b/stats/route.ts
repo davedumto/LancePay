@@ -6,6 +6,7 @@ import { registerRoute } from '../_lib/openapi'
 import { getCacheValue, setCacheValue } from '../_lib/cache'
 import { errorResponse } from '../_lib/errors'
 import { z } from 'zod'
+import { aggregateGroups } from '../_lib/currency'
 
 // Register OpenAPI documentation
 registerRoute({
@@ -22,7 +23,7 @@ registerRoute({
       cancelled: z.number(),
       overdue: z.number(),
     }),
-    totalEarned: z.number(),
+    totalEarned: z.union([z.number(), z.record(z.number())]),
     pendingWithdrawals: z.number(),
   }),
   tags: ['stats'],
@@ -40,7 +41,7 @@ async function GETHandler(request: NextRequest) {
         cancelled: number
         overdue: number
       }
-      totalEarned: number
+      totalEarned: number | Record<string, number>
       pendingWithdrawals: number
     }>(cacheKey)
     if (cached) {
@@ -64,7 +65,8 @@ async function GETHandler(request: NextRequest) {
         where: { userId: user.id },
         _count: { id: true },
       }),
-      prisma.transaction.aggregate({
+      prisma.transaction.groupBy({
+        by: ['currency'],
         where: { userId: user.id, type: 'payment', status: 'completed' },
         _sum: { amount: true },
       }),
@@ -85,7 +87,7 @@ async function GETHandler(request: NextRequest) {
         cancelled: counts.cancelled ?? 0,
         overdue: counts.overdue ?? 0,
       },
-      totalEarned: Number(totalEarned._sum.amount ?? 0),
+      totalEarned: aggregateGroups(totalEarned),
       pendingWithdrawals,
     }
 

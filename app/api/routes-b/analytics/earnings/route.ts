@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { parseTzDateRange } from '../../_lib/date-range'
+import { aggregateGroups } from '../../_lib/currency'
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -43,15 +44,18 @@ async function GETHandler(request: NextRequest) {
       },
     }
 
-    const total = await prisma.transaction.aggregate({
+    const total = await prisma.transaction.groupBy({
+      by: ['currency'],
       where,
       _sum: { amount: true },
     })
 
+    const totalEarned = aggregateGroups(total)
+
     return NextResponse.json({
       earnings: {
-        totalEarned: Number(total._sum.amount ?? 0),
-        currency: 'USDC',
+        totalEarned,
+        currency: typeof totalEarned === 'number' ? 'USDC' : 'MIXED',
         from: from.toLocaleDateString('en-CA', { timeZone: tz }),
         to: to.toLocaleDateString('en-CA', { timeZone: tz }),
         days,
