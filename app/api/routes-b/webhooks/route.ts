@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -14,6 +15,11 @@ import {
 import { registerRoute } from '../_lib/openapi'
 import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
 import { generateWebhookSecret } from '../_lib/hmac'
+import {
+  getCustomHeaders,
+  setCustomHeaders,
+  validateCustomHeaders,
+} from '../_lib/webhook-custom-headers'
 import { z } from 'zod'
 
 const MAX_WEBHOOKS_PER_USER = 10
@@ -37,6 +43,7 @@ registerRoute({
         subscribedEvents: z.array(z.string()),
         lastTriggeredAt: z.string().nullable(),
         secretFingerprint: z.string(),
+        headers: z.record(z.string(), z.string()).optional(),
         createdAt: z.string(),
       })
     ),
@@ -56,12 +63,14 @@ registerRoute({
     targetUrl: z.string().url(),
     description: z.string().max(100).optional(),
     eventTypes: z.array(z.string()).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
   }),
   responseSchema: z.object({
     id: z.string(),
     targetUrl: z.string(),
     description: z.string().nullable(),
     signingSecret: z.string(),
+    headers: z.record(z.string(), z.string()).optional(),
     createdAt: z.string(),
   }),
   tags: ['webhooks'],
@@ -116,13 +125,14 @@ async function GETHandler(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
-      webhooks: webhooks.map((w) => ({
-        ...w,
-        secretFingerprint: generateSecretFingerprint(w.signingSecret),
-        signingSecret: undefined,
-      })),
-    })
+    const webhooksWithFingerprint = webhooks.map((webhook) => ({
+      ...webhook,
+      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
+      signingSecret: undefined,
+      headers: getCustomHeaders(webhook.id),
+    }))
+
+    return NextResponse.json({ webhooks: webhooksWithFingerprint })
   } catch (error) {
     logger.error({ err: error }, 'GET webhooks error')
     return NextResponse.json(
@@ -172,10 +182,7 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    if (
-      body.targetUrl.length > 512 ||
-      !isValidHttpsUrl(body.targetUrl)
-    ) {
+    if (body.targetUrl.length > 512 || !isValidHttpsUrl(body.targetUrl)) {
       return NextResponse.json(
         { error: 'Invalid HTTPS URL (max 512 chars)' },
         { status: 400 }
@@ -204,11 +211,19 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    const count = await prisma.userWebhook.count({
+    const headersResult = validateCustomHeaders(body.headers)
+    if (!headersResult.ok) {
+      return NextResponse.json(
+        { error: headersResult.error },
+        { status: 400 }
+      )
+    }
+
+    const existingCount = await prisma.userWebhook.count({
       where: { userId: user.id },
     })
 
-    if (count >= MAX_WEBHOOKS_PER_USER) {
+    if (existingCount >= MAX_WEBHOOKS_PER_USER) {
       return NextResponse.json(
         { error: 'Webhook limit reached (10)' },
         { status: 429 }
@@ -236,11 +251,14 @@ async function POSTHandler(request: NextRequest) {
       },
     })
 
+    setCustomHeaders(webhook.id, headersResult.headers)
+
     const responseBody = {
       id: webhook.id,
       targetUrl: webhook.targetUrl,
       description: webhook.description ?? null,
       signingSecret,
+      headers: headersResult.headers,
       createdAt: webhook.createdAt,
     }
 

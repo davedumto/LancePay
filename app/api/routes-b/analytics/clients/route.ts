@@ -23,9 +23,10 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const url = new URL(request.url);
-  let limit: number
+  const includeOthers = url.searchParams.get("includeOthers") === "true";
+  let top: number
   try {
-    limit = toInt(url.searchParams.get("limit"), "limit", { default: 10, min: 1, max: 50 })
+    top = toInt(url.searchParams.get("top"), "top", { default: 10, min: 1, max: 50 })
   } catch (err) {
     if (err instanceof BadRequest) {
       return NextResponse.json({ error: err.message }, { status: 400 })
@@ -33,45 +34,58 @@ async function GETHandler(request: NextRequest) {
     throw err
   }
 
-  const grouped = await prisma.invoice.groupBy({
-    by: ["clientEmail", "clientName"],
-    where: { userId: user.id, paidAt: { not: null } },
-    _count: { id: true },
-    _sum: { amount: true },
-    _max: { paidAt: true },
-    _min: { createdAt: true },
-    orderBy: { _sum: { amount: "desc" } },
-    take: limit,
-  });
+  // Single SQL query using CTE to get top N and others bucket
+  const results = await prisma.$queryRaw<any[]>`
+    WITH client_stats AS (
+      SELECT 
+        "clientEmail", 
+        "clientName", 
+        SUM(amount) as "totalPaid", 
+        COUNT(id) as "invoiceCount", 
+        MAX("paidAt") as "lastPaymentAt",
+        ROW_NUMBER() OVER (
+          ORDER BY SUM(amount) DESC, COUNT(id) DESC, MAX("paidAt") DESC
+        ) as rank
+      FROM "Invoice"
+      WHERE "userId" = ${user.id} AND "paidAt" IS NOT NULL
+      GROUP BY "clientEmail", "clientName"
+    ),
+    top_clients AS (
+      SELECT * FROM client_stats WHERE rank <= ${top}
+    ),
+    others_bucket AS (
+      SELECT 
+        'others' as "clientEmail", 
+        'Others' as "clientName", 
+        SUM("totalPaid") as "totalPaid", 
+        SUM("invoiceCount") as "invoiceCount", 
+        MAX("lastPaymentAt") as "lastPaymentAt",
+        ${top} + 1 as rank
+      FROM client_stats 
+      WHERE rank > ${top}
+    )
+    SELECT * FROM top_clients
+    ${includeOthers ? prisma.sql`UNION ALL SELECT * FROM others_bucket WHERE "totalPaid" IS NOT NULL` : prisma.sql``}
+    ORDER BY rank ASC
+  `;
 
-  const clients = grouped.map((c: any) => {
-    const totalPaid = Number(c._sum.amount ?? 0);
-    const invoiceCount = c._count.id;
-    const firstInvoiceDate = c._min.createdAt ? new Date(c._min.createdAt) : null;
-    const lastPaymentAt = c._max.paidAt ? new Date(c._max.paidAt) : null;
-
-    let activeMonths = 0;
-    if (firstInvoiceDate && lastPaymentAt) {
-      const diffTime = Math.abs(lastPaymentAt.getTime() - firstInvoiceDate.getTime());
-      activeMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
-    }
-
-    const avgMonthlyPaid = activeMonths > 0 ? totalPaid / activeMonths : 0;
-    const projectedAnnual = activeMonths >= 3 ? avgMonthlyPaid * 12 : undefined;
+  const clients = results.map((c: any) => {
+    const totalPaid = Number(c.totalPaid ?? 0);
+    const invoiceCount = Number(c.invoiceCount ?? 0);
+    const lastPaymentAt = c.lastPaymentAt ? new Date(c.lastPaymentAt) : null;
 
     return {
       clientEmail: c.clientEmail,
       clientName: c.clientName,
       totalPaid,
-      activeMonths,
-      avgMonthlyPaid,
       lastPaymentAt,
-      projectedAnnual,
       invoiceCount,
+      isOthers: c.clientEmail === 'others'
     };
   });
 
   return withCompression(request, NextResponse.json({ clients }));
 }
+
 
 export const GET = withRequestId(GETHandler)

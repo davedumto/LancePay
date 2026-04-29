@@ -5,6 +5,12 @@ import { verifyAuthToken } from '@/lib/auth'
 import { validateEventTypes } from '../../_lib/webhook-events'
 import { registerRoute } from '../../_lib/openapi'
 import { generateSecretFingerprint } from '../../_lib/webhook-fingerprint'
+import {
+  clearCustomHeaders,
+  getCustomHeaders,
+  setCustomHeaders,
+  validateCustomHeaders,
+} from '../../_lib/webhook-custom-headers'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -36,7 +42,8 @@ registerRoute({
     targetUrl: z.string().url().optional(),
     description: z.string().max(100).optional(),
     eventTypes: z.array(z.string()).optional(),
-    isActive: z.boolean().optional()
+    isActive: z.boolean().optional(),
+    headers: z.record(z.string(), z.string()).nullable().optional()
   }),
   responseSchema: z.object({
     webhook: z.object({
@@ -116,6 +123,7 @@ async function GETHandler(
       subscribedEvents: webhook.subscribedEvents,
       isActive: webhook.isActive,
       secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
+      headers: getCustomHeaders(webhook.id),
       createdAt: webhook.createdAt,
     },
   })
@@ -148,9 +156,24 @@ async function PATCHHandler(
   }
 
   const body = await request.json()
-  const { targetUrl, description, eventTypes, isActive } = body
+  const { targetUrl, description, eventTypes, isActive, headers } = body
 
   const updateData: any = {}
+  let nextHeaders: Record<string, string> | undefined
+  let headersChanged = false
+
+  if (headers !== undefined) {
+    headersChanged = true
+    if (headers === null) {
+      nextHeaders = {}
+    } else {
+      const headersResult = validateCustomHeaders(headers)
+      if (!headersResult.ok) {
+        return NextResponse.json({ error: headersResult.error }, { status: 400 })
+      }
+      nextHeaders = headersResult.headers
+    }
+  }
 
   if (targetUrl !== undefined) {
     if (typeof targetUrl !== 'string' || targetUrl.length > 512 || !isValidHttpsUrl(targetUrl)) {
@@ -190,26 +213,47 @@ async function PATCHHandler(
     updateData.isActive = isActive
   }
 
-  if (Object.keys(updateData).length === 0) {
+  if (Object.keys(updateData).length === 0 && !headersChanged) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
 
-  const updatedWebhook = await prisma.userWebhook.update({
-    where: { id },
-    data: updateData,
-    select: {
-      id: true,
-      targetUrl: true,
-      description: true,
-      subscribedEvents: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  })
+  const updatedWebhook =
+    Object.keys(updateData).length > 0
+      ? await prisma.userWebhook.update({
+          where: { id },
+          data: updateData,
+          select: {
+            id: true,
+            targetUrl: true,
+            description: true,
+            subscribedEvents: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : await prisma.userWebhook.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            targetUrl: true,
+            description: true,
+            subscribedEvents: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+
+  if (headersChanged && nextHeaders !== undefined) {
+    setCustomHeaders(id, nextHeaders)
+  }
 
   return NextResponse.json({
-    webhook: updatedWebhook,
+    webhook: {
+      ...updatedWebhook,
+      headers: getCustomHeaders(id),
+    },
   })
 }
 
@@ -240,6 +284,7 @@ async function DELETEHandler(
   }
 
   await prisma.userWebhook.delete({ where: { id } })
+  clearCustomHeaders(id)
 
   return new NextResponse(null, { status: 204 })
 }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
 import { getCacheValue, setCacheValue } from '../_lib/cache'
+import { recordTrustScoreSnapshot } from '../_lib/trust-score-history'
 
 const TRUST_SCORE_COOLDOWN_MS = 30_000
 
@@ -60,6 +61,8 @@ async function recomputeTrustScore(userId: string): Promise<TrustScorePayload> {
       lastUpdatedAt: true,
     },
   })
+
+  recordTrustScoreSnapshot(userId, trustScore.score)
 
   return {
     trustScore: {
