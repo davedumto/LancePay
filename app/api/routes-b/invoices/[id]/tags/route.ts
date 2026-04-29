@@ -49,7 +49,13 @@ export async function GET(
     }
 }
 
-// ── POST /api/routes-b/invoices/[id]/tags — apply a tag to an invoice ──
+function isValidTagIdsPayload(body: unknown): body is { tagIds: string[] } {
+    if (!body || typeof body !== 'object' || !('tagIds' in body)) return false
+    const tagIds = (body as { tagIds: unknown }).tagIds
+    return Array.isArray(tagIds) && tagIds.every((tagId) => typeof tagId === 'string' && tagId.length > 0)
+}
+
+// ── POST /api/routes-b/invoices/[id]/tags — attach tags to an invoice ──
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -68,8 +74,11 @@ export async function POST(
         }
 
         const body = await request.json()
-        if (!body.tagId) {
-            return NextResponse.json({ error: 'tagId is required' }, { status: 400 })
+        if (!isValidTagIdsPayload(body)) {
+            return NextResponse.json({ error: 'tagIds must be a non-empty string array' }, { status: 400 })
+        }
+        if (body.tagIds.length > 20) {
+            return NextResponse.json({ error: 'tagIds exceeds maximum of 20' }, { status: 400 })
         }
 
         // Verify invoice exists and belongs to this user
@@ -81,37 +90,109 @@ export async function POST(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
-        // Verify tag exists and belongs to this user
-        const tag = await prisma.tag.findUnique({ where: { id: body.tagId } })
-        if (!tag) {
-            return NextResponse.json({ error: 'Tag not found' }, { status: 404 })
+        const uniqueTagIds = [...new Set(body.tagIds)]
+        const tags = await prisma.tag.findMany({
+            where: { id: { in: uniqueTagIds } },
+            select: { id: true, name: true, color: true, userId: true },
+        })
+        if (tags.length !== uniqueTagIds.length) {
+            return NextResponse.json({ error: 'Invalid tag id' }, { status: 400 })
         }
-        if (tag.userId !== user.id) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        if (tags.some((tag) => tag.userId !== user.id)) {
+            return NextResponse.json({ error: 'Foreign tags are not allowed' }, { status: 403 })
         }
 
-        let isNew = true
-        try {
-            await prisma.invoiceTag.create({
-                data: { invoiceId: id, tagId: body.tagId },
-            })
-        } catch (err: unknown) {
-            const isPrismaUniqueError =
-                typeof err === 'object' &&
-                err !== null &&
-                'code' in err &&
-                (err as { code: string }).code === 'P2002'
-            if (!isPrismaUniqueError) throw err
-            // Tag already applied — idempotent
-            isNew = false
+        const created: string[] = []
+        for (const tagId of uniqueTagIds) {
+            try {
+                await prisma.invoiceTag.create({
+                    data: { invoiceId: id, tagId },
+                })
+                created.push(tagId)
+            } catch (err: unknown) {
+                const isPrismaUniqueError =
+                    typeof err === 'object' &&
+                    err !== null &&
+                    'code' in err &&
+                    (err as { code: string }).code === 'P2002'
+                if (!isPrismaUniqueError) throw err
+            }
         }
 
         return NextResponse.json(
-            { invoiceId: id, tagId: tag.id, tagName: tag.name, tagColor: tag.color },
-            { status: isNew ? 201 : 200 }
+            {
+                invoiceId: id,
+                attachedTagIds: uniqueTagIds,
+                createdTagIds: created,
+            },
+            { status: 200 },
         )
     } catch (error) {
         logger.error({ err: error, invoiceId: (await params).id }, 'Invoice tags POST error')
         return NextResponse.json({ error: 'Failed to apply tag' }, { status: 500 })
+    }
+}
+
+// ── DELETE /api/routes-b/invoices/[id]/tags — detach tags from an invoice ──
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params
+        const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+        const claims = await verifyAuthToken(authToken || '')
+        if (!claims) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
+        const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 })
+        }
+
+        const body = await request.json()
+        if (!isValidTagIdsPayload(body)) {
+            return NextResponse.json({ error: 'tagIds must be a non-empty string array' }, { status: 400 })
+        }
+        if (body.tagIds.length > 20) {
+            return NextResponse.json({ error: 'tagIds exceeds maximum of 20' }, { status: 400 })
+        }
+
+        const invoice = await prisma.invoice.findUnique({ where: { id } })
+        if (!invoice) {
+            return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+        }
+        if (invoice.userId !== user.id) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+
+        const uniqueTagIds = [...new Set(body.tagIds)]
+        const tags = await prisma.tag.findMany({
+            where: { id: { in: uniqueTagIds } },
+            select: { id: true, userId: true },
+        })
+        if (tags.length !== uniqueTagIds.length) {
+            return NextResponse.json({ error: 'Invalid tag id' }, { status: 400 })
+        }
+        if (tags.some((tag) => tag.userId !== user.id)) {
+            return NextResponse.json({ error: 'Foreign tags are not allowed' }, { status: 403 })
+        }
+
+        const result = await prisma.invoiceTag.deleteMany({
+            where: {
+                invoiceId: id,
+                tagId: { in: uniqueTagIds },
+            },
+        })
+
+        return NextResponse.json({
+            invoiceId: id,
+            detachedTagIds: uniqueTagIds,
+            removedCount: result.count,
+        })
+    } catch (error) {
+        logger.error({ err: error, invoiceId: (await params).id }, 'Invoice tags DELETE error')
+        return NextResponse.json({ error: 'Failed to remove tags' }, { status: 500 })
     }
 }

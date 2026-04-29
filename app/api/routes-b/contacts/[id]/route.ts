@@ -2,114 +2,84 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { findContactById, softDeleteContact, supportsContactSoftDelete } from '../../_lib/contacts'
+
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  if (!authToken) {
+    return null
+  }
+
+  const claims = await verifyAuthToken(authToken)
+  if (!claims) {
+    return null
+  }
+
+  return prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+}
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   let contactId: string | undefined
 
   try {
-    // check auth header
-    const authToken = request.headers
-      .get('authorization')
-      ?.replace('Bearer ', '')
-
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    //  verify token
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // get user
-    const user = await prisma.user.findUnique({
-      where: { privyId: claims.userId },
-    })
-
+    const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // get contact ID
-    const { id } = params
-    contactId = id
-
-    // find contact
-    const contact = await prisma.contact.findUnique({
-      where: { id },
-    })
-
-    // not found - 404
-    if (!contact) {
-      return NextResponse.json(
-        { error: 'Contact not found' },
-        { status: 404 }
-      )
-    }
-
-    // ownership check - 403
-    if (contact.userId !== user.id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      )
-    }
-
-    // return contact - 200
-    return NextResponse.json(
-      { contact },
-      { status: 200 }
-    )
-  } catch (error) {
-    logger.error(
-      { err: error, contactId },
-      'Routes B contact GET error'
-    )
-
-    return NextResponse.json(
-      { error: 'Failed to fetch contact' },
-      { status: 500 }
-    )
-  }
-}
-}
-
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     const { id } = await params
+    contactId = id
 
-    const contact = await prisma.contact.findUnique({
-      where: { id },
+    const includeDeleted = new URL(request.url).searchParams.get('includeDeleted') === 'true'
+    if (includeDeleted && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted,
     })
 
     if (!contact) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     }
 
-    if (contact.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return NextResponse.json({ contact }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'Routes B contact GET error')
+    return NextResponse.json({ error: 'Failed to fetch contact' }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await params
+    contactId = id
+
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted: false,
+    })
+
+    if (!contact) {
+      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     }
 
     let body: {
@@ -217,8 +187,48 @@ export async function PATCH(
 
     return NextResponse.json({ contact: updatedContact }, { status: 200 })
   } catch (error) {
-    const { id } = await params
-    logger.error({ err: error, contactId: id }, 'Routes B contact PATCH error')
+    logger.error({ err: error, contactId }, 'Routes B contact PATCH error')
     return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await params
+    contactId = id
+
+    const softDeleteSupported = await supportsContactSoftDelete()
+    if (!softDeleteSupported) {
+      return NextResponse.json(
+        {
+          error: 'Soft delete is unavailable because Contact.deletedAt is not supported in this environment',
+        },
+        { status: 409 }
+      )
+    }
+
+    const deletedContact = await softDeleteContact({
+      id,
+      userId: user.id,
+    })
+
+    if (!deletedContact) {
+      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ contact: deletedContact }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'Routes B contact DELETE error')
+    return NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 })
   }
 }

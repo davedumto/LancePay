@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { logger } from '@/lib/logger'
+import { parseTzDateRange } from '../../_lib/date-range'
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,41 +18,47 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { privyId: claims.userId },
+      select: { id: true, timezone: true },
     })
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const now = new Date()
-    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+    const url = new URL(request.url)
+    const parsedRange = parseTzDateRange(url.searchParams, user.timezone)
+    if (!parsedRange.ok) {
+      return NextResponse.json(parsedRange.error, { status: 400 })
+    }
 
-    const where = { userId: user.id, type: 'payment', status: 'completed' }
+    const { from, to, toExclusive, days, tz } = parsedRange.value
+    const where = {
+      userId: user.id,
+      type: 'payment',
+      status: 'completed',
+      createdAt: {
+        gte: from,
+        lt: toExclusive,
+      },
+    }
 
-    const [total, thisMonth, lastMonth] = await Promise.all([
-      prisma.transaction.aggregate({ where, _sum: { amount: true } }),
-      prisma.transaction.aggregate({ 
-        where: { ...where, createdAt: { gte: startOfThisMonth } }, 
-        _sum: { amount: true } 
-      }),
-      prisma.transaction.aggregate({ 
-        where: { ...where, createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } }, 
-        _sum: { amount: true } 
-      }),
-    ])
+    const total = await prisma.transaction.aggregate({
+      where,
+      _sum: { amount: true },
+    })
 
     return NextResponse.json({
       earnings: {
         totalEarned: Number(total._sum.amount ?? 0),
-        thisMonth: Number(thisMonth._sum.amount ?? 0),
-        lastMonth: Number(lastMonth._sum.amount ?? 0),
         currency: 'USDC',
+        from: from.toLocaleDateString('en-CA', { timeZone: tz }),
+        to: to.toLocaleDateString('en-CA', { timeZone: tz }),
+        days,
+        tz,
       },
     })
   } catch (error) {
-    console.error('Earnings GET error:', error)
+    logger.error({ err: error }, 'Routes B analytics earnings GET error')
     return NextResponse.json({ error: 'Failed to get earnings' }, { status: 500 })
   }
 }

@@ -2,6 +2,51 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { validateSearchQuery } from '../_lib/validation'
+import { registerRoute } from '../_lib/openapi'
+import { getCachedValue, setCachedValue } from '../_lib/cache'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/search',
+  summary: 'Search invoices, bank accounts, contacts and tags',
+  description: 'Search across multiple resources for the authenticated user with facet counts.',
+  requestSchema: z.object({
+    q: z.string().min(1).describe('Search query'),
+    type: z.enum(['invoices', 'bank-accounts', 'contacts', 'tags']).optional().describe('Filter by type')
+  }),
+  responseSchema: z.object({
+    query: z.string(),
+    results: z.object({
+      invoices: z.array(z.any()),
+      bankAccounts: z.array(z.any()),
+      contacts: z.array(z.any()),
+      tags: z.array(z.any())
+    }),
+    facets: z.object({
+      types: z.object({
+        invoice: z.number(),
+        bankAccount: z.number(),
+        contact: z.number(),
+        tag: z.number()
+      }),
+      statuses: z.record(z.number())
+    })
+  }),
+  tags: ['search']
+})
+
+type Facets = {
+  types: {
+    invoice: number
+    bankAccount: number
+    contact: number
+    tag: number
+  }
+  statuses: Record<string, number>
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,29 +60,21 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const url = new URL(request.url)
-    const q = url.searchParams.get('q')?.trim() ?? ''
+    const query = validateSearchQuery(url.searchParams.get('q'))
     const type = url.searchParams.get('type')
 
-    if (q.length < 2) {
-      return NextResponse.json(
-        { error: 'Query parameter "q" is required and must be at least 2 characters' },
-        { status: 400 }
-      )
+    if (!query.ok) {
+      return NextResponse.json({ error: query.error }, { status: 400 })
     }
 
-    const isInvoicesOnly = type === 'invoices'
-    const isBankAccountsOnly = type === 'bank-accounts'
-    const isBoth = !type
+    const q = query.value
+    const filterType = type as 'invoices' | 'bank-accounts' | 'contacts' | 'tags' | null
 
-    if (!isBoth && !isInvoicesOnly && !isBankAccountsOnly) {
-      return NextResponse.json(
-        { error: 'Invalid "type". Expected "invoices" or "bank-accounts"' },
-        { status: 400 }
-      )
-    }
+    const cacheKey = `facet:user:${user.id}:q:${q}`
+    let facets = getCachedValue<Facets>(cacheKey)
 
-    const [invoices, bankAccounts] = await Promise.all([
-      isBankAccountsOnly
+    const [invoices, bankAccounts, contacts, tags, facetData] = await Promise.all([
+      filterType && filterType !== 'invoices'
         ? Promise.resolve([])
         : prisma.invoice.findMany({
             where: {
@@ -59,7 +96,7 @@ export async function GET(request: NextRequest) {
               status: true,
             },
           }),
-      isInvoicesOnly
+      filterType && filterType !== 'bank-accounts'
         ? Promise.resolve([])
         : prisma.bankAccount.findMany({
             where: {
@@ -73,14 +110,108 @@ export async function GET(request: NextRequest) {
             take: 10,
             orderBy: { createdAt: 'desc' },
           }),
+      filterType && filterType !== 'contacts'
+        ? Promise.resolve([])
+        : prisma.contact.findMany({
+            where: {
+              userId: user.id,
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { email: { contains: q, mode: 'insensitive' } },
+                { company: { contains: q, mode: 'insensitive' } },
+              ],
+            },
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+          }),
+      filterType && filterType !== 'tags'
+        ? Promise.resolve([])
+        : prisma.tag.findMany({
+            where: {
+              userId: user.id,
+              name: { contains: q, mode: 'insensitive' },
+            },
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+          }),
+      facets ? Promise.resolve(null) : Promise.all([
+        prisma.invoice.count({
+          where: {
+            userId: user.id,
+            OR: [
+              { invoiceNumber: { contains: q, mode: 'insensitive' } },
+              { clientName: { contains: q, mode: 'insensitive' } },
+              { clientEmail: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        }),
+        prisma.bankAccount.count({
+          where: {
+            userId: user.id,
+            OR: [
+              { bankName: { contains: q, mode: 'insensitive' } },
+              { accountName: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        }),
+        prisma.contact.count({
+          where: {
+            userId: user.id,
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { email: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        }),
+        prisma.tag.count({
+          where: {
+            userId: user.id,
+            name: { contains: q, mode: 'insensitive' },
+          }
+        }),
+        prisma.invoice.groupBy({
+          by: ['status'],
+          where: {
+            userId: user.id,
+            OR: [
+              { invoiceNumber: { contains: q, mode: 'insensitive' } },
+              { clientName: { contains: q, mode: 'insensitive' } },
+              { clientEmail: { contains: q, mode: 'insensitive' } },
+            ],
+          },
+          _count: true
+        })
+      ])
     ])
+
+    if (!facets && facetData) {
+      const [invCount, bankCount, contactCount, tagCount, statusGroups] = facetData
+      const statuses: Record<string, number> = {}
+      statusGroups.forEach(group => {
+        statuses[group.status] = group._count
+      })
+
+      facets = {
+        types: {
+          invoice: invCount,
+          bankAccount: bankCount,
+          contact: contactCount,
+          tag: tagCount
+        },
+        statuses
+      }
+      setCachedValue(cacheKey, facets, 30_000)
+    }
 
     return NextResponse.json({
       query: q,
       results: {
         invoices,
         bankAccounts,
+        contacts,
+        tags
       },
+      facets: facets || { types: { invoice: 0, bankAccount: 0, contact: 0, tag: 0 }, statuses: {} }
     })
   } catch (error) {
     logger.error({ err: error }, 'Routes-B search GET error')

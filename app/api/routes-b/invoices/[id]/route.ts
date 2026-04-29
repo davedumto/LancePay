@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { createEntityEtag, ifMatchSatisfied } from '../../_lib/etag'
 
 function isValidIsoDate(value: string) {
   const date = new Date(value)
@@ -52,7 +53,8 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  return NextResponse.json({
+  const etag = createEntityEtag(invoice.id, invoice.updatedAt)
+  const response = NextResponse.json({
     invoice: {
       id: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
@@ -68,6 +70,8 @@ export async function GET(
       createdAt: invoice.createdAt,
     },
   })
+  response.headers.set('ETag', etag)
+  return response
 }
 
 export async function PATCH(
@@ -87,9 +91,18 @@ export async function PATCH(
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
+  const ifMatchHeader = request.headers.get('if-match')
+  if (!ifMatchHeader) {
+    return NextResponse.json({ error: 'If-Match header is required' }, { status: 428 })
+  }
+  const wildcardMatch = ifMatchHeader.trim() === '*'
+  if (wildcardMatch && requester.role.toLowerCase() !== 'admin') {
+    return NextResponse.json({ error: 'Wildcard If-Match is admin only' }, { status: 403 })
+  }
+
   const ownedInvoice = await prisma.invoice.findFirst({
     where: { id, userId: requester.id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, updatedAt: true },
   })
 
   if (!ownedInvoice) {
@@ -107,6 +120,13 @@ export async function PATCH(
 
   if (ownedInvoice.status !== 'pending') {
     return NextResponse.json({ error: 'Only pending invoices can be edited' }, { status: 422 })
+  }
+
+  if (!wildcardMatch) {
+    const currentEtag = createEntityEtag(ownedInvoice.id, ownedInvoice.updatedAt)
+    if (!ifMatchSatisfied(ifMatchHeader, currentEtag)) {
+      return NextResponse.json({ error: 'ETag mismatch' }, { status: 412 })
+    }
   }
 
   const body = await request.json()

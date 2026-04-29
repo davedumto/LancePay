@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { validateIBAN } from '../_lib/iban'
+import { validateSWIFT } from '../_lib/swift'
 
 function isValidDigits(value: string, min: number, max: number) {
   const pattern = new RegExp(`^\\d{${min},${max}}$`)
@@ -50,7 +52,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { bankName, bankCode, accountNumber, accountName } = body ?? {}
+  const { bankName, bankCode, accountNumber, accountName, iban, swift } = body ?? {}
 
   if (
     typeof bankName !== 'string' ||
@@ -70,6 +72,29 @@ export async function POST(request: NextRequest) {
           'Invalid input. bankName/accountName must be non-empty <= 100 chars, bankCode must be 3-10 digits, and accountNumber must be exactly 10 digits.',
       },
       { status: 400 },
+    )
+  }
+
+  if (iban !== undefined && (typeof iban !== 'string' || !validateIBAN(iban))) {
+    return NextResponse.json({ error: 'Invalid IBAN format' }, { status: 400 })
+  }
+
+  if (swift !== undefined && (typeof swift !== 'string' || !validateSWIFT(swift))) {
+    return NextResponse.json({ error: 'Invalid SWIFT/BIC format' }, { status: 400 })
+  }
+
+  const existing = await prisma.bankAccount.findFirst({
+    where: {
+      userId: user.id,
+      accountNumber: { equals: accountNumber, mode: 'insensitive' },
+      bankCode: { equals: bankCode, mode: 'insensitive' },
+    },
+  })
+
+  if (existing) {
+    return NextResponse.json(
+      { error: 'Bank account already exists', existingId: existing.id },
+      { status: 409 },
     )
   }
 

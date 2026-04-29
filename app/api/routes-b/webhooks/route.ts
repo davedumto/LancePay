@@ -1,10 +1,57 @@
-import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { getIdempotentResponse, setIdempotentResponse } from '../_lib/idempotency'
+import { validateEventTypes, getDefaultEventTypes } from '../_lib/webhook-events'
+import { registerRoute } from '../_lib/openapi'
+import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
+import { generateWebhookSecret } from '../_lib/hmac'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/webhooks',
+  summary: 'List webhooks',
+  description: 'Get all webhooks for the authenticated user.',
+  responseSchema: z.object({
+    webhooks: z.array(z.object({
+      id: z.string(),
+      targetUrl: z.string(),
+      description: z.string().nullable(),
+      isActive: z.boolean(),
+      subscribedEvents: z.array(z.string()),
+      lastTriggeredAt: z.string().nullable(),
+      secretFingerprint: z.string(),
+      createdAt: z.string()
+    }))
+  }),
+  tags: ['webhooks']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/webhooks',
+  summary: 'Create webhook',
+  description: 'Create a new webhook. Defaults to all events (*).',
+  requestSchema: z.object({
+    targetUrl: z.string().url(),
+    description: z.string().max(100).optional(),
+    eventTypes: z.array(z.string()).optional()
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    targetUrl: z.string(),
+    description: z.string().nullable(),
+    signingSecret: z.string(),
+    createdAt: z.string()
+  }),
+  tags: ['webhooks']
+})
 
 const MAX_WEBHOOKS_PER_USER = 10
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -49,11 +96,18 @@ export async function GET(request: NextRequest) {
         isActive: true,
         subscribedEvents: true,
         lastTriggeredAt: true,
+        signingSecret: true,
         createdAt: true,
       },
     })
 
-    return NextResponse.json({ webhooks })
+    const webhooksWithFingerprint = webhooks.map(webhook => ({
+      ...webhook,
+      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
+      signingSecret: undefined, // Remove raw secret
+    }))
+
+    return NextResponse.json({ webhooks: webhooksWithFingerprint })
   } catch (error) {
     logger.error({ err: error }, 'Routes B webhooks GET error')
     return NextResponse.json({ error: 'Failed to get webhooks' }, { status: 500 })
@@ -68,6 +122,27 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    const idempotencyKey = request.headers.get('idempotency-key')
+
+    if (idempotencyKey && idempotencyKey.length > 255) {
+      return NextResponse.json({ error: 'Idempotency-Key must be at most 255 characters' }, { status: 400 })
+    }
+
+    const bodyHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')
+
+    if (idempotencyKey) {
+      const stored = getIdempotentResponse(idempotencyKey)
+      if (stored) {
+        if (stored.bodyHash !== bodyHash) {
+          return NextResponse.json(
+            { error: 'This Idempotency-Key has already been used with a different request body' },
+            { status: 409 },
+          )
+        }
+
+        return NextResponse.json(stored.body, { status: stored.status })
+      }
+    }
 
     if (!body.targetUrl || typeof body.targetUrl !== 'string') {
       return NextResponse.json({ error: 'targetUrl is required' }, { status: 400 })
@@ -83,6 +158,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate event types
+    let eventTypes: string[]
+    try {
+      eventTypes = body.eventTypes 
+        ? validateEventTypes(body.eventTypes)
+        : getDefaultEventTypes()
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'Invalid eventTypes' },
+        { status: 400 }
+      )
+    }
+
     const existingCount = await prisma.userWebhook.count({
       where: { userId: user.id },
     })
@@ -94,7 +182,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const signingSecret = crypto.randomBytes(32).toString('hex')
+    const signingSecret =
+      typeof body.signingSecret === 'string' && body.signingSecret.trim().length > 0
+        ? body.signingSecret.trim()
+        : generateWebhookSecret()
 
     const webhook = await prisma.userWebhook.create({
       data: {
@@ -102,6 +193,7 @@ export async function POST(request: NextRequest) {
         targetUrl: body.targetUrl,
         description: body.description ?? null,
         signingSecret,
+        subscribedEvents: eventTypes,
       },
       select: {
         id: true,
@@ -111,16 +203,27 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(
-      {
-        id: webhook.id,
-        targetUrl: webhook.targetUrl,
-        description: webhook.description ?? null,
-        signingSecret,
-        createdAt: webhook.createdAt,
-      },
-      { status: 201 },
-    )
+    const responseBody = {
+      id: webhook.id,
+      targetUrl: webhook.targetUrl,
+      description: webhook.description ?? null,
+      signingSecret,
+      createdAt: webhook.createdAt,
+    }
+
+    if (idempotencyKey) {
+      setIdempotentResponse(
+        idempotencyKey,
+        {
+          bodyHash,
+          status: 201,
+          body: responseBody,
+        },
+        IDEMPOTENCY_TTL_MS,
+      )
+    }
+
+    return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
     logger.error({ err: error }, 'Routes B webhooks POST error')
     return NextResponse.json({ error: 'Failed to register webhook' }, { status: 500 })
