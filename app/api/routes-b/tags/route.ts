@@ -1,8 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getServerSession } from 'next-auth';
+import { createTagSchema } from './schema';
+import { TAG_LIMITS } from '../_lib/limits';
+import { authOptions } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const validated = createTagSchema.parse(body);
+
+    const userId = session.user.id;
+
+    // Atomic check + create using transaction to prevent race conditions
+    const result = await prisma.$transaction(async (tx) => {
+      // Count existing tags for this user
+      const currentCount = await tx.tag.count({
+        where: { userId },
+      });
+
+      if (currentCount >= TAG_LIMITS.MAX_TAGS_PER_USER) {
+        throw new Error('TAG_LIMIT_EXCEEDED');
+      }
+
+      // Create the tag
+      return tx.tag.create({
+        data: {
+          name: validated.name,
+          color: validated.color,
+          userId,
+        },
+      });
+    });
+
+    return NextResponse.json(
+      { message: 'Tag created successfully', tag: result },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    if (error.message === 'TAG_LIMIT_EXCEEDED') {
+      return NextResponse.json(
+        { error: `Maximum of ${TAG_LIMITS.MAX_TAGS_PER_USER} tags per user reached` },
+        { status: 409 }
+      );
+    }
+    // Zod validation errors
+    if (error.name === 'ZodError') {
+      return NextResponse.json(
+        { error: 'Validation failed', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Tag creation error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
