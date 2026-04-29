@@ -17,6 +17,8 @@ import { emitStatsInvalidated } from '../_lib/events'
 
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
+import { withMetrics } from "../_lib/metrics";
+
 
 /* ---------------- OPENAPI ---------------- */
 
@@ -359,3 +361,33 @@ async function POSTHandler(request: NextRequest) {
 
 export const GET = withRequestId(GETHandler)
 export const POST = withRequestId(POSTHandler)
+
+/**
+ * GET /api/routes-b/invoices
+ * Example handler wrapped with metrics collection.
+ */
+export const GET = withMetrics(
+  "GET /api/routes-b/invoices",
+  async (req: Request) => {
+    // Simulate some work
+    await new Promise((r) => setTimeout(r, 10));
+
+    return NextResponse.json({ invoices: [] });
+  }
+);
+
+/**
+ * POST /api/routes-b/invoices
+ */
+export const POST = withMetrics(
+  "POST /api/routes-b/invoices",
+  async (req: Request) => {
+    const body = await req.json().catch(() => null);
+
+    if (!body) {
+      return NextResponse.json({ error: "Bad request" }, { status: 400 });
+    }
+
+    return NextResponse.json({ created: true }, { status: 201 });
+  }
+);
