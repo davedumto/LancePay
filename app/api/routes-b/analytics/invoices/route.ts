@@ -19,45 +19,62 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const [grouped, totals] = await Promise.all([
-    prisma.invoice.groupBy({
-      by: ['status'],
-      where: { userId: user.id },
-      _count: { id: true },
-    }),
-    prisma.invoice.aggregate({
-      where: { userId: user.id },
-      _count: { id: true },
-      _sum: { amount: true },
-    }),
-  ])
+  const grouped = await prisma.invoice.groupBy({
+    by: ['status'],
+    where: { userId: user.id },
+    _count: { id: true },
+    _sum: { amount: true },
+  })
 
-  const counts = INVOICE_STATUSES.reduce<Record<InvoiceStatus, number>>(
+  const stats = INVOICE_STATUSES.reduce<Record<InvoiceStatus, { count: number; totalAmount: number }>>(
     (acc, status) => {
-      acc[status] = 0
+      acc[status] = { count: 0, totalAmount: 0 }
       return acc
     },
-    {} as Record<InvoiceStatus, number>,
+    {} as any,
   )
 
+  let totalCount = 0
+  let totalInvoiced = 0
+
   for (const row of grouped) {
-    if (INVOICE_STATUSES.includes(row.status as InvoiceStatus)) {
-      counts[row.status as InvoiceStatus] = row._count.id
+    const status = row.status as InvoiceStatus
+    if (INVOICE_STATUSES.includes(status)) {
+      stats[status].count = row._count.id
+      const amount = Number(row._sum.amount ?? 0)
+      stats[status].totalAmount = amount
+      totalCount += row._count.id
+      totalInvoiced += amount
     }
   }
 
-  const total = counts.pending + counts.paid + counts.overdue + counts.cancelled
-
-  return withCompression(request, NextResponse.json({
-    invoices: {
-      total,
-      pending: counts.pending,
-      paid: counts.paid,
-      overdue: counts.overdue,
-      cancelled: counts.cancelled,
-      totalInvoiced: Number(totals._sum.amount ?? 0),
+  const distribution = INVOICE_STATUSES.reduce<Record<InvoiceStatus, { count: number; percentage: number }>>(
+    (acc, status) => {
+      const count = stats[status].count
+      acc[status] = {
+        count,
+        percentage: totalCount > 0 ? Number(((count / totalCount) * 100).toFixed(2)) : 0,
+      }
+      return acc
     },
-  }))
+    {} as any,
+  )
+
+  return withCompression(
+    request,
+    NextResponse.json({
+      invoices: {
+        total: totalCount,
+        pending: stats.pending.count,
+        paid: stats.paid.count,
+        overdue: stats.overdue.count,
+        cancelled: stats.cancelled.count,
+        totalInvoiced,
+        distribution,
+      },
+    }),
+  )
 }
+
 
 export const GET = withRequestId(GETHandler)
