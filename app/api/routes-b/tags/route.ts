@@ -3,10 +3,9 @@ import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { getServerSession } from 'next-auth';
-import { createTagSchema } from './schema';
-import { TAG_LIMITS } from '../_lib/limits';
-import { authOptions } from '@/lib/auth';
+import { createTagSchema } from './schema'
+import { TAG_LIMITS } from '../_lib/limits'
+import { getCachedTags, setCachedTags, invalidateTagsCache } from '../_lib/cache'
 
 <<<<<<< HEAD
 import { registerRoute } from '../_lib/openapi'
@@ -83,64 +82,6 @@ async function GETHandler(request: NextRequest) {
   const user = await getAuthenticatedUser(request)
 =======
 export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const validated = createTagSchema.parse(body);
-
-    const userId = session.user.id;
-
-    // Atomic check + create using transaction to prevent race conditions
-    const result = await prisma.$transaction(async (tx) => {
-      // Count existing tags for this user
-      const currentCount = await tx.tag.count({
-        where: { userId },
-      });
-
-      if (currentCount >= TAG_LIMITS.MAX_TAGS_PER_USER) {
-        throw new Error('TAG_LIMIT_EXCEEDED');
-      }
-
-      // Create the tag
-      return tx.tag.create({
-        data: {
-          name: validated.name,
-          color: validated.color,
-          userId,
-        },
-      });
-    });
-
-    return NextResponse.json(
-      { message: 'Tag created successfully', tag: result },
-      { status: 201 }
-    );
-  } catch (error: any) {
-    if (error.message === 'TAG_LIMIT_EXCEEDED') {
-      return NextResponse.json(
-        { error: `Maximum of ${TAG_LIMITS.MAX_TAGS_PER_USER} tags per user reached` },
-        { status: 409 }
-      );
-    }
-    // Zod validation errors
-    if (error.name === 'ZodError') {
-      return NextResponse.json(
-        { error: 'Validation failed', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Tag creation error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -155,7 +96,15 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // Check cache first
+  const cached = await getCachedTags(user.id)
+  if (cached) {
+    return NextResponse.json(cached)
+  }
+
+  // Single optimized query with combined usage count (invoices + contacts)
   const tags = await prisma.tag.findMany({
+<<<<<<< HEAD
     where: {
       userId: user.id,
     },
@@ -168,11 +117,25 @@ export async function GET(request: NextRequest) {
       _count: {
         select: {
           invoiceTags: true,
+=======
+    where: { userId: user.id },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      createdAt: true,
+      _count: {
+        select: {
+          invoiceTags: true,   // usage in invoices
+          contactTags: true,   // usage in contacts
+>>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
         },
       },
     },
   })
 
+<<<<<<< HEAD
   return NextResponse.json({
     tags: tags.map((tag) => ({
       id: tag.id,
@@ -182,6 +145,22 @@ export async function GET(request: NextRequest) {
       createdAt: tag.createdAt,
     })),
   })
+=======
+  const enrichedTags = tags.map((tag) => ({
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    usageCount: tag._count.invoiceTags + tag._count.contactTags,   // Combined usage
+    createdAt: tag.createdAt,
+  }))
+
+  const responseData = { tags: enrichedTags }
+
+  // Cache the response for 30 seconds
+  setCachedTags(user.id, responseData)
+
+  return NextResponse.json(responseData)
+>>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
 }
 
 /* ---------------- POST ---------------- */
@@ -201,7 +180,11 @@ async function POSTHandler(request: NextRequest) {
     color?: unknown
   }
 
+  // Invalidate cache on tag creation
+  invalidateTagsCache(user.id)
+
   try {
+<<<<<<< HEAD
     body = await request.json()
   } catch {
     return NextResponse.json(
@@ -226,15 +209,57 @@ async function POSTHandler(request: NextRequest) {
       { status: 400 }
     )
   }
+=======
+    const body = await request.json()
+
+    // === NEW VALIDATION USING SCHEMA (Issue #536) ===
+    const validated = createTagSchema.parse(body)
+
+    // Atomic check for tag limit + creation to prevent race conditions
+    const result = await prisma.$transaction(async (tx) => {
+      const currentCount = await tx.tag.count({
+        where: { userId: user.id },
+      })
+
+      if (currentCount >= TAG_LIMITS.MAX_TAGS_PER_USER) {
+        throw new Error('TAG_LIMIT_EXCEEDED')
+      }
+
+      // Duplicate check
+      const existingTag = await tx.tag.findUnique({
+        where: { userId_name: { userId: user.id, name: validated.name } },
+      })
+
+      if (existingTag) {
+        throw new Error('DUPLICATE_TAG')
+      }
+
+      return tx.tag.create({
+        data: {
+          userId: user.id,
+          name: validated.name,
+          color: validated.color,
+        },
+      })
+    })
+>>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
 
   if (name.length > 50) {
     return NextResponse.json(
       {
+<<<<<<< HEAD
         error:
           'Tag name must be at most 50 characters',
+=======
+        id: result.id,
+        name: result.name,
+        color: result.color,
+        usageCount: 0,                    // New tag has zero usage
+>>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
       },
       { status: 400 }
     )
+<<<<<<< HEAD
   }
 
   if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
@@ -296,3 +321,37 @@ export const POST = withRequestId(
     limitBytes: 1024 * 1024,
   })
 )
+=======
+  } catch (error: any) {
+    // Handle validation errors
+    if (error.name === 'ZodError') {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed', 
+          details: error.errors.map((e: any) => e.message) 
+        },
+        { status: 400 }
+      )
+    }
+
+    // Handle tag limit exceeded
+    if (error.message === 'TAG_LIMIT_EXCEEDED') {
+      return NextResponse.json(
+        { error: `Maximum of ${TAG_LIMITS.MAX_TAGS_PER_USER} tags per user reached` },
+        { status: 409 }
+      )
+    }
+
+    // Handle duplicate tag
+    if (error.message === 'DUPLICATE_TAG') {
+      return NextResponse.json(
+        { error: 'Tag with this name already exists' },
+        { status: 409 }
+      )
+    }
+
+    console.error('Tag creation error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+>>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
