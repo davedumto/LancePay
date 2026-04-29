@@ -1,18 +1,47 @@
-/**
- * Returns a structured JSON error response with an optional X-Request-Id header.
- */
+import { NextResponse } from "next/server";
+
+export const ROUTES_B_ERROR_CODES = [
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "RATE_LIMITED",
+  "INTERNAL",
+] as const;
+
+export type RoutesBErrorCode = (typeof ROUTES_B_ERROR_CODES)[number];
+
+type ErrorFields = Record<string, string | string[]>;
+type ErrorDetails = Record<string, unknown>;
+
 export function errorResponse(
-  code: string,
+  code: RoutesBErrorCode,
   message: string,
-  details?: Record<string, unknown>,
+  options?: {
+    fields?: ErrorFields;
+    details?: ErrorDetails;
+    requestId?: string | null;
+  },
   status = 400,
-  requestId?: string | null,
-): Response {
-  const body: Record<string, unknown> = { error: message, code }
-  if (details) body.details = details
+) {
+  const requestId = options?.requestId ?? crypto.randomUUID();
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (requestId) headers['X-Request-Id'] = requestId
-
-  return new Response(JSON.stringify(body), { status, headers })
+  return NextResponse.json(
+    {
+      error: {
+        code,
+        message,
+        ...(options?.fields ? { fields: options.fields } : {}),
+        ...(options?.details ? { details: options.details } : {}),
+      },
+      requestId,
+    },
+    {
+      status,
+      headers: {
+        "X-Request-Id": requestId, // preserve traceability like the first version
+      },
+    },
+  );
 }

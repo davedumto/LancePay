@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -68,7 +69,7 @@ function isValidHttpsUrl(url: string) {
   }
 }
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -120,7 +121,7 @@ export async function GET(
   })
 }
 
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -212,7 +213,7 @@ export async function PATCH(
   })
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -242,3 +243,7 @@ export async function DELETE(
 
   return new NextResponse(null, { status: 204 })
 }
+
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)
+export const DELETE = withRequestId(DELETEHandler)

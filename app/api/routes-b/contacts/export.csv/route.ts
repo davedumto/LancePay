@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -16,7 +17,7 @@ type ContactCsvRow = {
   updatedAt: Date
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   if (!authToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -92,3 +93,4 @@ export async function GET(request: NextRequest) {
   })
 }
 
+export const GET = withRequestId(GETHandler)

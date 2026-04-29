@@ -5,7 +5,9 @@ export type SwrEntry<T> = {
   staleUntil: number
 }
 
-const swrStore = new Map<string, SwrEntry<unknown>>()
+const swrStore = ((globalThis as typeof globalThis & {
+  __routesBSwrStore?: Map<string, SwrEntry<unknown>>
+}).__routesBSwrStore ??= new Map<string, SwrEntry<unknown>>())
 
 export function swrGet<T>(key: string): SwrEntry<T> | null {
   const entry = swrStore.get(key)

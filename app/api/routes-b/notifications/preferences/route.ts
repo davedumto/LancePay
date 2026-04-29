@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../../_lib/authz'
@@ -14,7 +15,7 @@ function parsePrefs(raw?: string | null) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
     const settings = await prisma.reminderSettings.findUnique({ where: { userId: auth.userId }, select: { customMessage: true } })
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHHandler(request: NextRequest) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
     const body = await request.json()
@@ -48,3 +49,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)

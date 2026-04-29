@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 /**
  * GET /api/routes-b/invoices/public/[token]
  * Read-only public view of an invoice via share token.
@@ -11,7 +12,7 @@ import { checkRateLimit } from '../../../_lib/rate-limit'
 
 const RATE_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 }
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
@@ -73,3 +74,5 @@ export async function GET(
     createdAt: invoice.createdAt,
   })
 }
+
+export const GET = withRequestId(GETHandler)

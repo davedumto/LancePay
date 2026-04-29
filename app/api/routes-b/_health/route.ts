@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
@@ -13,7 +14,7 @@ async function checkDbWithTimeout() {
   await Promise.race([dbCheck, timeout])
 }
 
-export async function GET() {
+async function GETHandler() {
   const startedAt = Date.now()
   const responseTimeout = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('HEALTH_TIMEOUT')), HARD_TIMEOUT_MS)
@@ -47,3 +48,4 @@ export async function GET() {
   }
 }
 
+export const GET = withRequestId(GETHandler)

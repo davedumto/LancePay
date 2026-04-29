@@ -1,14 +1,15 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { renderToStream } from '@react-pdf/renderer'
-import { getCreditNoteById } from '../../_lib/credit-notes'
-import { CreditNotePDF } from '../../_lib/CreditNotePDF'
+import { getCreditNoteById } from '../../../_lib/credit-notes'
+import { CreditNotePDF } from '../../../_lib/CreditNotePDF'
 import React from 'react'
 
 export const runtime = 'nodejs'
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -38,3 +39,5 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)

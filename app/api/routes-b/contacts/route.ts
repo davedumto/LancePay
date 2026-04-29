@@ -1,10 +1,11 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { listContacts } from '../_lib/contacts'
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -41,3 +42,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to get contacts' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)

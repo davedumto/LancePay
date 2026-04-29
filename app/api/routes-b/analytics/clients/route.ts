@@ -1,10 +1,11 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
 import { toInt, BadRequest } from "../_lib/coerce";
 import { withCompression } from "../_lib/with-compression";
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers
     .get("authorization")
     ?.replace("Bearer ", "");
@@ -72,3 +73,5 @@ export async function GET(request: NextRequest) {
 
   return withCompression(request, NextResponse.json({ clients }));
 }
+
+export const GET = withRequestId(GETHandler)

@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -40,7 +41,7 @@ registerRoute({
   tags: ['invoices']
 })
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -82,7 +83,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -119,3 +120,6 @@ export async function DELETE(
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to remove discount' }, { status: 500 })
   }
 }
+
+export const POST = withRequestId(POSTHandler)
+export const DELETE = withRequestId(DELETEHandler)

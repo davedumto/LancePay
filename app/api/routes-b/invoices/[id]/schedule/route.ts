@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 /**
  * POST /api/routes-b/invoices/[id]/schedule
  * Schedule an invoice to be sent at a future date.
@@ -21,7 +22,7 @@ async function resolveUser(request: NextRequest) {
   return prisma.user.findUnique({ where: { privyId: claims.userId } })
 }
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -90,7 +91,7 @@ export async function POST(
   )
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -116,3 +117,6 @@ export async function DELETE(
 
   return NextResponse.json({ invoiceId: invoice.id, status: 'cancelled' })
 }
+
+export const POST = withRequestId(POSTHandler)
+export const DELETE = withRequestId(DELETEHandler)

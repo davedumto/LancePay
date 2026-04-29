@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
@@ -7,7 +8,7 @@ const CAP = 10
 
 function mask(token: string) { return `${token.slice(0, 6)}...${token.slice(-4)}` }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
     const count = await prisma.apiKey.count({ where: { userId: auth.userId, name: { startsWith: 'routes-b-pat:' }, isActive: true } })
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
     const tokens = await prisma.apiKey.findMany({ where: { userId: auth.userId, name: { startsWith: 'routes-b-pat:' } }, orderBy: { createdAt: 'desc' } })
@@ -35,3 +36,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

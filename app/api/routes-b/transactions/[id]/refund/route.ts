@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -23,7 +24,7 @@ registerRoute({
   tags: ['transactions']
 })
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -88,3 +89,5 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to process refund' }, { status: 500 })
   }
 }
+
+export const POST = withRequestId(POSTHandler)

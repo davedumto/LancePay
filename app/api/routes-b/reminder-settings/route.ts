@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -57,7 +58,7 @@ async function persistReminderChannel(userId: string, payload: ReminderSettingsP
   return payload.channel
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -243,3 +244,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update reminder settings' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)

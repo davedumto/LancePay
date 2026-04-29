@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -79,7 +80,7 @@ function isValidHttpsUrl(url: string) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
@@ -229,3 +230,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to register webhook' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

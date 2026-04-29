@@ -13,7 +13,8 @@ registerRoute({
   method: 'GET',
   path: '/stats',
   summary: 'Get user statistics',
-  description: 'Returns invoice statistics, total earnings, and pending withdrawals for the authenticated user.',
+  description:
+    'Returns invoice statistics, total earnings, and pending withdrawals for the authenticated user.',
   responseSchema: z.object({
     invoices: z.object({
       total: z.number(),
@@ -29,45 +30,70 @@ registerRoute({
 })
 
 async function GETHandler(request: NextRequest) {
+  const requestId = request.headers.get('x-request-id')
+
   try {
     const auth = await requireScope(request, 'routes-b:read')
+
     const cacheKey = `routes-b:stats:${auth.userId}`
+
     const cached = getCacheValue<{
-      invoices: { total: number; pending: number; paid: number; cancelled: number; overdue: number }
+      invoices: {
+        total: number
+        pending: number
+        paid: number
+        cancelled: number
+        overdue: number
+      }
       totalEarned: number
       pendingWithdrawals: number
     }>(cacheKey)
-    if (cached) {
-      return withCompression(request, NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } }))
-    }
 
-    const user = await prisma.user.findUnique({ where: { id: auth.userId } })
-    if (!user) {
-      return errorResponse(
-        'NOT_FOUND',
-        'User not found',
-        undefined,
-        404,
-        request.headers.get('x-request-id'),
+    if (cached) {
+      return withCompression(
+        request,
+        NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } }),
       )
     }
 
-    const [invoiceStats, totalEarned, pendingWithdrawals] = await Promise.all([
-      prisma.invoice.groupBy({
-        by: ['status'],
-        where: { userId: user.id },
-        _count: { id: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { userId: user.id, type: 'payment', status: 'completed' },
-        _sum: { amount: true },
-      }),
-      prisma.transaction.count({
-        where: { userId: user.id, type: 'withdrawal', status: 'pending' },
-      }),
-    ])
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+    })
 
-    const counts = Object.fromEntries(invoiceStats.map(s => [s.status, s._count.id]))
+    if (!user) {
+      return withCompression(
+        request,
+        errorResponse('NOT_FOUND', 'User not found', undefined, 404, requestId),
+      )
+    }
+
+    const [invoiceStats, totalEarned, pendingWithdrawals] =
+      await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['status'],
+          where: { userId: user.id },
+          _count: { id: true },
+        }),
+        prisma.transaction.aggregate({
+          where: {
+            userId: user.id,
+            type: 'payment',
+            status: 'completed',
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.count({
+          where: {
+            userId: user.id,
+            type: 'withdrawal',
+            status: 'pending',
+          },
+        }),
+      ])
+
+    const counts = Object.fromEntries(
+      invoiceStats.map(s => [s.status, s._count.id]),
+    )
 
     const payload = {
       invoices: {
@@ -82,23 +108,34 @@ async function GETHandler(request: NextRequest) {
     }
 
     setCacheValue(cacheKey, payload, 60_000)
-    return withCompression(request, NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } }))
+
+    return withCompression(
+      request,
+      NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } }),
+    )
   } catch (error) {
     if (error instanceof RoutesBForbiddenError) {
-      return errorResponse(
-        'FORBIDDEN',
-        'Forbidden',
-        { scope: error.code },
-        403,
-        request.headers.get('x-request-id'),
+      return withCompression(
+        request,
+        errorResponse(
+          'FORBIDDEN',
+          'Forbidden',
+          { scope: error.code },
+          403,
+          requestId,
+        ),
       )
     }
-    return errorResponse(
-      'UNAUTHORIZED',
-      'Unauthorized',
-      undefined,
-      401,
-      request.headers.get('x-request-id'),
+
+    return withCompression(
+      request,
+      errorResponse(
+        'UNAUTHORIZED',
+        'Unauthorized',
+        undefined,
+        401,
+        requestId,
+      ),
     )
   }
 }

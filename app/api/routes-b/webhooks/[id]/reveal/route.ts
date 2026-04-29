@@ -1,7 +1,8 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { rateLimit } from '../../_lib/rate-limit'
+import { rateLimit } from '../../../_lib/rate-limit'
 import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'
 
@@ -17,7 +18,7 @@ registerRoute({
   tags: ['webhooks']
 })
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -83,3 +84,5 @@ export async function POST(
     signingSecret: webhook.signingSecret,
   })
 }
+
+export const POST = withRequestId(POSTHandler)

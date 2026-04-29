@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -6,7 +7,7 @@ import { redactProfile, parseRevealQuery, isAdminRequest } from '../_lib/redact'
 
 // ── GET /api/routes-b/profile — get current user's profile ──────────
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 
 // ── PATCH /api/routes-b/profile — update user's display name ────────
 
-export async function PATCH(request: NextRequest) {
+async function PATCHHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -93,3 +94,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)

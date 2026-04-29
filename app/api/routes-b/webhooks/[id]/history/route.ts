@@ -1,8 +1,9 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { getWebhookHistory } from '../../_lib/webhook-history'
-import { registerRoute } from '../../_lib/openapi'
+import { getWebhookHistory } from '../../../_lib/webhook-history'
+import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -26,7 +27,7 @@ registerRoute({
   tags: ['webhooks']
 })
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -63,3 +64,5 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch webhook history' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)

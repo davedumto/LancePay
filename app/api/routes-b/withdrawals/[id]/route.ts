@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -26,7 +27,7 @@ async function fetchOfframpStatus(txHash: string): Promise<OfframpStatusResponse
     return (await response.json()) as OfframpStatusResponse
 }
 
-export async function GET(
+async function GETHandler(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
@@ -72,9 +73,11 @@ export async function GET(
             status: providerStatus.status ?? transaction.status,
             amount: Number(transaction.amount),
             currency: transaction.currency,
-            description: providerStatus.description ?? transaction.error || null,
+            description: providerStatus.description ?? (transaction.error || null),
             stellarTxHash: transaction.txHash,
             createdAt: transaction.createdAt,
         },
     })
 }
+
+export const GET = withRequestId(GETHandler)

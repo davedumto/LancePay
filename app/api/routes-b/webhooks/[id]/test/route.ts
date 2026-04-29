@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -7,7 +8,7 @@ import { dispatchWebhookDelivery } from '../../../_lib/webhook-delivery'
 const TEST_DELIVERY_LIMIT = 10
 const TEST_DELIVERY_WINDOW_MS = 60 * 60 * 1000
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -74,3 +75,4 @@ export async function POST(
   return NextResponse.json({ outcome: result })
 }
 
+export const POST = withRequestId(POSTHandler)

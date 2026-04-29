@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../../_lib/with-request-id'
 /**
  * POST /api/routes-b/invoices/templates/[id]/instantiate
  * Create a real invoice from a template and advance nextRunAt.
@@ -33,7 +34,7 @@ function cadenceWindowMs(cadence: string): number {
 // idempotency: track last instantiation per template
 const lastInstantiated = new Map<string, { invoiceId: string; at: Date }>()
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -108,3 +109,5 @@ export async function POST(
     { status: 201 },
   )
 }
+
+export const POST = withRequestId(POSTHandler)

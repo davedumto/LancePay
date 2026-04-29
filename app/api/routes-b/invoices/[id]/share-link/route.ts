@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 /**
  * POST /api/routes-b/invoices/[id]/share-link
  * Mint a read-only share token for an invoice.
@@ -7,7 +8,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { mintShareToken } from '../../../_lib/share-tokens'
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -45,3 +46,5 @@ export async function POST(
     { status: 201 },
   )
 }
+
+export const POST = withRequestId(POSTHandler)

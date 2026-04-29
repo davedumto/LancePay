@@ -24,6 +24,9 @@ const defaultFlags: Record<string, FlagValue> = {
   'webhook-event-filtering': 'off',
 };
 
+export const ENABLE_CONTACTS_SOFT_DELETE = process.env.ENABLE_CONTACTS_SOFT_DELETE === 'true' ||
+  process.env.FLAG_CONTACTS_SOFT_DELETE === 'on'
+
 function parseFlagValue(envValue: string | undefined): FlagValue {
   if (!envValue) return 'off';
   
@@ -58,9 +61,9 @@ export function isEnabled(flagName: string, context: FlagContext = {}): boolean 
   // Check cache first
   const cacheKey = `${flagName}:${context.userId || 'no-user'}`;
   if (flagCache.has(cacheKey)) {
-    return flagCache.get(cacheKey) === 'on' || 
-           (Array.isArray(flagCache.get(cacheKey)) && context.userId && 
-            (flagCache.get(cacheKey) as string[]).includes(context.userId));
+    const cached = flagCache.get(cacheKey)
+    return cached === 'on' ||
+      Boolean(Array.isArray(cached) && context.userId && cached.includes(context.userId))
   }
   
   // Get flag value from env or defaults

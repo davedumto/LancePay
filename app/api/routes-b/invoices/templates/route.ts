@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 /**
  * GET  /api/routes-b/invoices/templates  - list templates for user
  * POST /api/routes-b/invoices/templates  - create a template
@@ -39,7 +40,7 @@ export function clearTemplateStore() { templates.clear(); seq = 0 }
 
 function newId() { return `tpl_${++seq}_${Date.now()}` }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const user = await resolveUser(request)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ templates: userTemplates.map(serialize) })
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const user = await resolveUser(request)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -103,3 +104,6 @@ export async function POST(request: NextRequest) {
 function serialize(t: InvoiceTemplate) {
   return { ...t, nextRunAt: t.nextRunAt.toISOString(), createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString() }
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

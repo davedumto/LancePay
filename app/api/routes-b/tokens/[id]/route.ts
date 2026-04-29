@@ -1,8 +1,9 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../../_lib/authz'
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+async function DELETEHandler(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
     const token = await prisma.apiKey.findFirst({ where: { id: params.id, userId: auth.userId, name: { startsWith: 'routes-b-pat:' } } })
@@ -14,3 +15,5 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }
+
+export const DELETE = withRequestId(DELETEHandler)

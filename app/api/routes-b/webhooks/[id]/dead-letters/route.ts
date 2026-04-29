@@ -1,7 +1,8 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { deadLetterQueue } from '../../_lib/dead-letter'
+import { deadLetterQueue } from '../../../_lib/dead-letter'
 import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'
 
@@ -25,7 +26,7 @@ registerRoute({
   tags: ['webhooks']
 })
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -69,3 +70,5 @@ export async function GET(
     })),
   })
 }
+
+export const GET = withRequestId(GETHandler)

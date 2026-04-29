@@ -1,9 +1,10 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { checkRateLimit } from '../../_lib/rate-limit'
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -62,3 +63,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json(result)
 }
+
+export const POST = withRequestId(POSTHandler)

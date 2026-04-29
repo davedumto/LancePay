@@ -1,10 +1,11 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { getInvoiceStatusSummary } from '../../_lib/aggregations'
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -22,3 +23,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to get invoice summary' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)

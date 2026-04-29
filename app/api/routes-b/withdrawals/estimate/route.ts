@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 /**
  * GET /api/routes-b/withdrawals/estimate
  * Returns a fee estimate for a withdrawal without creating any records.
@@ -12,7 +13,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { calculateWithdrawalFee, isSupportedCurrency } from '../../_lib/withdrawal-fees'
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -66,3 +67,5 @@ export async function GET(request: NextRequest) {
   const estimate = calculateWithdrawalFee(amount, currency)
   return NextResponse.json(estimate)
 }
+
+export const GET = withRequestId(GETHandler)

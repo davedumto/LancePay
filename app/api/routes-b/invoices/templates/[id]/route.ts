@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 /**
  * GET    /api/routes-b/invoices/templates/[id]  - get a template
  * PATCH  /api/routes-b/invoices/templates/[id]  - update a template
@@ -21,7 +22,7 @@ function serialize(t: ReturnType<typeof getTemplateStore>['values'] extends Iter
   return { ...t, nextRunAt: t.nextRunAt.toISOString(), createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString() }
 }
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -37,7 +38,7 @@ export async function GET(
   return NextResponse.json({ template: serialize(tpl) })
 }
 
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -89,7 +90,7 @@ export async function PATCH(
   return NextResponse.json({ template: serialize(tpl) })
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -105,3 +106,7 @@ export async function DELETE(
   getTemplateStore().delete(id)
   return new NextResponse(null, { status: 204 })
 }
+
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)
+export const DELETE = withRequestId(DELETEHandler)

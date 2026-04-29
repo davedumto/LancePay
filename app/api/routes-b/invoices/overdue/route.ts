@@ -1,9 +1,11 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { Invoice } from '@prisma/client'
 import { verifyAuthToken } from '@/lib/auth'
+import { computeLateFee } from '../../_lib/late-fee' // Issue #599
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   // 1. Verify auth
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
@@ -17,6 +19,8 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date()
+  const { searchParams } = new URL(request.url)
+  const withLateFee = searchParams.get('withLateFee') === 'true' // Issue #599
 
   // 2. Fetch overdue invoices
   // An invoice is overdue when status is 'pending' and dueDate < now
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
       (now.getTime() - inv.dueDate!.getTime()) / (1000 * 60 * 60 * 24)
     )
 
-    return {
+    const base = {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       clientName: inv.clientName,
@@ -48,6 +52,16 @@ export async function GET(request: NextRequest) {
       dueDate: inv.dueDate,
       daysOverdue: Math.max(0, daysOverdue), // Ensure non-negative
     }
+
+    if (withLateFee) {
+      const fee = computeLateFee(
+        { amount: Number(inv.amount), currency: inv.currency, dueDate: inv.dueDate },
+        now,
+      )
+      return { ...base, lateFee: fee }
+    }
+
+    return base
   })
 
   // 4. Return results
@@ -56,3 +70,5 @@ export async function GET(request: NextRequest) {
     total: invoices.length,
   })
 }
+
+export const GET = withRequestId(GETHandler)

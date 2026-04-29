@@ -19,11 +19,20 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET
 
-if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
-  throw new Error('Missing Cloudinary configuration')
+function requireCloudinaryConfig() {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    throw new Error('Missing Cloudinary configuration')
+  }
+
+  return {
+    cloudName: CLOUDINARY_CLOUD_NAME,
+    apiKey: CLOUDINARY_API_KEY,
+    apiSecret: CLOUDINARY_API_SECRET,
+  }
 }
 
 export function generatePresignedUpload(userId: string): PresignedUploadResponse {
+  const config = requireCloudinaryConfig()
   const timestamp = Math.round(Date.now() / 1000)
   const publicId = `avatars/${userId}/${timestamp}`
   const folder = 'avatars'
@@ -45,15 +54,15 @@ export function generatePresignedUpload(userId: string): PresignedUploadResponse
     .join('&')
   
   const signature = createHash('sha1')
-    .update(signatureString + CLOUDINARY_API_SECRET)
+    .update(signatureString + config.apiSecret)
     .digest('hex')
   
   const expiresAt = new Date(Date.now() + 60 * 1000) // 60 seconds from now
   
   return {
-    url: `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`,
+    url: `https://api.cloudinary.com/v1_1/${config.cloudName}/auto/upload`,
     fields: {
-      api_key: CLOUDINARY_API_KEY,
+      api_key: config.apiKey,
       timestamp: timestamp.toString(),
       public_id: publicId,
       folder,
@@ -105,7 +114,7 @@ export async function validateUploadedFile(key: string, buffer: ArrayBuffer): Pr
 }
 
 export function generateCloudinaryUrl(key: string): string {
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${key}.jpg`
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME || 'demo'}/image/upload/${key}.jpg`
 }
 
 export function isExpiredKey(expiresAt: string): boolean {

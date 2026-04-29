@@ -1,9 +1,10 @@
+import { withRequestId } from '../../../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { deadLetterQueue } from '../../../_lib/dead-letter'
-import { dispatchWebhookDelivery } from '../../../_lib/webhook-delivery'
-import { registerRoute } from '../../../../_lib/openapi'
+import { deadLetterQueue } from '../../../../../_lib/dead-letter'
+import { dispatchWebhookDelivery } from '../../../../../_lib/webhook-delivery'
+import { registerRoute } from '../../../../../_lib/openapi'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -24,7 +25,7 @@ registerRoute({
   tags: ['webhooks']
 })
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; eventId: string }> },
 ) {
@@ -94,3 +95,5 @@ export async function POST(
     }, { status: 500 })
   }
 }
+
+export const POST = withRequestId(POSTHandler)

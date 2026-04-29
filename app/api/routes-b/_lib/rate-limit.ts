@@ -38,3 +38,14 @@ export function checkRateLimit(
 export function resetRateLimitBuckets() {
   buckets.clear()
 }
+
+export async function rateLimit(key: string, limit: number, windowMs: number) {
+  const result = checkRateLimit(key, { limit, windowMs })
+
+  return result.allowed
+    ? { allowed: true as const }
+    : {
+        allowed: false as const,
+        resetTime: new Date(Date.now() + result.retryAfter * 1000).toISOString(),
+      }
+}

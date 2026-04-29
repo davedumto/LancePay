@@ -1,8 +1,9 @@
+import { withRequestId } from '../../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; tagId: string }> }
 ) {
@@ -41,3 +42,5 @@ export async function DELETE(
 
   return new NextResponse(null, { status: 204 })
 }
+
+export const DELETE = withRequestId(DELETEHandler)

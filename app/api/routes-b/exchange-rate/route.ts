@@ -1,3 +1,4 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { getCachedValue, setCachedValue } from '../_lib/cache'
 
@@ -24,7 +25,7 @@ function canBypassCache(request: NextRequest) {
   return providedToken === configuredToken
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const searchParams = new URL(request.url).searchParams
   const from = (searchParams.get('from') || 'USD').toUpperCase()
   const to = (searchParams.get('to') || 'NGN').toUpperCase()
@@ -121,3 +122,5 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+export const GET = withRequestId(GETHandler)

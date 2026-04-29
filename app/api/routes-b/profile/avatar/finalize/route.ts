@@ -1,7 +1,8 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateCloudinaryUrl, isExpiredKey } from '../../_lib/presigned-upload'
+import { generateCloudinaryUrl, isExpiredKey } from '../../../_lib/presigned-upload'
 import { getMaxFileSize, isAllowedMimeType, sniffMimeType, stripExifMetadata } from '../../../_lib/file-signature'
 import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'
@@ -21,7 +22,7 @@ registerRoute({
   tags: ['profile']
 })
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -88,3 +89,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to finalize avatar upload' }, { status: 500 })
   }
 }
+
+export const POST = withRequestId(POSTHandler)

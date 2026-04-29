@@ -1,7 +1,11 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
+import { logger } from '@/lib/logger'
 import { registerRoute } from '../_lib/openapi'
+import { hasTableColumn } from '../_lib/table-columns'
+import { brandingSchema, type BrandingPayload } from './schema'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -170,9 +174,8 @@ async function writeBranding(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHHandler(request: NextRequest) {
   return writeBranding(request)
 }
 
-  return NextResponse.json({ branding });
-}
+export const PATCH = withRequestId(PATCHHandler)

@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -30,7 +31,7 @@ registerRoute({
   tags: ['contacts']
 })
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   // Check authentication
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   if (!authToken) {
@@ -233,3 +234,5 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+export const POST = withRequestId(POSTHandler)
