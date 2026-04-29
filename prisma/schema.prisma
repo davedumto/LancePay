@@ -94,6 +94,7 @@ model BankAccount {
   accountName   String
   isVerified    Boolean  @default(false)
   isDefault     Boolean  @default(false)
+  nickname      String?  @db.VarChar(32)
   createdAt     DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id])

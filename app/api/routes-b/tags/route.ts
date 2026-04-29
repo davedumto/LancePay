@@ -1,70 +1,88 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-<<<<<<< HEAD
-import { withBodyLimit } from '../_lib/with-body-limit'
-=======
+
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
 
-// Register OpenAPI documentation
+/* ---------------- OPENAPI ---------------- */
+
 registerRoute({
   method: 'GET',
   path: '/tags',
   summary: 'List tags',
-  description: 'Get all tags for the authenticated user with invoice counts.',
+  description: 'Get all tags with invoice counts.',
   responseSchema: z.object({
-    tags: z.array(z.object({
-      id: z.string(),
-      name: z.string(),
-      color: z.string(),
-      invoiceCount: z.number(),
-      createdAt: z.string()
-    }))
+    tags: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        color: z.string(),
+        invoiceCount: z.number(),
+        createdAt: z.string(),
+      })
+    ),
   }),
-  tags: ['tags']
+  tags: ['tags'],
 })
 
 registerRoute({
   method: 'POST',
   path: '/tags',
   summary: 'Create tag',
-  description: 'Create a new tag for organizing invoices.',
+  description: 'Create a tag for organizing invoices.',
   requestSchema: z.object({
     name: z.string().min(1).max(50),
-    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#6366f1')
+    color: z
+      .string()
+      .regex(/^#[0-9A-Fa-f]{6}$/)
+      .default('#6366f1'),
   }),
   responseSchema: z.object({
     id: z.string(),
     name: z.string(),
     color: z.string(),
-    invoiceCount: z.number()
+    invoiceCount: z.number(),
   }),
-  tags: ['tags']
+  tags: ['tags'],
 })
 
-async function GETHandler(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+/* ---------------- AUTH ---------------- */
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
+  const claims = await verifyAuthToken(authToken || '')
+  if (!claims) return null
+
+  return prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+}
+
+/* ---------------- GET ---------------- */
+
+async function GETHandler(request: NextRequest) {
+  const user = await getAuthenticatedUser(request)
+
   if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const tags = await prisma.tag.findMany({
     where: { userId: user.id },
     orderBy: { name: 'asc' },
-    include: { _count: { select: { invoiceTags: true } } },
+    include: {
+      _count: { select: { invoiceTags: true } },
+    },
   })
 
   return NextResponse.json({
-    tags: tags.map((tag: any) => ({
+    tags: tags.map((tag) => ({
       id: tag.id,
       name: tag.name,
       color: tag.color,
@@ -74,70 +92,89 @@ async function GETHandler(request: NextRequest) {
   })
 }
 
-<<<<<<< HEAD
-async function postTag(request: NextRequest) {
-=======
+/* ---------------- POST ---------------- */
+
 async function POSTHandler(request: NextRequest) {
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
+  const user = await getAuthenticatedUser(request)
+
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+  let body: { name?: unknown; color?: unknown }
 
   try {
-    const body = await request.json()
-    const { name, color = '#6366f1' } = body
-
-    // Validation
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'Tag name is required' }, { status: 400 })
-    }
-    if (name.length > 50) {
-      return NextResponse.json({ error: 'Tag name must be at most 50 characters' }, { status: 400 })
-    }
-    if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
-      return NextResponse.json({ error: 'Invalid hex color format' }, { status: 400 })
-    }
-
-    // Duplicate check
-    const existingTag = await prisma.tag.findUnique({
-      where: { userId_name: { userId: user.id, name } },
-    })
-    if (existingTag) {
-      return NextResponse.json({ error: 'Tag with this name already exists' }, { status: 409 })
-    }
-
-    const tag = await prisma.tag.create({
-      data: {
-        userId: user.id,
-        name,
-        color,
-      },
-    })
-
+    body = await request.json()
+  } catch {
     return NextResponse.json(
-      {
-        id: tag.id,
-        name: tag.name,
-        color: tag.color,
-        invoiceCount: 0,
-      },
-      { status: 201 }
+      { error: 'Invalid JSON body' },
+      { status: 400 }
     )
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const color =
+    typeof body.color === 'string' ? body.color : '#6366f1'
+
+  if (!name) {
+    return NextResponse.json(
+      { error: 'Tag name is required' },
+      { status: 400 }
+    )
+  }
+
+  if (name.length > 50) {
+    return NextResponse.json(
+      { error: 'Tag name must be at most 50 characters' },
+      { status: 400 }
+    )
+  }
+
+  if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+    return NextResponse.json(
+      { error: 'Invalid hex color format' },
+      { status: 400 }
+    )
+  }
+
+  const existing = await prisma.tag.findUnique({
+    where: {
+      userId_name: { userId: user.id, name },
+    },
+  })
+
+  if (existing) {
+    return NextResponse.json(
+      { error: 'Tag already exists' },
+      { status: 409 }
+    )
+  }
+
+  const tag = await prisma.tag.create({
+    data: {
+      userId: user.id,
+      name,
+      color,
+    },
+  })
+
+  return NextResponse.json(
+    {
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+      invoiceCount: 0,
+    },
+    { status: 201 }
+  )
 }
 
-<<<<<<< HEAD
-export const POST = withBodyLimit(postTag, { limitBytes: 1024 * 1024 })
-=======
+/* ---------------- EXPORTS ---------------- */
+
 export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
+
+export const POST = withRequestId(
+  withBodyLimit(POSTHandler, {
+    limitBytes: 1024 * 1024,
+  })
+)

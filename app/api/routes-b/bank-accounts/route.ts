@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { validateIBAN } from '../_lib/iban'
 import { validateSWIFT } from '../_lib/swift'
+import { bankAccountDisplayName } from '../_lib/bank-accounts'
 
 function isValidDigits(value: string, min: number, max: number) {
   const pattern = new RegExp(`^\\d{${min},${max}}$`)
@@ -33,11 +34,17 @@ async function GETHandler(request: NextRequest) {
       accountNumber: true,
       accountName: true,
       isDefault: true,
+      nickname: true,
       createdAt: true,
     },
   })
 
-  return NextResponse.json({ bankAccounts })
+  return NextResponse.json({
+    bankAccounts: bankAccounts.map(a => ({
+      ...a,
+      displayName: bankAccountDisplayName(a),
+    })),
+  })
 }
 
 async function POSTHandler(request: NextRequest) {
@@ -53,7 +60,7 @@ async function POSTHandler(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { bankName, bankCode, accountNumber, accountName, iban, swift } = body ?? {}
+  const { bankName, bankCode, accountNumber, accountName, iban, swift, nickname } = body ?? {}
 
   if (
     typeof bankName !== 'string' ||
@@ -84,6 +91,10 @@ async function POSTHandler(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid SWIFT/BIC format' }, { status: 400 })
   }
 
+  if (nickname !== undefined && nickname !== '' && (typeof nickname !== 'string' || nickname.trim().length > 32)) {
+    return NextResponse.json({ error: 'nickname must be a string of at most 32 characters' }, { status: 400 })
+  }
+
   const existing = await prisma.bankAccount.findFirst({
     where: {
       userId: user.id,
@@ -102,6 +113,9 @@ async function POSTHandler(request: NextRequest) {
   const existingCount = await prisma.bankAccount.count({ where: { userId: user.id } })
   const isDefault = existingCount === 0
 
+  const resolvedNickname =
+    typeof nickname === 'string' && nickname.trim() !== '' ? nickname.trim() : null
+
   const bankAccount = await prisma.bankAccount.create({
     data: {
       userId: user.id,
@@ -110,6 +124,7 @@ async function POSTHandler(request: NextRequest) {
       accountNumber,
       accountName: accountName.trim(),
       isDefault,
+      nickname: resolvedNickname,
     },
     select: {
       id: true,
@@ -118,11 +133,15 @@ async function POSTHandler(request: NextRequest) {
       accountNumber: true,
       accountName: true,
       isDefault: true,
+      nickname: true,
       createdAt: true,
     },
   })
 
-  return NextResponse.json(bankAccount, { status: 201 })
+  return NextResponse.json(
+    { ...bankAccount, displayName: bankAccountDisplayName(bankAccount) },
+    { status: 201 },
+  )
 }
 
 export const GET = withRequestId(GETHandler)

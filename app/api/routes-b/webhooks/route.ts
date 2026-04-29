@@ -1,73 +1,91 @@
+import crypto from 'node:crypto'
 import { withRequestId } from '../_lib/with-request-id'
+import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-<<<<<<< HEAD
-import { withBodyLimit } from '../_lib/with-body-limit'
-=======
-import { getIdempotentResponse, setIdempotentResponse } from '../_lib/idempotency'
-import { validateEventTypes, getDefaultEventTypes } from '../_lib/webhook-events'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
+
+import {
+  validateEventTypes,
+  getDefaultEventTypes,
+} from '../_lib/webhook-events'
+
 import { registerRoute } from '../_lib/openapi'
+
 import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
+
 import { generateWebhookSecret } from '../_lib/hmac'
+
+import {
+  getCustomHeaders,
+  setCustomHeaders,
+  validateCustomHeaders,
+} from '../_lib/webhook-custom-headers'
+
 import { z } from 'zod'
 
-// Register OpenAPI documentation
+/* ---------------- OPENAPI ---------------- */
+
 registerRoute({
   method: 'GET',
   path: '/webhooks',
   summary: 'List webhooks',
   description: 'Get all webhooks for the authenticated user.',
   responseSchema: z.object({
-    webhooks: z.array(z.object({
-      id: z.string(),
-      targetUrl: z.string(),
-      description: z.string().nullable(),
-      isActive: z.boolean(),
-      subscribedEvents: z.array(z.string()),
-      lastTriggeredAt: z.string().nullable(),
-      secretFingerprint: z.string(),
-      createdAt: z.string()
-    }))
+    webhooks: z.array(
+      z.object({
+        id: z.string(),
+        targetUrl: z.string(),
+        description: z.string().nullable(),
+        isActive: z.boolean(),
+        subscribedEvents: z.array(z.string()),
+        lastTriggeredAt: z.string().nullable(),
+        secretFingerprint: z.string(),
+        createdAt: z.string(),
+      })
+    ),
   }),
-  tags: ['webhooks']
+  tags: ['webhooks'],
 })
 
 registerRoute({
   method: 'POST',
   path: '/webhooks',
   summary: 'Create webhook',
-  description: 'Create a new webhook. Defaults to all events (*).',
+  description: 'Create webhook with idempotency + custom headers.',
   requestSchema: z.object({
     targetUrl: z.string().url(),
     description: z.string().max(100).optional(),
-    eventTypes: z.array(z.string()).optional()
+    eventTypes: z.array(z.string()).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
   }),
   responseSchema: z.object({
     id: z.string(),
     targetUrl: z.string(),
     description: z.string().nullable(),
     signingSecret: z.string(),
-    createdAt: z.string()
+    createdAt: z.string(),
   }),
-  tags: ['webhooks']
+  tags: ['webhooks'],
 })
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
 
-const MAX_WEBHOOKS_PER_USER = 10
-const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
+/* ---------------- AUTH ---------------- */
 
 async function getAuthenticatedUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  if (!authToken) {
-    return null
-  }
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
+  if (!authToken) return null
 
   const claims = await verifyAuthToken(authToken)
-  if (!claims) {
-    return null
-  }
+  if (!claims) return null
 
   return prisma.user.findUnique({
     where: { privyId: claims.userId },
@@ -75,14 +93,17 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
+/* ---------------- HELPERS ---------------- */
+
 function isValidHttpsUrl(url: string) {
   try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:'
+    return new URL(url).protocol === 'https:'
   } catch {
     return false
   }
 }
+
+/* ---------------- GET ---------------- */
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -106,24 +127,26 @@ async function GETHandler(request: NextRequest) {
       },
     })
 
-    const webhooksWithFingerprint = webhooks.map(webhook => ({
-      ...webhook,
-      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
-      signingSecret: undefined, // Remove raw secret
+    const result = webhooks.map((w) => ({
+      ...w,
+      secretFingerprint: generateSecretFingerprint(w.signingSecret),
+      signingSecret: undefined,
+      headers: getCustomHeaders(w.id),
     }))
 
-    return NextResponse.json({ webhooks: webhooksWithFingerprint })
+    return NextResponse.json({ webhooks: result })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B webhooks GET error')
-    return NextResponse.json({ error: 'Failed to get webhooks' }, { status: 500 })
+    logger.error({ err: error }, 'webhooks GET error')
+    return NextResponse.json(
+      { error: 'Failed to get webhooks' },
+      { status: 500 }
+    )
   }
 }
 
-<<<<<<< HEAD
-async function postWebhook(request: NextRequest) {
-=======
+/* ---------------- POST ---------------- */
+
 async function POSTHandler(request: NextRequest) {
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
@@ -131,70 +154,56 @@ async function POSTHandler(request: NextRequest) {
     }
 
     const body = await request.json()
-    const idempotencyKey = request.headers.get('idempotency-key')
+    const idempotencyKey =
+      request.headers.get('idempotency-key')
 
-    if (idempotencyKey && idempotencyKey.length > 255) {
-      return NextResponse.json({ error: 'Idempotency-Key must be at most 255 characters' }, { status: 400 })
-    }
-
-    const bodyHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')
+    const bodyHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(body))
+      .digest('hex')
 
     if (idempotencyKey) {
-      const stored = getIdempotentResponse(idempotencyKey)
-      if (stored) {
-        if (stored.bodyHash !== bodyHash) {
+      const cached = getIdempotentResponse(idempotencyKey)
+
+      if (cached) {
+        if (cached.bodyHash !== bodyHash) {
           return NextResponse.json(
-            { error: 'This Idempotency-Key has already been used with a different request body' },
-            { status: 409 },
+            { error: 'Idempotency conflict' },
+            { status: 409 }
           )
         }
 
-        return NextResponse.json(stored.body, { status: stored.status })
+        return NextResponse.json(cached.body, {
+          status: cached.status,
+        })
       }
     }
 
-    if (!body.targetUrl || typeof body.targetUrl !== 'string') {
-      return NextResponse.json({ error: 'targetUrl is required' }, { status: 400 })
-    }
-
-    if (body.targetUrl.length > 512 || !isValidHttpsUrl(body.targetUrl)) {
-      return NextResponse.json({ error: 'targetUrl must be a valid https:// URL (max 512 chars)' }, { status: 400 })
-    }
-
-    if (body.description !== undefined && body.description !== null) {
-      if (typeof body.description !== 'string' || body.description.length > 100) {
-        return NextResponse.json({ error: 'description must be a string of at most 100 characters' }, { status: 400 })
-      }
-    }
-
-    // Validate event types
-    let eventTypes: string[]
-    try {
-      eventTypes = body.eventTypes 
-        ? validateEventTypes(body.eventTypes)
-        : getDefaultEventTypes()
-    } catch (error) {
+    if (
+      !body.targetUrl ||
+      !isValidHttpsUrl(body.targetUrl) ||
+      body.targetUrl.length > 512
+    ) {
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Invalid eventTypes' },
+        { error: 'Invalid targetUrl' },
         { status: 400 }
       )
     }
 
-    const existingCount = await prisma.userWebhook.count({
-      where: { userId: user.id },
-    })
+    const eventTypes = body.eventTypes
+      ? validateEventTypes(body.eventTypes)
+      : getDefaultEventTypes()
 
-    if (existingCount >= MAX_WEBHOOKS_PER_USER) {
+    const headersResult = validateCustomHeaders(body.headers)
+    if (!headersResult.ok) {
       return NextResponse.json(
-        { error: 'Maximum of 10 webhooks per user reached' },
-        { status: 429 },
+        { error: headersResult.error },
+        { status: 400 }
       )
     }
 
     const signingSecret =
-      typeof body.signingSecret === 'string' && body.signingSecret.trim().length > 0
-        ? body.signingSecret.trim()
-        : generateWebhookSecret()
+      body.signingSecret?.trim() || generateWebhookSecret()
 
     const webhook = await prisma.userWebhook.create({
       data: {
@@ -204,19 +213,16 @@ async function POSTHandler(request: NextRequest) {
         signingSecret,
         subscribedEvents: eventTypes,
       },
-      select: {
-        id: true,
-        targetUrl: true,
-        description: true,
-        createdAt: true,
-      },
     })
+
+    setCustomHeaders(webhook.id, headersResult.headers)
 
     const responseBody = {
       id: webhook.id,
       targetUrl: webhook.targetUrl,
       description: webhook.description ?? null,
       signingSecret,
+      headers: headersResult.headers,
       createdAt: webhook.createdAt,
     }
 
@@ -228,20 +234,26 @@ async function POSTHandler(request: NextRequest) {
           status: 201,
           body: responseBody,
         },
-        IDEMPOTENCY_TTL_MS,
+        24 * 60 * 60 * 1000
       )
     }
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B webhooks POST error')
-    return NextResponse.json({ error: 'Failed to register webhook' }, { status: 500 })
+    logger.error({ err: error }, 'webhooks POST error')
+    return NextResponse.json(
+      { error: 'Failed to create webhook' },
+      { status: 500 }
+    )
   }
 }
 
-<<<<<<< HEAD
-export const POST = withBodyLimit(postWebhook, { limitBytes: 1024 * 1024 })
-=======
+/* ---------------- EXPORTS ---------------- */
+
 export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
->>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
+
+export const POST = withRequestId(
+  withBodyLimit(POSTHandler, {
+    limitBytes: 1024 * 1024,
+  })
+)
