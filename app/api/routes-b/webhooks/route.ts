@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -8,6 +9,7 @@ import { validateEventTypes, getDefaultEventTypes } from '../_lib/webhook-events
 import { registerRoute } from '../_lib/openapi'
 import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
 import { generateWebhookSecret } from '../_lib/hmac'
+import { getCustomHeaders, setCustomHeaders, validateCustomHeaders } from '../_lib/webhook-custom-headers'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -39,7 +41,8 @@ registerRoute({
   requestSchema: z.object({
     targetUrl: z.string().url(),
     description: z.string().max(100).optional(),
-    eventTypes: z.array(z.string()).optional()
+    eventTypes: z.array(z.string()).optional(),
+    headers: z.record(z.string(), z.string()).optional()
   }),
   responseSchema: z.object({
     id: z.string(),
@@ -106,6 +109,7 @@ async function GETHandler(request: NextRequest) {
       ...webhook,
       secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
       signingSecret: undefined, // Remove raw secret
+      headers: getCustomHeaders(webhook.id),
     }))
 
     return NextResponse.json({ webhooks: webhooksWithFingerprint })
@@ -162,7 +166,7 @@ async function POSTHandler(request: NextRequest) {
     // Validate event types
     let eventTypes: string[]
     try {
-      eventTypes = body.eventTypes 
+      eventTypes = body.eventTypes
         ? validateEventTypes(body.eventTypes)
         : getDefaultEventTypes()
     } catch (error) {
@@ -170,6 +174,11 @@ async function POSTHandler(request: NextRequest) {
         { error: error instanceof Error ? error.message : 'Invalid eventTypes' },
         { status: 400 }
       )
+    }
+
+    const headersResult = validateCustomHeaders(body.headers)
+    if (!headersResult.ok) {
+      return NextResponse.json({ error: headersResult.error }, { status: 400 })
     }
 
     const existingCount = await prisma.userWebhook.count({
@@ -204,11 +213,14 @@ async function POSTHandler(request: NextRequest) {
       },
     })
 
+    setCustomHeaders(webhook.id, headersResult.headers)
+
     const responseBody = {
       id: webhook.id,
       targetUrl: webhook.targetUrl,
       description: webhook.description ?? null,
       signingSecret,
+      headers: headersResult.headers,
       createdAt: webhook.createdAt,
     }
 
