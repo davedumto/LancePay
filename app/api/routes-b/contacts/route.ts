@@ -1,9 +1,11 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { listContacts } from '../_lib/contacts'
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) {
@@ -22,29 +24,16 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
+    const includeDeleted = searchParams.get('includeDeleted') === 'true'
 
-    const contacts = await prisma.contact.findMany({
-      where: {
-        userId: user.id,
-        ...(search
-          ? {
-              OR: [
-                { name: { contains: search, mode: 'insensitive' as const } },
-                { email: { contains: search, mode: 'insensitive' as const } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        company: true,
-        notes: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    if (includeDeleted && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const contacts = await listContacts({
+      userId: user.id,
+      search,
+      includeDeleted,
     })
 
     return NextResponse.json({ contacts })
@@ -53,3 +42,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to get contacts' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)

@@ -1,8 +1,10 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { buildActionFilter } from '../_lib/audit-action-filter' // Issue #621
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -18,11 +20,15 @@ export async function GET(request: NextRequest) {
   const parsedLimit = parseInt(searchParams.get('limit') || '20', 10)
   const limit = Math.min(50, Math.max(1, Number.isNaN(parsedLimit) ? 20 : parsedLimit))
 
-  const action = searchParams.get('action')
+  // Issue #621 — exact-match (?action) and prefix-match (?actionPrefix) filters
+  const actionFilter = buildActionFilter(searchParams)
+  if (!actionFilter.ok) {
+    return NextResponse.json({ error: actionFilter.error }, { status: 400 })
+  }
 
   const where = {
     actorId: user.id,
-    ...(action ? { eventType: action } : {}),
+    ...actionFilter.clause,
   }
 
   const [total, events] = await Promise.all([
@@ -54,3 +60,5 @@ export async function GET(request: NextRequest) {
     },
   })
 }
+
+export const GET = withRequestId(GETHandler)

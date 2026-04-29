@@ -1,33 +1,101 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-import { withBodyLimit } from '../_lib/with-body-limit'
+import {
+  DEFAULT_REMINDER_SETTINGS,
+  reminderSettingsPatchSchema,
+  type ReminderSettingsPatchPayload,
+} from './schema'
+import { hasTableColumn } from '../_lib/table-columns'
 
-export async function GET(request: NextRequest) {
+/**
+ * FORMAT VALIDATION ERRORS
+ */
+function formatFieldErrors(error: {
+  issues: Array<{ path: Array<string | number>; message: string }>
+}) {
+  return error.issues.reduce<Record<string, string>>((fields, issue) => {
+    const key = typeof issue.path[0] === 'string' ? issue.path[0] : 'body'
+    if (!fields[key]) fields[key] = issue.message
+    return fields
+  }, {})
+}
+
+/**
+ * NORMALIZE INPUT PAYLOAD
+ */
+function normalizeReminderPayload(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+
+  const body = { ...(input as Record<string, unknown>) }
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'firstReminderDays') && body.sendDaysBefore !== undefined) {
+    body.firstReminderDays = body.sendDaysBefore
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'secondReminderDays') && body.sendDaysAfter !== undefined) {
+    body.secondReminderDays = body.sendDaysAfter
+  }
+
+  return body
+}
+
+/**
+ * AUTH
+ */
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  const claims = await verifyAuthToken(authToken || '')
+
+  if (!claims) return null
+
+  return prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+}
+
+/**
+ * OPTIONAL CHANNEL UPDATE
+ */
+async function persistReminderChannel(
+  userId: string,
+  payload: ReminderSettingsPatchPayload
+) {
+  if (!Object.prototype.hasOwnProperty.call(payload, 'channel')) return undefined
+
+  const supported = await hasTableColumn('ReminderSettings', 'channel')
+  if (!supported) return undefined
+
+  await prisma.$executeRaw`
+    UPDATE "ReminderSettings"
+    SET "channel" = ${payload.channel},
+        "updatedAt" = NOW()
+    WHERE "userId" = ${userId}
+  `
+
+  return payload.channel
+}
+
+/**
+ * GET SETTINGS
+ */
+async function GETHandler(request: NextRequest) {
   try {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const settings = await prisma.reminderSettings.findUnique({
       where: { userId: user.id },
       select: {
         id: true,
+        enabled: true,
         beforeDueDays: true,
-        onDueEnabled: true,
         afterDueDays: true,
+        onDueEnabled: true,
       },
     })
 
@@ -35,6 +103,9 @@ export async function GET(request: NextRequest) {
       settings: settings
         ? {
             id: settings.id,
+            enabled: settings.enabled,
+            firstReminderDays: settings.beforeDueDays[0] ?? null,
+            secondReminderDays: settings.afterDueDays[0] ?? null,
             sendOnDueDate: settings.onDueEnabled,
             sendDaysBefore: settings.beforeDueDays[0] ?? null,
             sendDaysAfter: settings.afterDueDays[0] ?? null,
@@ -42,113 +113,147 @@ export async function GET(request: NextRequest) {
         : null,
     })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B reminder-settings GET error')
-    return NextResponse.json({ error: 'Failed to get reminder settings' }, { status: 500 })
+    logger.error({ err: error }, 'GET reminder settings error')
+    return NextResponse.json(
+      { error: 'Failed to get reminder settings' },
+      { status: 500 }
+    )
   }
 }
 
-async function patchReminderSettings(request: NextRequest) {
+/**
+ * PATCH SETTINGS
+ */
+async function PATCHHandler(request: NextRequest) {
   try {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    let body: {
-      sendOnDueDate?: unknown
-      sendDaysBefore?: unknown
-      sendDaysAfter?: unknown
-    }
-
+    let body: unknown
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Invalid request body', fields: { body: 'Must be valid JSON' } },
+        { status: 422 }
+      )
+    }
+
+    const parsed = reminderSettingsPatchSchema.safeParse(
+      normalizeReminderPayload(body)
+    )
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: 'Invalid reminder settings payload',
+          fields: formatFieldErrors(parsed.error),
+        },
+        { status: 422 }
+      )
+    }
+
+    const existing = await prisma.reminderSettings.findUnique({
+      where: { userId: user.id },
+      select: {
+        beforeDueDays: true,
+        afterDueDays: true,
+      },
+    })
+
+    const payload = parsed.data
+    const isFirstPatch = !existing
+
+    const createPayload: ReminderSettingsPatchPayload = {
+      ...DEFAULT_REMINDER_SETTINGS,
+      ...payload,
+    }
+
+    const first =
+      payload.firstReminderDays ??
+      existing?.beforeDueDays[0] ??
+      DEFAULT_REMINDER_SETTINGS.firstReminderDays
+
+    const second =
+      payload.secondReminderDays ??
+      existing?.afterDueDays[0] ??
+      DEFAULT_REMINDER_SETTINGS.secondReminderDays
+
+    if (second <= first) {
+      return NextResponse.json(
+        {
+          error: 'Invalid reminder settings payload',
+          fields: {
+            secondReminderDays: 'Must be greater than firstReminderDays',
+          },
+        },
+        { status: 422 }
+      )
     }
 
     const updateData: {
-      onDueEnabled?: boolean
+      enabled?: boolean
       beforeDueDays?: number[]
       afterDueDays?: number[]
+      onDueEnabled?: boolean
     } = {}
 
-    if (body.sendOnDueDate !== undefined) {
-      if (typeof body.sendOnDueDate !== 'boolean') {
-        return NextResponse.json({ error: 'sendOnDueDate must be a boolean' }, { status: 400 })
-      }
-      updateData.onDueEnabled = body.sendOnDueDate
-    }
+    const writePayload = isFirstPatch ? createPayload : payload
 
-    if (body.sendDaysBefore !== undefined) {
-      if (
-        typeof body.sendDaysBefore !== 'number' ||
-        !Number.isInteger(body.sendDaysBefore) ||
-        body.sendDaysBefore < 0 ||
-        body.sendDaysBefore > 30
-      ) {
-        return NextResponse.json(
-          { error: 'sendDaysBefore must be an integer between 0 and 30' },
-          { status: 400 }
-        )
-      }
-      updateData.beforeDueDays = [body.sendDaysBefore]
-    }
-
-    if (body.sendDaysAfter !== undefined) {
-      if (
-        typeof body.sendDaysAfter !== 'number' ||
-        !Number.isInteger(body.sendDaysAfter) ||
-        body.sendDaysAfter < 0 ||
-        body.sendDaysAfter > 30
-      ) {
-        return NextResponse.json(
-          { error: 'sendDaysAfter must be an integer between 0 and 30' },
-          { status: 400 }
-        )
-      }
-      updateData.afterDueDays = [body.sendDaysAfter]
-    }
+    if ('enabled' in writePayload) updateData.enabled = writePayload.enabled
+    if ('firstReminderDays' in writePayload)
+      updateData.beforeDueDays = [writePayload.firstReminderDays as number]
+    if ('secondReminderDays' in writePayload)
+      updateData.afterDueDays = [writePayload.secondReminderDays as number]
+    if ('sendOnDueDate' in writePayload)
+      updateData.onDueEnabled = writePayload.sendOnDueDate
 
     const settings = await prisma.reminderSettings.upsert({
       where: { userId: user.id },
       update: updateData,
       create: {
         userId: user.id,
-        ...updateData,
+        enabled: createPayload.enabled,
+        onDueEnabled: createPayload.sendOnDueDate,
+        beforeDueDays: [createPayload.firstReminderDays],
+        afterDueDays: [createPayload.secondReminderDays],
       },
       select: {
         id: true,
+        enabled: true,
         onDueEnabled: true,
         beforeDueDays: true,
         afterDueDays: true,
       },
     })
 
-    return NextResponse.json(
-      {
-        settings: {
-          id: settings.id,
-          sendOnDueDate: settings.onDueEnabled,
-          sendDaysBefore: settings.beforeDueDays[0] ?? null,
-          sendDaysAfter: settings.afterDueDays[0] ?? null,
-        },
+    const channel = await persistReminderChannel(user.id, writePayload)
+
+    return NextResponse.json({
+      settings: {
+        id: settings.id,
+        enabled: settings.enabled,
+        ...(channel !== undefined ? { channel } : {}),
+        firstReminderDays: settings.beforeDueDays[0] ?? null,
+        secondReminderDays: settings.afterDueDays[0] ?? null,
+        sendOnDueDate: settings.onDueEnabled,
+        sendDaysBefore: settings.beforeDueDays[0] ?? null,
+        sendDaysAfter: settings.afterDueDays[0] ?? null,
       },
-      { status: 200 }
-    )
+    })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B reminder-settings PATCH error')
-    return NextResponse.json({ error: 'Failed to update reminder settings' }, { status: 500 })
+    logger.error({ err: error }, 'PATCH reminder settings error')
+    return NextResponse.json(
+      { error: 'Failed to update reminder settings' },
+      { status: 500 }
+    )
   }
 }
 
-export const PATCH = withBodyLimit(patchReminderSettings, { limitBytes: 1024 * 1024 })
+/**
+ * EXPORT
+ */
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)

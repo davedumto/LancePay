@@ -1,3 +1,4 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -6,7 +7,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function PATCHHandler(request: NextRequest, { params }: RouteParams) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   if (!authToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -66,3 +67,5 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   return NextResponse.json(updated)
 }
+
+export const PATCH = withRequestId(PATCHHandler)
