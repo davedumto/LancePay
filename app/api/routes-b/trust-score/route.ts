@@ -1,21 +1,59 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
+import { getCacheValue, setCacheValue } from '../_lib/cache'
+import { recordTrustScoreSnapshot } from '../_lib/trust-score-history'
 
-export async function GET(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+const TRUST_SCORE_COOLDOWN_MS = 30_000
+
+type TrustScorePayload = {
+  trustScore: {
+    score: number
+    totalVolumeUsdc: number
+    disputeCount: number
+    updatedAt: Date | null
   }
+}
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
+function computeTrustScore(volume: number, successfulInvoices: number, disputeCount: number): number {
+  const volumePoints = Math.min(30, Math.floor(volume / 1000))
+  const invoicePoints = Math.min(25, successfulInvoices)
+  const disputePenalty = Math.min(40, disputeCount * 10)
+  return Math.max(0, Math.min(100, 45 + volumePoints + invoicePoints - disputePenalty))
+}
 
-  const trustScore = await prisma.userTrustScore.findUnique({
-    where: { userId: user.id },
+async function recomputeTrustScore(userId: string): Promise<TrustScorePayload> {
+  const [paidAgg, successfulInvoices, disputes] = await Promise.all([
+    prisma.invoice.aggregate({
+      where: { userId, status: 'paid' },
+      _sum: { amount: true },
+    }),
+    prisma.invoice.count({ where: { userId, status: 'paid' } }),
+    prisma.dispute.count({
+      where: { invoice: { userId } },
+    }),
+  ])
+
+  const totalVolumeUsdc = Number(paidAgg._sum.amount ?? 0)
+  const score = computeTrustScore(totalVolumeUsdc, successfulInvoices, disputes)
+
+  const trustScore = await prisma.userTrustScore.upsert({
+    where: { userId },
+    create: {
+      userId,
+      score,
+      totalVolumeUsdc,
+      disputeCount: disputes,
+      successfulInvoices,
+    },
+    update: {
+      score,
+      totalVolumeUsdc,
+      disputeCount: disputes,
+      successfulInvoices,
+      lastUpdatedAt: new Date(),
+    },
     select: {
       score: true,
       totalVolumeUsdc: true,
@@ -24,23 +62,45 @@ export async function GET(request: NextRequest) {
     },
   })
 
-  if (!trustScore) {
-    return NextResponse.json({
-      trustScore: {
-        score: 50,
-        totalVolumeUsdc: 0,
-        disputeCount: 0,
-        updatedAt: null,
-      },
-    })
-  }
+  recordTrustScoreSnapshot(userId, trustScore.score)
 
-  return NextResponse.json({
+  return {
     trustScore: {
       score: trustScore.score,
       totalVolumeUsdc: Number(trustScore.totalVolumeUsdc),
       disputeCount: trustScore.disputeCount,
       updatedAt: trustScore.lastUpdatedAt,
     },
-  })
+  }
 }
+
+async function GETHandler(request: NextRequest) {
+  try {
+    const auth = await requireScope(request, 'routes-b:read')
+    const force = request.nextUrl.searchParams.get('force') === 'true'
+
+    if (force && auth.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
+    }
+
+    const cacheKey = `routes-b:trust-score:${auth.userId}`
+    if (!force) {
+      const cached = getCacheValue<TrustScorePayload>(cacheKey)
+      if (cached) {
+        return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } })
+      }
+    }
+
+    const payload = await recomputeTrustScore(auth.userId)
+    setCacheValue(cacheKey, payload, TRUST_SCORE_COOLDOWN_MS)
+
+    return NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } })
+  } catch (error) {
+    if (error instanceof RoutesBForbiddenError) {
+      return NextResponse.json({ error: 'Forbidden', code: error.code }, { status: 403 })
+    }
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+}
+
+export const GET = withRequestId(GETHandler)

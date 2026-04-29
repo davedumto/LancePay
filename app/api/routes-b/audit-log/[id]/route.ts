@@ -1,8 +1,10 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { parseAuditFilters } from '../../_lib/audit-filters'
 
-export async function GET(
+async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -19,18 +21,29 @@ export async function GET(
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const event = await prisma.auditEvent.findUnique({ where: { id } })
+  const filters = parseAuditFilters(new URL(request.url).searchParams)
 
-  if (!event) {
-    return NextResponse.json({ error: 'Audit event not found' }, { status: 404 })
+  if (!filters.ok) {
+    return NextResponse.json({ error: filters.error }, { status: 400 })
   }
 
-  if (event.actorId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const events = await prisma.auditEvent.findMany({
+    where: {
+      invoiceId: id,
+      createdAt: {
+        gte: filters.value.from,
+        lte: filters.value.to,
+      },
+      ...(filters.value.actor ? { actorId: filters.value.actor } : {}),
+      invoice: {
+        userId: user.id,
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
 
   return NextResponse.json({
-    event: {
+    events: events.map(event => ({
       id: event.id,
       action: event.eventType,
       resourceType: 'invoice',
@@ -38,6 +51,8 @@ export async function GET(
       ipAddress: null,
       userAgent: null,
       createdAt: event.createdAt,
-    },
+    })),
   })
 }
+
+export const GET = withRequestId(GETHandler)

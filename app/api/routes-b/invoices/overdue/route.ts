@@ -1,27 +1,53 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { Invoice } from '@prisma/client'
 import { verifyAuthToken } from '@/lib/auth'
-import { emptyAgeingBuckets, getAgeingBucket, getDaysOverdueUtc } from '../../_lib/ageing'
-import { getArchiveFilter, parseIncludeArchivedParam } from '../../_lib/invoice-archive'
 
-export async function GET(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+import {
+  emptyAgeingBuckets,
+  getAgeingBucket,
+  getDaysOverdueUtc,
+} from '../../_lib/ageing'
+import {
+  getArchiveFilter,
+  parseIncludeArchivedParam,
+} from '../../_lib/invoice-archive'
+
+import { computeLateFee } from '../../_lib/late-fee' // Issue #599
+
+async function GETHandler(request: NextRequest) {
+  // 1. Auth
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+  const user = await prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
+  // 2. Query params (FIXED DUPLICATE BUG HERE)
   const { searchParams } = new URL(request.url)
-  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
+
+  const includeArchived = parseIncludeArchivedParam(
+    searchParams.get('includeArchived')
+  )
+
   const bucketed = searchParams.get('bucketed') === 'true'
+  const withLateFee = searchParams.get('withLateFee') === 'true'
+
   const now = new Date()
 
+  // 3. Fetch overdue invoices
   const overdueInvoices = await prisma.invoice.findMany({
     where: {
       userId: user.id,
@@ -35,10 +61,11 @@ export async function GET(request: NextRequest) {
     orderBy: { dueDate: 'asc' },
   })
 
+  // 4. Transform invoices
   const invoices = overdueInvoices.map((inv: Invoice) => {
     const daysOverdue = getDaysOverdueUtc(inv.dueDate!, now)
 
-    return {
+    const base = {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       clientName: inv.clientName,
@@ -47,8 +74,24 @@ export async function GET(request: NextRequest) {
       dueDate: inv.dueDate,
       daysOverdue,
     }
+
+    if (withLateFee) {
+      const fee = computeLateFee(
+        {
+          amount: Number(inv.amount),
+          currency: inv.currency,
+          dueDate: inv.dueDate,
+        },
+        now
+      )
+
+      return { ...base, lateFee: fee }
+    }
+
+    return base
   })
 
+  // 5. Non-bucketed response
   if (!bucketed) {
     return NextResponse.json({
       invoices,
@@ -56,7 +99,9 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  // 6. Bucketed ageing logic
   const buckets = emptyAgeingBuckets<typeof invoices[number]>()
+
   const totals = {
     '1_30': { count: 0, amount: 0 },
     '31_60': { count: 0, amount: 0 },
@@ -66,10 +111,17 @@ export async function GET(request: NextRequest) {
 
   for (const invoice of invoices) {
     const key = getAgeingBucket(invoice.daysOverdue)
+
     buckets[key].push(invoice)
+
     totals[key].count += 1
     totals[key].amount += invoice.amount
   }
 
-  return NextResponse.json({ buckets, totals })
+  return NextResponse.json({
+    buckets,
+    totals,
+  })
 }
+
+export const GET = withRequestId(GETHandler)
