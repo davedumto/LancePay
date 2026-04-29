@@ -73,9 +73,9 @@ async function PATCHHandler(request: NextRequest) {
 }
 
 /**
- * Middleware order matters:
- * - requestId wraps everything
- * - bodyLimit protects payload size
+ * Middleware order:
+ * 1. requestId
+ * 2. bodyLimit
  */
 export const PATCH = withRequestId(
   withBodyLimit(PATCHHandler, {

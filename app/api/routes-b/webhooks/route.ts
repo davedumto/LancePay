@@ -16,17 +16,11 @@ import {
   getDefaultEventTypes,
 } from '../_lib/webhook-events'
 
-import {
-  registerRoute,
-} from '../_lib/openapi'
+import { registerRoute } from '../_lib/openapi'
 
-import {
-  generateSecretFingerprint,
-} from '../_lib/webhook-fingerprint'
+import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
 
-import {
-  generateWebhookSecret,
-} from '../_lib/hmac'
+import { generateWebhookSecret } from '../_lib/hmac'
 
 import {
   getCustomHeaders,
@@ -64,7 +58,7 @@ registerRoute({
   method: 'POST',
   path: '/webhooks',
   summary: 'Create webhook',
-  description: 'Create a new webhook. Defaults to all events (*).',
+  description: 'Create webhook with idempotency + custom headers.',
   requestSchema: z.object({
     targetUrl: z.string().url(),
     description: z.string().max(100).optional(),
@@ -80,11 +74,6 @@ registerRoute({
   }),
   tags: ['webhooks'],
 })
-
-/* ---------------- CONSTANTS ---------------- */
-
-const MAX_WEBHOOKS_PER_USER = 10
-const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /* ---------------- AUTH ---------------- */
 
@@ -120,10 +109,7 @@ async function GETHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const webhooks = await prisma.userWebhook.findMany({
@@ -150,7 +136,7 @@ async function GETHandler(request: NextRequest) {
 
     return NextResponse.json({ webhooks: result })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B webhooks GET error')
+    logger.error({ err: error }, 'webhooks GET error')
     return NextResponse.json(
       { error: 'Failed to get webhooks' },
       { status: 500 }
@@ -164,29 +150,18 @@ async function POSTHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
     const idempotencyKey =
       request.headers.get('idempotency-key')
 
-    if (idempotencyKey && idempotencyKey.length > 255) {
-      return NextResponse.json(
-        { error: 'Idempotency-Key too long' },
-        { status: 400 }
-      )
-    }
-
     const bodyHash = crypto
       .createHash('sha256')
       .update(JSON.stringify(body))
       .digest('hex')
 
-    // idempotency check
     if (idempotencyKey) {
       const cached = getIdempotentResponse(idempotencyKey)
 
@@ -206,7 +181,6 @@ async function POSTHandler(request: NextRequest) {
 
     if (
       !body.targetUrl ||
-      typeof body.targetUrl !== 'string' ||
       !isValidHttpsUrl(body.targetUrl) ||
       body.targetUrl.length > 512
     ) {
@@ -216,20 +190,9 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    let eventTypes: string[]
-    try {
-      eventTypes = body.eventTypes
-        ? validateEventTypes(body.eventTypes)
-        : getDefaultEventTypes()
-    } catch (e) {
-      return NextResponse.json(
-        {
-          error:
-            e instanceof Error ? e.message : 'Invalid eventTypes',
-        },
-        { status: 400 }
-      )
-    }
+    const eventTypes = body.eventTypes
+      ? validateEventTypes(body.eventTypes)
+      : getDefaultEventTypes()
 
     const headersResult = validateCustomHeaders(body.headers)
     if (!headersResult.ok) {
@@ -239,22 +202,8 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    const count = await prisma.userWebhook.count({
-      where: { userId: user.id },
-    })
-
-    if (count >= MAX_WEBHOOKS_PER_USER) {
-      return NextResponse.json(
-        { error: 'Webhook limit reached' },
-        { status: 429 }
-      )
-    }
-
     const signingSecret =
-      typeof body.signingSecret === 'string' &&
-      body.signingSecret.trim()
-        ? body.signingSecret.trim()
-        : generateWebhookSecret()
+      body.signingSecret?.trim() || generateWebhookSecret()
 
     const webhook = await prisma.userWebhook.create({
       data: {
@@ -285,15 +234,15 @@ async function POSTHandler(request: NextRequest) {
           status: 201,
           body: responseBody,
         },
-        IDEMPOTENCY_TTL_MS
+        24 * 60 * 60 * 1000
       )
     }
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B webhooks POST error')
+    logger.error({ err: error }, 'webhooks POST error')
     return NextResponse.json(
-      { error: 'Failed to register webhook' },
+      { error: 'Failed to create webhook' },
       { status: 500 }
     )
   }

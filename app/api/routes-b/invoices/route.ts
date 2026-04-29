@@ -5,7 +5,10 @@ import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
 
 import { buildInvoiceWhereFilters } from '../_lib/invoice-filters'
-import { getArchiveFilter, parseIncludeArchivedParam } from '../_lib/invoice-archive'
+import {
+  getArchiveFilter,
+  parseIncludeArchivedParam,
+} from '../_lib/invoice-archive'
 
 import { decodeCursor, encodeCursor } from '../_lib/cursor'
 import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
@@ -19,8 +22,7 @@ registerRoute({
   method: 'GET',
   path: '/invoices',
   summary: 'List invoices',
-  description:
-    'Get cursor-paginated invoices for the authenticated user.',
+  description: 'Cursor-paginated invoices for authenticated user.',
   requestSchema: z.object({
     status: z.enum(['pending', 'paid', 'overdue', 'cancelled']).optional(),
     cursor: z.string().optional(),
@@ -50,8 +52,7 @@ registerRoute({
   method: 'POST',
   path: '/invoices',
   summary: 'Create invoice',
-  description:
-    'Create invoice. Returns 409 if a similar invoice was created recently.',
+  description: 'Creates invoice with duplicate protection.',
   requestSchema: z.object({
     clientEmail: z.string().email(),
     clientName: z.string().optional(),
@@ -108,7 +109,7 @@ async function getUniqueInvoiceNumber() {
     if (!exists) return invoiceNumber
   }
 
-  throw new Error('Failed to generate unique invoice number')
+  throw new Error('Failed to generate invoice number')
 }
 
 /* ---------------- GET ---------------- */
@@ -120,6 +121,7 @@ async function GETHandler(request: NextRequest) {
   const { searchParams } = new URL(request.url)
 
   const status = searchParams.get('status')
+
   const includeArchived = parseIncludeArchivedParam(
     searchParams.get('includeArchived')
   )
@@ -188,19 +190,17 @@ async function GETHandler(request: NextRequest) {
 
   const last = page[page.length - 1]
 
-  const nextCursor = last
-    ? encodeCursor({
-        createdAt: last.createdAt.toISOString(),
-        id: last.id,
-      })
-    : null
-
   return NextResponse.json({
     data: page.map((i) => ({
       ...i,
       amount: Number(i.amount),
     })),
-    nextCursor,
+    nextCursor: last
+      ? encodeCursor({
+          createdAt: last.createdAt.toISOString(),
+          id: last.id,
+        })
+      : null,
   })
 }
 
@@ -212,10 +212,7 @@ async function POSTHandler(request: NextRequest) {
 
   const body = await request.json().catch(() => null)
   if (!body) {
-    return NextResponse.json(
-      { error: 'Invalid JSON body' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
   const {
@@ -229,7 +226,7 @@ async function POSTHandler(request: NextRequest) {
 
   if (!clientEmail || !description || amount == null) {
     return NextResponse.json(
-      { error: 'clientEmail, description, and amount are required' },
+      { error: 'Missing required fields' },
       { status: 400 }
     )
   }
@@ -237,7 +234,7 @@ async function POSTHandler(request: NextRequest) {
   const parsedAmount = Number(amount)
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
     return NextResponse.json(
-      { error: 'amount must be greater than 0' },
+      { error: 'Invalid amount' },
       { status: 400 }
     )
   }
@@ -245,8 +242,7 @@ async function POSTHandler(request: NextRequest) {
   const normalizedEmail = String(clientEmail).toLowerCase()
   const normalizedCurrency = String(currency).toUpperCase()
 
-  const { searchParams } = new URL(request.url)
-  const force = searchParams.get('force') === 'true'
+  const force = new URL(request.url).searchParams.get('force') === 'true'
 
   if (!force) {
     const duplicate = await findRecentDuplicateInvoice({
@@ -257,20 +253,11 @@ async function POSTHandler(request: NextRequest) {
     })
 
     if (duplicate) {
-      return NextResponse.json(
-        { duplicateOfId: duplicate },
-        { status: 409 }
-      )
+      return NextResponse.json({ duplicateOfId: duplicate }, { status: 409 })
     }
   }
 
   const parsedDueDate = dueDate ? new Date(dueDate) : null
-  if (parsedDueDate && Number.isNaN(parsedDueDate.getTime())) {
-    return NextResponse.json(
-      { error: 'dueDate must be valid date' },
-      { status: 400 }
-    )
-  }
 
   const invoiceNumber = await getUniqueInvoiceNumber()
 

@@ -9,12 +9,13 @@ import {
   getAgeingBucket,
   getDaysOverdueUtc,
 } from '../../_lib/ageing'
+
 import {
   getArchiveFilter,
   parseIncludeArchivedParam,
 } from '../../_lib/invoice-archive'
 
-import { computeLateFee } from '../../_lib/late-fee' // Issue #599
+import { computeLateFee } from '../../_lib/late-fee'
 
 async function GETHandler(request: NextRequest) {
   // 1. Auth
@@ -35,7 +36,7 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  // 2. Query params (FIXED DUPLICATE BUG HERE)
+  // 2. Query params
   const { searchParams } = new URL(request.url)
 
   const includeArchived = parseIncludeArchivedParam(
@@ -61,7 +62,7 @@ async function GETHandler(request: NextRequest) {
     orderBy: { dueDate: 'asc' },
   })
 
-  // 4. Transform invoices
+  // 4. Transform
   const invoices = overdueInvoices.map((inv: Invoice) => {
     const daysOverdue = getDaysOverdueUtc(inv.dueDate!, now)
 
@@ -76,7 +77,7 @@ async function GETHandler(request: NextRequest) {
     }
 
     if (withLateFee) {
-      const fee = computeLateFee(
+      const lateFee = computeLateFee(
         {
           amount: Number(inv.amount),
           currency: inv.currency,
@@ -85,7 +86,7 @@ async function GETHandler(request: NextRequest) {
         now
       )
 
-      return { ...base, lateFee: fee }
+      return { ...base, lateFee }
     }
 
     return base
@@ -99,7 +100,7 @@ async function GETHandler(request: NextRequest) {
     })
   }
 
-  // 6. Bucketed ageing logic
+  // 6. Bucketed response
   const buckets = emptyAgeingBuckets<typeof invoices[number]>()
 
   const totals = {

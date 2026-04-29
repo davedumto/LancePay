@@ -13,8 +13,7 @@ registerRoute({
   method: 'GET',
   path: '/tags',
   summary: 'List tags',
-  description:
-    'Get all tags for the authenticated user with invoice counts.',
+  description: 'Get all tags with invoice counts.',
   responseSchema: z.object({
     tags: z.array(
       z.object({
@@ -33,7 +32,7 @@ registerRoute({
   method: 'POST',
   path: '/tags',
   summary: 'Create tag',
-  description: 'Create a new tag for organizing invoices.',
+  description: 'Create a tag for organizing invoices.',
   requestSchema: z.object({
     name: z.string().min(1).max(50),
     color: z
@@ -71,10 +70,7 @@ async function GETHandler(request: NextRequest) {
   const user = await getAuthenticatedUser(request)
 
   if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const tags = await prisma.tag.findMany({
@@ -102,10 +98,7 @@ async function POSTHandler(request: NextRequest) {
   const user = await getAuthenticatedUser(request)
 
   if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { name?: unknown; color?: unknown }
@@ -121,11 +114,8 @@ async function POSTHandler(request: NextRequest) {
 
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   const color =
-    typeof body.color === 'string'
-      ? body.color
-      : '#6366f1'
+    typeof body.color === 'string' ? body.color : '#6366f1'
 
-  // validation
   if (!name) {
     return NextResponse.json(
       { error: 'Tag name is required' },
@@ -147,16 +137,15 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
-  // duplicate check
-  const existingTag = await prisma.tag.findUnique({
+  const existing = await prisma.tag.findUnique({
     where: {
       userId_name: { userId: user.id, name },
     },
   })
 
-  if (existingTag) {
+  if (existing) {
     return NextResponse.json(
-      { error: 'Tag with this name already exists' },
+      { error: 'Tag already exists' },
       { status: 409 }
     )
   }
