@@ -1,7 +1,8 @@
 import { withRequestId } from '../_lib/with-request-id'
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { verifyAuthToken } from "@/lib/auth";
+import { withBodyLimit } from '../_lib/with-body-limit'
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { registerRoute } from '../_lib/openapi'
 import { hasTableColumn } from '../_lib/table-columns'
@@ -13,12 +14,13 @@ registerRoute({
   method: 'PATCH',
   path: '/branding',
   summary: 'Update branding settings',
-  description: 'Update logo, colors, footer text, or signature for invoice branding.',
+  description:
+    'Update logo, colors, footer text, or signature for invoice branding.',
   requestSchema: z.object({
     logoUrl: z.string().url().optional(),
     primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     footerText: z.string().max(200).optional(),
-    signatureUrl: z.string().url().optional()
+    signatureUrl: z.string().url().optional(),
   }),
   responseSchema: z.object({
     branding: z.object({
@@ -29,13 +31,15 @@ registerRoute({
       footerText: z.string().nullable(),
       signatureUrl: z.string().nullable(),
       createdAt: z.string(),
-      updatedAt: z.string()
-    })
+      updatedAt: z.string(),
+    }),
   }),
-  tags: ['branding']
+  tags: ['branding'],
 })
 
-function formatFieldErrors(error: { issues: Array<{ path: Array<string | number>; message: string }> }) {
+function formatFieldErrors(error: {
+  issues: Array<{ path: Array<string | number>; message: string }>
+}) {
   return error.issues.reduce<Record<string, string>>((fields, issue) => {
     const key = typeof issue.path[0] === 'string' ? issue.path[0] : 'body'
     if (!fields[key]) {
@@ -46,7 +50,10 @@ function formatFieldErrors(error: { issues: Array<{ path: Array<string | number>
 }
 
 async function getAuthenticatedUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
   if (!authToken) return null
 
   const claims = await verifyAuthToken(authToken)
@@ -58,14 +65,20 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
-async function updateOptionalColumns(userId: string, payload: BrandingPayload) {
+async function updateOptionalColumns(
+  userId: string,
+  payload: BrandingPayload
+) {
   const supportedColumns = await Promise.all([
     hasTableColumn('BrandingSettings', 'secondaryColor'),
     hasTableColumn('BrandingSettings', 'customDomain'),
     hasTableColumn('BrandingSettings', 'accentColor'),
   ])
 
-  if (supportedColumns[0] && Object.prototype.hasOwnProperty.call(payload, 'secondaryColor')) {
+  if (
+    supportedColumns[0] &&
+    Object.prototype.hasOwnProperty.call(payload, 'secondaryColor')
+  ) {
     await prisma.$executeRaw`
       UPDATE "BrandingSettings"
       SET "secondaryColor" = ${payload.secondaryColor ?? null},
@@ -74,7 +87,10 @@ async function updateOptionalColumns(userId: string, payload: BrandingPayload) {
     `
   }
 
-  if (supportedColumns[1] && Object.prototype.hasOwnProperty.call(payload, 'customDomain')) {
+  if (
+    supportedColumns[1] &&
+    Object.prototype.hasOwnProperty.call(payload, 'customDomain')
+  ) {
     await prisma.$executeRaw`
       UPDATE "BrandingSettings"
       SET "customDomain" = ${payload.customDomain ?? null},
@@ -83,7 +99,10 @@ async function updateOptionalColumns(userId: string, payload: BrandingPayload) {
     `
   }
 
-  if (supportedColumns[2] && Object.prototype.hasOwnProperty.call(payload, 'accentColor')) {
+  if (
+    supportedColumns[2] &&
+    Object.prototype.hasOwnProperty.call(payload, 'accentColor')
+  ) {
     await prisma.$executeRaw`
       UPDATE "BrandingSettings"
       SET "accentColor" = ${payload.accentColor ?? null},
@@ -93,8 +112,12 @@ async function updateOptionalColumns(userId: string, payload: BrandingPayload) {
   }
 
   return {
-    secondaryColor: supportedColumns[0] ? payload.secondaryColor : undefined,
-    customDomain: supportedColumns[1] ? payload.customDomain : undefined,
+    secondaryColor: supportedColumns[0]
+      ? payload.secondaryColor
+      : undefined,
+    customDomain: supportedColumns[1]
+      ? payload.customDomain
+      : undefined,
     accentColor: supportedColumns[2] ? payload.accentColor : undefined,
   }
 }
@@ -111,7 +134,10 @@ async function writeBranding(request: NextRequest) {
       body = await request.json()
     } catch {
       return NextResponse.json(
-        { error: 'Invalid request body', fields: { body: 'Body must be valid JSON' } },
+        {
+          error: 'Invalid request body',
+          fields: { body: 'Body must be valid JSON' },
+        },
         { status: 422 }
       )
     }
@@ -152,7 +178,10 @@ async function writeBranding(request: NextRequest) {
       },
     })
 
-    const optionalColumns = await updateOptionalColumns(user.id, payload)
+    const optionalColumns = await updateOptionalColumns(
+      user.id,
+      payload
+    )
 
     return NextResponse.json({
       branding: {
@@ -170,7 +199,10 @@ async function writeBranding(request: NextRequest) {
     })
   } catch (error) {
     logger.error({ err: error }, 'Routes B branding write error')
-    return NextResponse.json({ error: 'Failed to update branding settings' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to update branding settings' },
+      { status: 500 }
+    )
   }
 }
 
@@ -178,4 +210,6 @@ async function PATCHHandler(request: NextRequest) {
   return writeBranding(request)
 }
 
-export const PATCH = withRequestId(PATCHHandler)
+export const PATCH = withRequestId(
+  withBodyLimit(PATCHHandler, { limitBytes: 1024 * 1024 })
+)

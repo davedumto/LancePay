@@ -2,6 +2,7 @@ import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getArchiveFilter, parseIncludeArchivedParam } from '../../_lib/invoice-archive'
 
 async function GETHandler(request: NextRequest) {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -12,6 +13,7 @@ async function GETHandler(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const { searchParams } = new URL(request.url)
+  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
     const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
     const limit = Math.min(
         50,
@@ -23,6 +25,7 @@ async function GETHandler(request: NextRequest) {
             where: {
                 userId: user.id,
                 status: 'cancelled',
+                ...getArchiveFilter(includeArchived),
             },
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
@@ -40,6 +43,7 @@ async function GETHandler(request: NextRequest) {
             where: {
                 userId: user.id,
                 status: 'cancelled',
+                ...getArchiveFilter(includeArchived),
             },
         }),
     ])
