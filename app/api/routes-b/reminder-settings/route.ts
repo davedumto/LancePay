@@ -1,18 +1,20 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+
 import {
   DEFAULT_REMINDER_SETTINGS,
   reminderSettingsPatchSchema,
   type ReminderSettingsPatchPayload,
 } from './schema'
+
 import { hasTableColumn } from '../_lib/table-columns'
 
-/**
- * FORMAT VALIDATION ERRORS
- */
+/* ---------------- utils ---------------- */
+
 function formatFieldErrors(error: {
   issues: Array<{ path: Array<string | number>; message: string }>
 }) {
@@ -23,32 +25,36 @@ function formatFieldErrors(error: {
   }, {})
 }
 
-/**
- * NORMALIZE INPUT PAYLOAD
- */
 function normalizeReminderPayload(input: unknown) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input
 
   const body = { ...(input as Record<string, unknown>) }
 
-  if (!Object.prototype.hasOwnProperty.call(body, 'firstReminderDays') && body.sendDaysBefore !== undefined) {
+  if (
+    !Object.prototype.hasOwnProperty.call(body, 'firstReminderDays') &&
+    body.sendDaysBefore !== undefined
+  ) {
     body.firstReminderDays = body.sendDaysBefore
   }
 
-  if (!Object.prototype.hasOwnProperty.call(body, 'secondReminderDays') && body.sendDaysAfter !== undefined) {
+  if (
+    !Object.prototype.hasOwnProperty.call(body, 'secondReminderDays') &&
+    body.sendDaysAfter !== undefined
+  ) {
     body.secondReminderDays = body.sendDaysAfter
   }
 
   return body
 }
 
-/**
- * AUTH
- */
-async function getAuthenticatedUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
+/* ---------------- auth ---------------- */
 
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
+  const claims = await verifyAuthToken(authToken || '')
   if (!claims) return null
 
   return prisma.user.findUnique({
@@ -56,14 +62,15 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
-/**
- * OPTIONAL CHANNEL UPDATE
- */
+/* ---------------- helpers ---------------- */
+
 async function persistReminderChannel(
   userId: string,
   payload: ReminderSettingsPatchPayload
 ) {
-  if (!Object.prototype.hasOwnProperty.call(payload, 'channel')) return undefined
+  if (!Object.prototype.hasOwnProperty.call(payload, 'channel')) {
+    return undefined
+  }
 
   const supported = await hasTableColumn('ReminderSettings', 'channel')
   if (!supported) return undefined
@@ -78,9 +85,8 @@ async function persistReminderChannel(
   return payload.channel
 }
 
-/**
- * GET SETTINGS
- */
+/* ---------------- GET ---------------- */
+
 async function GETHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -113,7 +119,7 @@ async function GETHandler(request: NextRequest) {
         : null,
     })
   } catch (error) {
-    logger.error({ err: error }, 'GET reminder settings error')
+    logger.error({ err: error }, 'reminder settings GET error')
     return NextResponse.json(
       { error: 'Failed to get reminder settings' },
       { status: 500 }
@@ -121,9 +127,8 @@ async function GETHandler(request: NextRequest) {
   }
 }
 
-/**
- * PATCH SETTINGS
- */
+/* ---------------- PATCH ---------------- */
+
 async function PATCHHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -166,11 +171,6 @@ async function PATCHHandler(request: NextRequest) {
     const payload = parsed.data
     const isFirstPatch = !existing
 
-    const createPayload: ReminderSettingsPatchPayload = {
-      ...DEFAULT_REMINDER_SETTINGS,
-      ...payload,
-    }
-
     const first =
       payload.firstReminderDays ??
       existing?.beforeDueDays[0] ??
@@ -193,14 +193,11 @@ async function PATCHHandler(request: NextRequest) {
       )
     }
 
-    const updateData: {
-      enabled?: boolean
-      beforeDueDays?: number[]
-      afterDueDays?: number[]
-      onDueEnabled?: boolean
-    } = {}
+    const writePayload = isFirstPatch
+      ? { ...DEFAULT_REMINDER_SETTINGS, ...payload }
+      : payload
 
-    const writePayload = isFirstPatch ? createPayload : payload
+    const updateData: any = {}
 
     if ('enabled' in writePayload) updateData.enabled = writePayload.enabled
     if ('firstReminderDays' in writePayload)
@@ -215,10 +212,19 @@ async function PATCHHandler(request: NextRequest) {
       update: updateData,
       create: {
         userId: user.id,
-        enabled: createPayload.enabled,
-        onDueEnabled: createPayload.sendOnDueDate,
-        beforeDueDays: [createPayload.firstReminderDays],
-        afterDueDays: [createPayload.secondReminderDays],
+        enabled:
+          writePayload.enabled ?? DEFAULT_REMINDER_SETTINGS.enabled,
+        onDueEnabled:
+          writePayload.sendOnDueDate ??
+          DEFAULT_REMINDER_SETTINGS.sendOnDueDate,
+        beforeDueDays: [
+          writePayload.firstReminderDays ??
+            DEFAULT_REMINDER_SETTINGS.firstReminderDays,
+        ],
+        afterDueDays: [
+          writePayload.secondReminderDays ??
+            DEFAULT_REMINDER_SETTINGS.secondReminderDays,
+        ],
       },
       select: {
         id: true,
@@ -239,12 +245,10 @@ async function PATCHHandler(request: NextRequest) {
         firstReminderDays: settings.beforeDueDays[0] ?? null,
         secondReminderDays: settings.afterDueDays[0] ?? null,
         sendOnDueDate: settings.onDueEnabled,
-        sendDaysBefore: settings.beforeDueDays[0] ?? null,
-        sendDaysAfter: settings.afterDueDays[0] ?? null,
       },
     })
   } catch (error) {
-    logger.error({ err: error }, 'PATCH reminder settings error')
+    logger.error({ err: error }, 'reminder settings PATCH error')
     return NextResponse.json(
       { error: 'Failed to update reminder settings' },
       { status: 500 }
@@ -252,8 +256,9 @@ async function PATCHHandler(request: NextRequest) {
   }
 }
 
-/**
- * EXPORT
- */
+/* ---------------- exports ---------------- */
+
 export const GET = withRequestId(GETHandler)
-export const PATCH = withRequestId(PATCHHandler)
+export const PATCH = withRequestId(
+  withBodyLimit(PATCHHandler, { limitBytes: 1024 * 1024 })
+)

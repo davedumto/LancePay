@@ -1,8 +1,8 @@
 import { withRequestId } from '../../_lib/with-request-id'
+import { withBodyLimit } from '../../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { withBodyLimit } from '../../_lib/with-body-limit'
 
 function isValidHttpsUrl(url: string): boolean {
   try {
@@ -13,7 +13,10 @@ function isValidHttpsUrl(url: string): boolean {
 }
 
 async function PATCHHandler(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
   const claims = await verifyAuthToken(authToken || '')
 
   if (!claims) {
@@ -25,7 +28,10 @@ async function PATCHHandler(request: NextRequest) {
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    )
   }
 
   const { avatarUrl } = body ?? {}
@@ -59,9 +65,18 @@ async function PATCHHandler(request: NextRequest) {
     select: { avatarUrl: true },
   })
 
-  return NextResponse.json({ avatarUrl: updatedUser.avatarUrl })
+  return NextResponse.json({
+    avatarUrl: updatedUser.avatarUrl,
+  })
 }
 
+/**
+ * Middleware order matters:
+ * - requestId wraps everything
+ * - bodyLimit protects payload size
+ */
 export const PATCH = withRequestId(
-  withBodyLimit(PATCHHandler, { limitBytes: 2 * 1024 * 1024 })
+  withBodyLimit(PATCHHandler, {
+    limitBytes: 2 * 1024 * 1024,
+  })
 )

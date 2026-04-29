@@ -1,12 +1,14 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { withBodyLimit } from '../_lib/with-body-limit'
+
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
 
-// OPENAPI: GET TAGS
+/* ---------------- OPENAPI ---------------- */
+
 registerRoute({
   method: 'GET',
   path: '/tags',
@@ -26,7 +28,6 @@ registerRoute({
   tags: ['tags'],
 })
 
-// OPENAPI: CREATE TAG
 registerRoute({
   method: 'POST',
   path: '/tags',
@@ -45,13 +46,14 @@ registerRoute({
   tags: ['tags'],
 })
 
-/**
- * AUTH
- */
-async function getUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
+/* ---------------- AUTH ---------------- */
 
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
+  const claims = await verifyAuthToken(authToken || '')
   if (!claims) return null
 
   return prisma.user.findUnique({
@@ -59,11 +61,11 @@ async function getUser(request: NextRequest) {
   })
 }
 
-/**
- * GET TAGS
- */
+/* ---------------- GET ---------------- */
+
 async function GETHandler(request: NextRequest) {
-  const user = await getUser(request)
+  const user = await getAuthenticatedUser(request)
+
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -87,50 +89,92 @@ async function GETHandler(request: NextRequest) {
   })
 }
 
-/**
- * CREATE TAG
- */
+/* ---------------- POST ---------------- */
+
 async function POSTHandler(request: NextRequest) {
-  const user = await getUser(request)
+  const user = await getAuthenticatedUser(request)
+
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { name?: string; color?: string }
+  let body: { name?: unknown; color?: unknown }
 
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    )
   }
 
-  if (!body.name || typeof body.name !== 'string') {
-    return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const color =
+    typeof body.color === 'string' ? body.color : '#6366f1'
+
+  if (!name) {
+    return NextResponse.json(
+      { error: 'Tag name is required' },
+      { status: 400 }
+    )
+  }
+
+  if (name.length > 50) {
+    return NextResponse.json(
+      { error: 'Tag name must be at most 50 characters' },
+      { status: 400 }
+    )
+  }
+
+  if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+    return NextResponse.json(
+      { error: 'Invalid hex color format' },
+      { status: 400 }
+    )
+  }
+
+  const existingTag = await prisma.tag.findUnique({
+    where: {
+      userId_name: { userId: user.id, name },
+    },
+  })
+
+  if (existingTag) {
+    return NextResponse.json(
+      { error: 'Tag with this name already exists' },
+      { status: 409 }
+    )
   }
 
   const tag = await prisma.tag.create({
     data: {
       userId: user.id,
-      name: body.name.trim(),
-      color: body.color || '#6366f1',
+      name,
+      color,
     },
     include: {
       _count: { select: { invoiceTags: true } },
     },
   })
 
-  return NextResponse.json({
-    id: tag.id,
-    name: tag.name,
-    color: tag.color,
-    invoiceCount: tag._count.invoiceTags,
-  })
+  return NextResponse.json(
+    {
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+      invoiceCount: tag._count.invoiceTags,
+    },
+    { status: 201 }
+  )
 }
 
-/**
- * EXPORT
- */
+/* ---------------- EXPORTS ---------------- */
+
 export const GET = withRequestId(GETHandler)
+
 export const POST = withRequestId(
-  withBodyLimit(POSTHandler, { limitBytes: 1024 * 1024 })
+  withBodyLimit(POSTHandler, {
+    limitBytes: 1024 * 1024,
+  })
 )

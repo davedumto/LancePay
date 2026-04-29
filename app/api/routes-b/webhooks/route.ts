@@ -1,33 +1,38 @@
 import crypto from 'node:crypto'
 import { withRequestId } from '../_lib/with-request-id'
+import { withBodyLimit } from '../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+
 import {
   getIdempotentResponse,
   setIdempotentResponse,
 } from '../_lib/idempotency'
+
 import {
   validateEventTypes,
   getDefaultEventTypes,
 } from '../_lib/webhook-events'
+
 import { registerRoute } from '../_lib/openapi'
 import { generateSecretFingerprint } from '../_lib/webhook-fingerprint'
 import { generateWebhookSecret } from '../_lib/hmac'
+
 import {
   getCustomHeaders,
   setCustomHeaders,
   validateCustomHeaders,
 } from '../_lib/webhook-custom-headers'
+
 import { z } from 'zod'
 
 const MAX_WEBHOOKS_PER_USER = 10
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
-/**
- * OPENAPI - GET WEBHOOKS
- */
+/* ---------------- OPENAPI ---------------- */
+
 registerRoute({
   method: 'GET',
   path: '/webhooks',
@@ -51,9 +56,6 @@ registerRoute({
   tags: ['webhooks'],
 })
 
-/**
- * OPENAPI - CREATE WEBHOOK
- */
 registerRoute({
   method: 'POST',
   path: '/webhooks',
@@ -76,11 +78,13 @@ registerRoute({
   tags: ['webhooks'],
 })
 
-/**
- * AUTH
- */
+/* ---------------- AUTH ---------------- */
+
 async function getAuthenticatedUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
   if (!authToken) return null
 
   const claims = await verifyAuthToken(authToken)
@@ -92,6 +96,8 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
+/* ---------------- HELPERS ---------------- */
+
 function isValidHttpsUrl(url: string) {
   try {
     return new URL(url).protocol === 'https:'
@@ -100,9 +106,8 @@ function isValidHttpsUrl(url: string) {
   }
 }
 
-/**
- * GET WEBHOOKS
- */
+/* ---------------- GET ---------------- */
+
 async function GETHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -125,16 +130,16 @@ async function GETHandler(request: NextRequest) {
       },
     })
 
-    const webhooksWithFingerprint = webhooks.map((webhook) => ({
-      ...webhook,
-      secretFingerprint: generateSecretFingerprint(webhook.signingSecret),
+    const result = webhooks.map((w) => ({
+      ...w,
+      secretFingerprint: generateSecretFingerprint(w.signingSecret),
       signingSecret: undefined,
-      headers: getCustomHeaders(webhook.id),
+      headers: getCustomHeaders(w.id),
     }))
 
-    return NextResponse.json({ webhooks: webhooksWithFingerprint })
+    return NextResponse.json({ webhooks: result })
   } catch (error) {
-    logger.error({ err: error }, 'GET webhooks error')
+    logger.error({ err: error }, 'webhooks GET error')
     return NextResponse.json(
       { error: 'Failed to get webhooks' },
       { status: 500 }
@@ -142,9 +147,8 @@ async function GETHandler(request: NextRequest) {
   }
 }
 
-/**
- * CREATE WEBHOOK
- */
+/* ---------------- POST ---------------- */
+
 async function POSTHandler(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -155,25 +159,37 @@ async function POSTHandler(request: NextRequest) {
     const body = await request.json()
     const idempotencyKey = request.headers.get('idempotency-key')
 
+    if (idempotencyKey && idempotencyKey.length > 255) {
+      return NextResponse.json(
+        { error: 'Idempotency-Key too long' },
+        { status: 400 }
+      )
+    }
+
     const bodyHash = crypto
       .createHash('sha256')
       .update(JSON.stringify(body))
       .digest('hex')
 
+    /* ---- idempotency ---- */
     if (idempotencyKey) {
       const cached = getIdempotentResponse(idempotencyKey)
 
       if (cached) {
         if (cached.bodyHash !== bodyHash) {
           return NextResponse.json(
-            { error: 'Idempotency key reused with different body' },
+            { error: 'Idempotency conflict' },
             { status: 409 }
           )
         }
 
-        return NextResponse.json(cached.body, { status: cached.status })
+        return NextResponse.json(cached.body, {
+          status: cached.status,
+        })
       }
     }
+
+    /* ---- validation ---- */
 
     if (!body.targetUrl || typeof body.targetUrl !== 'string') {
       return NextResponse.json(
@@ -182,22 +198,28 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    if (body.targetUrl.length > 512 || !isValidHttpsUrl(body.targetUrl)) {
+    if (
+      body.targetUrl.length > 512 ||
+      !isValidHttpsUrl(body.targetUrl)
+    ) {
       return NextResponse.json(
-        { error: 'Invalid HTTPS URL (max 512 chars)' },
+        { error: 'Invalid HTTPS targetUrl' },
         { status: 400 }
       )
     }
 
     if (
       body.description &&
-      (typeof body.description !== 'string' || body.description.length > 100)
+      (typeof body.description !== 'string' ||
+        body.description.length > 100)
     ) {
       return NextResponse.json(
         { error: 'Invalid description' },
         { status: 400 }
       )
     }
+
+    /* ---- event types ---- */
 
     let eventTypes: string[]
     try {
@@ -206,7 +228,10 @@ async function POSTHandler(request: NextRequest) {
         : getDefaultEventTypes()
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : 'Invalid events' },
+        {
+          error:
+            e instanceof Error ? e.message : 'Invalid eventTypes',
+        },
         { status: 400 }
       )
     }
@@ -219,19 +244,22 @@ async function POSTHandler(request: NextRequest) {
       )
     }
 
-    const existingCount = await prisma.userWebhook.count({
+    /* ---- limit ---- */
+
+    const count = await prisma.userWebhook.count({
       where: { userId: user.id },
     })
 
-    if (existingCount >= MAX_WEBHOOKS_PER_USER) {
+    if (count >= MAX_WEBHOOKS_PER_USER) {
       return NextResponse.json(
-        { error: 'Webhook limit reached (10)' },
+        { error: 'Webhook limit reached' },
         { status: 429 }
       )
     }
 
     const signingSecret =
-      typeof body.signingSecret === 'string' && body.signingSecret.trim()
+      typeof body.signingSecret === 'string' &&
+      body.signingSecret.trim()
         ? body.signingSecret.trim()
         : generateWebhookSecret()
 
@@ -242,12 +270,6 @@ async function POSTHandler(request: NextRequest) {
         description: body.description ?? null,
         signingSecret,
         subscribedEvents: eventTypes,
-      },
-      select: {
-        id: true,
-        targetUrl: true,
-        description: true,
-        createdAt: true,
       },
     })
 
@@ -276,7 +298,7 @@ async function POSTHandler(request: NextRequest) {
 
     return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
-    logger.error({ err: error }, 'POST webhooks error')
+    logger.error({ err: error }, 'webhooks POST error')
     return NextResponse.json(
       { error: 'Failed to register webhook' },
       { status: 500 }
@@ -284,8 +306,12 @@ async function POSTHandler(request: NextRequest) {
   }
 }
 
-/**
- * EXPORT
- */
+/* ---------------- EXPORTS ---------------- */
+
 export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
+
+export const POST = withRequestId(
+  withBodyLimit(POSTHandler, {
+    limitBytes: 1024 * 1024,
+  })
+)

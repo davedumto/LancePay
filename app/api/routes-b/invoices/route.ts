@@ -3,15 +3,77 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
-import { decodeCursor, encodeCursor } from '../_lib/cursor'
-import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+
 import { buildInvoiceWhereFilters } from '../_lib/invoice-filters'
 import { getArchiveFilter, parseIncludeArchivedParam } from '../_lib/invoice-archive'
+import { decodeCursor, encodeCursor } from '../_lib/cursor'
+import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+/* ---------------- OPENAPI ---------------- */
+
+registerRoute({
+  method: 'GET',
+  path: '/invoices',
+  summary: 'List invoices',
+  description: 'Cursor-paginated invoices for authenticated user.',
+  requestSchema: z.object({
+    status: z.enum(['pending', 'paid', 'overdue', 'cancelled']).optional(),
+    cursor: z.string().optional(),
+    limit: z.string().optional(),
+    includeArchived: z.string().optional(),
+  }),
+  responseSchema: z.object({
+    data: z.array(
+      z.object({
+        id: z.string(),
+        invoiceNumber: z.string(),
+        clientName: z.string().nullable(),
+        clientEmail: z.string(),
+        amount: z.number(),
+        currency: z.string(),
+        status: z.string(),
+        dueDate: z.string().nullable(),
+        createdAt: z.string(),
+      })
+    ),
+    nextCursor: z.string().nullable(),
+  }),
+  tags: ['invoices'],
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/invoices',
+  summary: 'Create invoice',
+  description: 'Create invoice, prevents duplicates unless forced.',
+  requestSchema: z.object({
+    clientEmail: z.string().email(),
+    clientName: z.string().optional(),
+    description: z.string().min(1),
+    amount: z.number().positive(),
+    currency: z.string().optional(),
+    dueDate: z.string().optional(),
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    invoiceNumber: z.string(),
+    paymentLink: z.string(),
+    status: z.string(),
+    amount: z.number(),
+    currency: z.string(),
+  }),
+  tags: ['invoices'],
+})
+
+/* ---------------- AUTH ---------------- */
 
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
 
+  const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
@@ -26,6 +88,8 @@ async function getAuthenticatedUser(request: NextRequest) {
 
   return { user }
 }
+
+/* ---------------- HELPERS ---------------- */
 
 async function getUniqueInvoiceNumber() {
   for (let i = 0; i < 5; i++) {
@@ -42,9 +106,8 @@ async function getUniqueInvoiceNumber() {
   throw new Error('Failed to generate invoice number')
 }
 
-/**
- * GET INVOICES (cursor + filters + archive support)
- */
+/* ---------------- GET ---------------- */
+
 async function GETHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
   if ('error' in auth) return auth.error
@@ -52,11 +115,13 @@ async function GETHandler(request: NextRequest) {
   const { searchParams } = new URL(request.url)
 
   const status = searchParams.get('status')
-  const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
+  const includeArchived = parseIncludeArchivedParam(
+    searchParams.get('includeArchived')
+  )
 
   const limit = Math.min(
-    50,
-    Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10))
+    100,
+    Math.max(1, Number.parseInt(searchParams.get('limit') || '25', 10))
   )
 
   const cursorParam = searchParams.get('cursor')
@@ -71,18 +136,13 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
-  let searchFilters = {}
-  try {
-    searchFilters = buildInvoiceWhereFilters({
-      number: searchParams.get('number'),
-      client: searchParams.get('client'),
-      minAmount: searchParams.get('minAmount'),
-      maxAmount: searchParams.get('maxAmount'),
-      currency: searchParams.get('currency'),
-    })
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 400 })
-  }
+  const searchFilters = buildInvoiceWhereFilters({
+    number: searchParams.get('number'),
+    client: searchParams.get('client'),
+    minAmount: searchParams.get('minAmount'),
+    maxAmount: searchParams.get('maxAmount'),
+    currency: searchParams.get('currency'),
+  })
 
   const where = {
     userId: auth.user.id,
@@ -111,11 +171,11 @@ async function GETHandler(request: NextRequest) {
   })
 
   const hasNext = invoices.length > limit
-  const data = hasNext ? invoices.slice(0, limit) : invoices
+  const page = hasNext ? invoices.slice(0, limit) : invoices
 
-  const last = data[data.length - 1]
+  const last = page[page.length - 1]
 
-  const nextCursor = hasNext
+  const nextCursor = last
     ? encodeCursor({
         createdAt: last.createdAt.toISOString(),
         id: last.id,
@@ -123,7 +183,7 @@ async function GETHandler(request: NextRequest) {
     : null
 
   return NextResponse.json({
-    data: data.map((i) => ({
+    data: page.map((i) => ({
       ...i,
       amount: Number(i.amount),
     })),
@@ -131,14 +191,16 @@ async function GETHandler(request: NextRequest) {
   })
 }
 
-/**
- * CREATE INVOICE
- */
+/* ---------------- POST ---------------- */
+
 async function POSTHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
   if ('error' in auth) return auth.error
 
-  const body = await request.json()
+  const body = await request.json().catch(() => null)
+  if (!body) {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
   const {
     clientEmail,
@@ -178,22 +240,16 @@ async function POSTHandler(request: NextRequest) {
     })
 
     if (duplicate) {
-      return NextResponse.json(
-        { duplicateOfId: duplicate },
-        { status: 409 }
-      )
+      return NextResponse.json({ duplicateOfId: duplicate }, { status: 409 })
     }
   }
 
-  let parsedDueDate: Date | null = null
-  if (dueDate) {
-    parsedDueDate = new Date(dueDate)
-    if (Number.isNaN(parsedDueDate.getTime())) {
-      return NextResponse.json(
-        { error: 'dueDate must be valid' },
-        { status: 400 }
-      )
-    }
+  const parsedDueDate = dueDate ? new Date(dueDate) : null
+  if (parsedDueDate && Number.isNaN(parsedDueDate.getTime())) {
+    return NextResponse.json(
+      { error: 'dueDate must be valid date' },
+      { status: 400 }
+    )
   }
 
   const invoiceNumber = await getUniqueInvoiceNumber()
@@ -230,6 +286,8 @@ async function POSTHandler(request: NextRequest) {
     { status: 201 }
   )
 }
+
+/* ---------------- EXPORTS ---------------- */
 
 export const GET = withRequestId(GETHandler)
 export const POST = withRequestId(POSTHandler)

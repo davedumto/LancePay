@@ -21,17 +21,12 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
-async function GETHandler(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+async function GETHandler(request: NextRequest, { params }: { params: { id: string } }) {
   let contactId: string | undefined
 
   try {
     const user = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = params
     contactId = id
@@ -53,17 +48,12 @@ async function GETHandler(
   }
 }
 
-async function PATCHHandler(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+async function PATCHHandler(request: NextRequest, { params }: { params: { id: string } }) {
   let contactId: string | undefined
 
   try {
     const user = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = params
     contactId = id
@@ -78,67 +68,17 @@ async function PATCHHandler(
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     }
 
-    let body: {
-      name?: unknown
-      email?: unknown
-      company?: unknown
-      notes?: unknown
-    }
-
-    try {
-      body = await request.json()
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-    }
-
-    const updateData: {
-      name?: string
-      email?: string
-      company?: string | null
-      notes?: string | null
-    } = {}
-
-    if (body.name !== undefined) {
-      if (typeof body.name !== 'string' || !body.name.trim()) {
-        return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
-      }
-      updateData.name = body.name.trim()
-    }
-
-    if (body.email !== undefined) {
-      if (typeof body.email !== 'string') {
-        return NextResponse.json({ error: 'Invalid email' }, { status: 400 })
-      }
-
-      const email = body.email.trim().toLowerCase()
-      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-
-      if (!ok) {
-        return NextResponse.json({ error: 'Invalid email format' }, { status: 400 })
-      }
-
-      updateData.email = email
-    }
-
-    if (body.company !== undefined) {
-      updateData.company =
-        typeof body.company === 'string' ? body.company.trim() : null
-    }
-
-    if (body.notes !== undefined) {
-      updateData.notes =
-        typeof body.notes === 'string' ? body.notes.trim() : null
-    }
+    const body = await request.json()
 
     const updated = await prisma.contact.update({
       where: { id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        updatedAt: true,
+      data: {
+        name: typeof body.name === 'string' ? body.name.trim() : undefined,
+        email: typeof body.email === 'string' ? body.email.trim().toLowerCase() : undefined,
+        company: typeof body.company === 'string' ? body.company.trim() : null,
+        notes: typeof body.notes === 'string' ? body.notes.trim() : null,
       },
+      select: { id: true, name: true, email: true, updatedAt: true },
     })
 
     return NextResponse.json({ contact: updated }, { status: 200 })
@@ -148,17 +88,12 @@ async function PATCHHandler(
   }
 }
 
-async function DELETEHandler(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+async function DELETEHandler(request: NextRequest, { params }: { params: { id: string } }) {
   let contactId: string | undefined
 
   try {
     const user = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = params
     contactId = id
