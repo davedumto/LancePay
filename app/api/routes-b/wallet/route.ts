@@ -41,6 +41,17 @@ async function fetchWalletBalance(address: string): Promise<number | null> {
   }
 
   return parsed
+import { swrGet, swrSet, swrIsFresh, swrIsStale } from '../_lib/swr-cache'
+
+const FRESH_MS = 15_000 // 15 s: serve from cache, no upstream call
+const STALE_MS = 60_000 // 60 s: serve stale + revalidate in background
+
+type WalletPayload = { id: string; stellarAddress: string; createdAt: Date } | null
+
+async function fetchWalletFromDb(userId: string): Promise<WalletPayload> {
+  const wallet = await prisma.wallet.findUnique({ where: { userId } })
+  if (!wallet) return null
+  return { id: wallet.id, stellarAddress: wallet.address, createdAt: wallet.createdAt }
 }
 
 export async function GET(request: NextRequest) {
@@ -56,9 +67,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const wallet = await prisma.wallet.findUnique({ where: { userId: user.id } })
-  if (!wallet) {
-    return NextResponse.json({ wallet: null }, { status: 200 })
+  const cacheKey = `wallet:${user.id}`
+  const cached = swrGet<WalletPayload>(cacheKey)
+
+  if (cached) {
+    if (swrIsFresh(cached)) {
+      // Within the fresh window — return immediately, no upstream call
+      return NextResponse.json({ wallet: cached.value })
+    }
+
+    if (swrIsStale(cached)) {
+      // Within the stale window — return the cached value and revalidate in background
+      setImmediate(async () => {
+        try {
+          const fresh = await fetchWalletFromDb(user.id)
+          swrSet(cacheKey, fresh, FRESH_MS, STALE_MS)
+        } catch {
+          // Keep serving the last known value; do not evict
+        }
+      })
+
+      const headers = new Headers()
+      headers.set('X-Cache', 'STALE')
+      return NextResponse.json({ wallet: cached.value }, { headers })
+    }
   }
 
   const startedAt = Date.now()
@@ -92,5 +124,19 @@ export async function GET(request: NextRequest) {
       },
       { status: failure.status },
     )
+  // Cache miss or beyond stale window — synchronous upstream fetch
+  try {
+    const wallet = await fetchWalletFromDb(user.id)
+    swrSet(cacheKey, wallet, FRESH_MS, STALE_MS)
+    return NextResponse.json({ wallet })
+  } catch (error) {
+    // If we still have a (now-expired) value fall back to it rather than hard-failing
+    const stale = swrGet<WalletPayload>(cacheKey)
+    if (stale) {
+      const headers = new Headers()
+      headers.set('X-Cache', 'STALE')
+      return NextResponse.json({ wallet: stale.value }, { headers })
+    }
+    return NextResponse.json({ error: 'Failed to fetch wallet' }, { status: 500 })
   }
 }

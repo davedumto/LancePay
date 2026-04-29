@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { parseTzDateRange } from '../../_lib/date-range'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,12 +16,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+    const user = await prisma.user.findUnique({
+      where: { privyId: claims.userId },
+      select: { id: true, timezone: true },
+    })
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const where = { userId: user.id, type: 'withdrawal' }
+    const url = new URL(request.url)
+    const parsedRange = parseTzDateRange(url.searchParams, user.timezone)
+    if (!parsedRange.ok) {
+      return NextResponse.json(parsedRange.error, { status: 400 })
+    }
+
+    const { from, toExclusive, tz } = parsedRange.value
+    const where = {
+      userId: user.id,
+      type: 'withdrawal',
+      createdAt: { gte: from, lt: toExclusive },
+    }
 
     const [total, completed, pending, failed] = await Promise.all([
       prisma.transaction.aggregate({
@@ -46,6 +61,7 @@ export async function GET(request: NextRequest) {
         pendingCount: pending,
         failedCount: failed,
         currency: 'USDC',
+        tz,
       },
     })
   } catch (error) {

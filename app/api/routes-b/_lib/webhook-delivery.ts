@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { signWebhookPayload } from './hmac'
 import { shouldDeadLetter, pushToDeadLetter } from './dead-letter'
+import { recordWebhookDelivery } from './webhook-history'
 
 type WebhookForDelivery = {
   id: string
@@ -52,6 +53,14 @@ export async function dispatchWebhookDelivery(
       },
     })
 
+    recordWebhookDelivery(webhook.id, {
+      eventId: (payload.id as string) || 'unknown',
+      status: response.ok ? 'ok' : 'fail',
+      latencyMs,
+      attempt: 1,
+      bodyExcerpt: body.slice(0, 256)
+    })
+
     // Push to dead-letter queue if failed and this would be the final attempt
     if (!response.ok && shouldDeadLetter(deliveryStatus, 1)) {
       pushToDeadLetter(webhook.id, {
@@ -89,6 +98,14 @@ export async function dispatchWebhookDelivery(
       },
     })
 
+    recordWebhookDelivery(webhook.id, {
+      eventId: (payload.id as string) || 'unknown',
+      status: 'fail',
+      latencyMs,
+      attempt: 1,
+      bodyExcerpt: body.slice(0, 256)
+    })
+
     // Push to dead-letter queue if this would be the final attempt
     if (shouldDeadLetter('failed', 1)) {
       pushToDeadLetter(webhook.id, {
@@ -107,4 +124,5 @@ export async function dispatchWebhookDelivery(
     }
   }
 }
+
 
