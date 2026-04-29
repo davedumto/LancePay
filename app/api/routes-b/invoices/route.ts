@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
-import { decodeCursor, encodeCursor } from '../_lib/cursor'
+import { getCursorPagination, buildPaginationResponse } from '../_lib/pagination'
 import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
@@ -97,74 +97,53 @@ async function GETHandler(request: NextRequest) {
     return auth.error
   }
 
-  const { searchParams } = new URL(request.url)
-  const status = searchParams.get('status')
-  const limitParam = searchParams.get('limit')
-  const cursorParam = searchParams.get('cursor')
-  const limit = limitParam === null ? 25 : Number.parseInt(limitParam, 10)
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status')
+    const limitParam = searchParams.get('limit')
+    const cursorParam = searchParams.get('cursor')
 
-  const validStatuses = ['pending', 'paid', 'overdue', 'cancelled']
-  if (status && !validStatuses.includes(status)) {
-    return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
-  }
-  if (!Number.isFinite(limit) || Number.isNaN(limit) || limit <= 0 || limit > 100) {
-    return NextResponse.json({ error: 'limit must be a number between 1 and 100' }, { status: 400 })
-  }
+    const pagination = getCursorPagination({ cursor: cursorParam, limit: limitParam }, 25)
+    if (!pagination.isValidCursor) {
+      return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+    }
 
-  const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
-  if (cursorParam && !decodedCursor) {
-    return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
-  }
+    const validStatuses = ['pending', 'paid', 'overdue', 'cancelled']
+    if (status && !validStatuses.includes(status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+    }
 
-  const where = {
-    userId: auth.user.id,
-    ...(status ? { status } : {}),
-    ...(decodedCursor
-      ? {
-          OR: [
-            { createdAt: { lt: new Date(decodedCursor.createdAt) } },
-            {
-              AND: [
-                { createdAt: new Date(decodedCursor.createdAt) },
-                { id: { lt: decodedCursor.id } },
-              ],
-            },
-          ],
-        }
-      : {}),
-  }
+    const where = {
+      userId: auth.user.id,
+      ...(status ? { status } : {}),
+      ...pagination.where,
+    }
 
-  const invoices = await prisma.invoice.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: limit + 1,
-    select: {
-      id: true,
-      invoiceNumber: true,
-      clientName: true,
-      clientEmail: true,
-      amount: true,
-      currency: true,
-      status: true,
-      dueDate: true,
-      createdAt: true,
-    },
-  })
+    const invoices = await prisma.invoice.findMany({
+      where,
+      orderBy: pagination.orderBy,
+      take: pagination.take,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        clientName: true,
+        clientEmail: true,
+        amount: true,
+        currency: true,
+        status: true,
+        dueDate: true,
+        createdAt: true,
+      },
+    })
 
-  const hasNextPage = invoices.length > limit
-  const pageData = hasNextPage ? invoices.slice(0, limit) : invoices
-  const lastInvoice = hasNextPage ? pageData[pageData.length - 1] : null
-  const nextCursor = lastInvoice
-    ? encodeCursor({ createdAt: lastInvoice.createdAt.toISOString(), id: lastInvoice.id })
-    : null
+    const response = buildPaginationResponse(invoices, pagination.limit)
 
-  return NextResponse.json({
-    data: pageData.map((invoice) => ({
-      ...invoice,
-      amount: Number(invoice.amount),
-    })),
-    nextCursor,
-  })
+    return NextResponse.json({
+      ...response,
+      data: response.data.map((invoice) => ({
+        ...invoice,
+        amount: Number(invoice.amount),
+      })),
+    })
 }
 
 async function POSTHandler(request: NextRequest) {

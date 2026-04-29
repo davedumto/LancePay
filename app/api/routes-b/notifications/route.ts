@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { getCursorPagination, buildPaginationResponse } from '../_lib/pagination'
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -23,13 +24,22 @@ async function GETHandler(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const unreadOnly = searchParams.get('unread') === 'true'
+    const cursor = searchParams.get('cursor')
+    const limit = searchParams.get('limit')
+
+    const pagination = getCursorPagination({ cursor, limit }, 20)
+    if (!pagination.isValidCursor) {
+      return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+    }
 
     const notifications = await prisma.notification.findMany({
       where: {
         userId: user.id,
         ...(unreadOnly ? { isRead: false } : {}),
+        ...pagination.where,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: pagination.orderBy,
+      take: pagination.take,
       select: {
         id: true,
         type: true,
@@ -44,8 +54,10 @@ async function GETHandler(request: NextRequest) {
       where: { userId: user.id, isRead: false },
     })
 
+    const response = buildPaginationResponse(notifications, pagination.limit)
+
     return NextResponse.json({
-      notifications,
+      ...response,
       unreadCount,
     })
   } catch (error) {
