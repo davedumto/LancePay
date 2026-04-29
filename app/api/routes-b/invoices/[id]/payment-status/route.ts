@@ -1,7 +1,8 @@
+import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
-export async function GET(
+async function GETHandler(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -37,3 +38,5 @@ export async function GET(
     dueDate: invoice.dueDate,
   })
 }
+
+export const GET = withRequestId(GETHandler)

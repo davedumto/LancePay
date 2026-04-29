@@ -1,9 +1,69 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
+<<<<<<< HEAD
 import { buildInvoiceWhereFilters } from '../_lib/invoice-filters'
 import { getArchiveFilter, parseIncludeArchivedParam } from '../_lib/invoice-archive'
+=======
+import { decodeCursor, encodeCursor } from '../_lib/cursor'
+import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/invoices',
+  summary: 'List invoices',
+  description: 'Get cursor-paginated invoices for the authenticated user, optionally filtered by status.',
+  requestSchema: z.object({
+    status: z.enum(['pending', 'paid', 'overdue', 'cancelled']).optional(),
+    cursor: z.string().optional(),
+    limit: z.string().optional().default('25')
+  }),
+  responseSchema: z.object({
+    data: z.array(z.object({
+      id: z.string(),
+      invoiceNumber: z.string(),
+      clientName: z.string().nullable(),
+      clientEmail: z.string(),
+      amount: z.number(),
+      currency: z.string(),
+      status: z.string(),
+      dueDate: z.string().nullable(),
+      createdAt: z.string()
+    })),
+    nextCursor: z.string().nullable()
+  }),
+  tags: ['invoices']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/invoices',
+  summary: 'Create invoice',
+  description: 'Create a new invoice. Returns 409 if a similar invoice was created recently.',
+  requestSchema: z.object({
+    clientEmail: z.string().email(),
+    clientName: z.string().optional(),
+    description: z.string().min(1),
+    amount: z.number().positive(),
+    currency: z.string().default('USD'),
+    dueDate: z.string().optional()
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    invoiceNumber: z.string(),
+    paymentLink: z.string(),
+    status: z.string(),
+    amount: z.number(),
+    currency: z.string()
+  }),
+  tags: ['invoices']
+})
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
 
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -36,7 +96,7 @@ async function getUniqueInvoiceNumber() {
   throw new Error('Failed to generate a unique invoice number')
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
   if ('error' in auth) {
     return auth.error
@@ -44,16 +104,30 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
+<<<<<<< HEAD
   const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
   const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
   const limit = Math.min(
     50,
     Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10) || 20),
   )
+=======
+  const limitParam = searchParams.get('limit')
+  const cursorParam = searchParams.get('cursor')
+  const limit = limitParam === null ? 25 : Number.parseInt(limitParam, 10)
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
 
   const validStatuses = ['pending', 'paid', 'overdue', 'cancelled']
   if (status && !validStatuses.includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+  }
+  if (!Number.isFinite(limit) || Number.isNaN(limit) || limit <= 0 || limit > 100) {
+    return NextResponse.json({ error: 'limit must be a number between 1 and 100' }, { status: 400 })
+  }
+
+  const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
+  if (cursorParam && !decodedCursor) {
+    return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
   }
 
   let searchFilters = {}
@@ -72,16 +146,30 @@ export async function GET(request: NextRequest) {
   const where = {
     userId: auth.user.id,
     ...(status ? { status } : {}),
+<<<<<<< HEAD
     ...getArchiveFilter(includeArchived),
     ...searchFilters,
+=======
+    ...(decodedCursor
+      ? {
+          OR: [
+            { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+            {
+              AND: [
+                { createdAt: new Date(decodedCursor.createdAt) },
+                { id: { lt: decodedCursor.id } },
+              ],
+            },
+          ],
+        }
+      : {}),
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
   }
 
-  const total = await prisma.invoice.count({ where })
   const invoices = await prisma.invoice.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * limit,
-    take: limit,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
     select: {
       id: true,
       invoiceNumber: true,
@@ -95,21 +183,23 @@ export async function GET(request: NextRequest) {
     },
   })
 
+  const hasNextPage = invoices.length > limit
+  const pageData = hasNextPage ? invoices.slice(0, limit) : invoices
+  const lastInvoice = hasNextPage ? pageData[pageData.length - 1] : null
+  const nextCursor = lastInvoice
+    ? encodeCursor({ createdAt: lastInvoice.createdAt.toISOString(), id: lastInvoice.id })
+    : null
+
   return NextResponse.json({
-    invoices: invoices.map((invoice) => ({
+    data: pageData.map((invoice) => ({
       ...invoice,
       amount: Number(invoice.amount),
     })),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    nextCursor,
   })
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
   if ('error' in auth) {
     return auth.error
@@ -130,6 +220,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'amount must be greater than 0' }, { status: 400 })
   }
 
+  const { searchParams } = new URL(request.url)
+  const forceCreate = searchParams.get('force') === 'true'
+  const normalizedClientEmail = String(clientEmail).toLowerCase()
+  const normalizedCurrency = String(currency).toUpperCase()
+
+  if (!forceCreate) {
+    const duplicateInvoiceId = await findRecentDuplicateInvoice({
+      userId: auth.user.id,
+      clientEmail: normalizedClientEmail,
+      amount: parsedAmount,
+      currency: normalizedCurrency,
+    })
+
+    if (duplicateInvoiceId) {
+      return NextResponse.json({ duplicateOfId: duplicateInvoiceId }, { status: 409 })
+    }
+  }
+
   let parsedDueDate: Date | null = null
   if (dueDate) {
     parsedDueDate = new Date(dueDate)
@@ -146,11 +254,11 @@ export async function POST(request: NextRequest) {
     data: {
       userId: auth.user.id,
       invoiceNumber,
-      clientEmail: String(clientEmail).toLowerCase(),
+      clientEmail: normalizedClientEmail,
       clientName: clientName || null,
       description,
       amount: parsedAmount,
-      currency,
+      currency: normalizedCurrency,
       paymentLink,
       dueDate: parsedDueDate,
     },
@@ -168,3 +276,6 @@ export async function POST(request: NextRequest) {
     { status: 201 },
   )
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

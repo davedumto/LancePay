@@ -1,11 +1,19 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { Invoice } from '@prisma/client'
 import { verifyAuthToken } from '@/lib/auth'
+<<<<<<< HEAD
 import { emptyAgeingBuckets, getAgeingBucket, getDaysOverdueUtc } from '../../_lib/ageing'
 import { getArchiveFilter, parseIncludeArchivedParam } from '../../_lib/invoice-archive'
 
 export async function GET(request: NextRequest) {
+=======
+import { computeLateFee } from '../../_lib/late-fee' // Issue #599
+
+async function GETHandler(request: NextRequest) {
+  // 1. Verify auth
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -21,6 +29,8 @@ export async function GET(request: NextRequest) {
   const includeArchived = parseIncludeArchivedParam(searchParams.get('includeArchived'))
   const bucketed = searchParams.get('bucketed') === 'true'
   const now = new Date()
+  const { searchParams } = new URL(request.url)
+  const withLateFee = searchParams.get('withLateFee') === 'true' // Issue #599
 
   const overdueInvoices = await prisma.invoice.findMany({
     where: {
@@ -38,7 +48,7 @@ export async function GET(request: NextRequest) {
   const invoices = overdueInvoices.map((inv: Invoice) => {
     const daysOverdue = getDaysOverdueUtc(inv.dueDate!, now)
 
-    return {
+    const base = {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       clientName: inv.clientName,
@@ -47,6 +57,16 @@ export async function GET(request: NextRequest) {
       dueDate: inv.dueDate,
       daysOverdue,
     }
+
+    if (withLateFee) {
+      const fee = computeLateFee(
+        { amount: Number(inv.amount), currency: inv.currency, dueDate: inv.dueDate },
+        now,
+      )
+      return { ...base, lateFee: fee }
+    }
+
+    return base
   })
 
   if (!bucketed) {
@@ -73,3 +93,5 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ buckets, totals })
 }
+
+export const GET = withRequestId(GETHandler)

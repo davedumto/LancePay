@@ -1,3 +1,4 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -11,7 +12,11 @@ function isValidHttpsUrl(url: string): boolean {
   }
 }
 
+<<<<<<< HEAD
 async function patchAvatar(request: NextRequest) {
+=======
+async function PATCHHandler(request: NextRequest) {
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -44,4 +49,8 @@ async function patchAvatar(request: NextRequest) {
   return NextResponse.json({ avatarUrl: updatedUser.avatarUrl })
 }
 
+<<<<<<< HEAD
 export const PATCH = withBodyLimit(patchAvatar, { limitBytes: 2 * 1024 * 1024 })
+=======
+export const PATCH = withRequestId(PATCHHandler)
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a

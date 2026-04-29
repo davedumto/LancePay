@@ -1,12 +1,14 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { calculateWithdrawalFee } from '../_lib/withdrawal-fees'
 
 /**
  * GET /api/routes-b/withdrawals
  * List withdrawal history for the authenticated user.
  */
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -59,7 +61,7 @@ export async function GET(request: NextRequest) {
  * POST /api/routes-b/withdrawals
  * Record a new withdrawal request against a user's bank account.
  */
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -113,14 +115,17 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Apply fee logic (same as estimate endpoint)
+  const { fee, netAmount } = calculateWithdrawalFee(amount, 'USDC')
+
   // Create a Transaction record: type: 'withdrawal', status: 'pending', amount, userId: user.id
   const transaction = await prisma.transaction.create({
     data: {
       userId: user.id,
       type: 'withdrawal',
       status: 'pending',
-      amount,
-      currency: 'USDC', // Default currency for withdrawals in this context
+      amount: netAmount,
+      currency: 'USDC',
       bankAccountId,
     },
     select: {
@@ -138,7 +143,11 @@ export async function POST(request: NextRequest) {
     {
       ...transaction,
       amount: Number(transaction.amount),
+      fee,
     },
     { status: 201 },
   )
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

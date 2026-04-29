@@ -1,9 +1,51 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+<<<<<<< HEAD
 import { withBodyLimit } from '../_lib/with-body-limit'
+=======
+import { registerRoute } from '../_lib/openapi'
+import { z } from 'zod'
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
 
-export async function GET(request: NextRequest) {
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/tags',
+  summary: 'List tags',
+  description: 'Get all tags for the authenticated user with invoice counts.',
+  responseSchema: z.object({
+    tags: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      color: z.string(),
+      invoiceCount: z.number(),
+      createdAt: z.string()
+    }))
+  }),
+  tags: ['tags']
+})
+
+registerRoute({
+  method: 'POST',
+  path: '/tags',
+  summary: 'Create tag',
+  description: 'Create a new tag for organizing invoices.',
+  requestSchema: z.object({
+    name: z.string().min(1).max(50),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#6366f1')
+  }),
+  responseSchema: z.object({
+    id: z.string(),
+    name: z.string(),
+    color: z.string(),
+    invoiceCount: z.number()
+  }),
+  tags: ['tags']
+})
+
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -32,7 +74,11 @@ export async function GET(request: NextRequest) {
   })
 }
 
+<<<<<<< HEAD
 async function postTag(request: NextRequest) {
+=======
+async function POSTHandler(request: NextRequest) {
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) {
@@ -89,4 +135,9 @@ async function postTag(request: NextRequest) {
   }
 }
 
+<<<<<<< HEAD
 export const POST = withBodyLimit(postTag, { limitBytes: 1024 * 1024 })
+=======
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)
+>>>>>>> 36bc7b5e4091ccf48a331839e7a0c06d8d45492a
