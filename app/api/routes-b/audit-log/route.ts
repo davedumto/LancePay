@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { buildActionFilter } from '../_lib/audit-action-filter' // Issue #621
+import { getSeverity, buildSeverityFilter } from '../_lib/audit-severity'
 
 async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -26,9 +27,13 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ error: actionFilter.error }, { status: 400 })
   }
 
+  const severity = searchParams.get('severity')
+  const severityFilter = buildSeverityFilter(severity)
+
   const where = {
     actorId: user.id,
     ...actionFilter.clause,
+    ...severityFilter,
   }
 
   const [total, events] = await Promise.all([
@@ -50,6 +55,7 @@ async function GETHandler(request: NextRequest) {
       resourceType: 'invoice',
       resourceId: event.invoiceId,
       ipAddress: null,
+      severity: getSeverity(event.eventType),
       createdAt: event.createdAt,
     })),
     pagination: {

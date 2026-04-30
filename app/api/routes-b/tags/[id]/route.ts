@@ -2,6 +2,7 @@ import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { checkResourceOwnership } from '../../_lib/access-control'
 
 async function GETHandler(
     request: NextRequest,
@@ -22,7 +23,8 @@ async function GETHandler(
     })
 
     if (!tag) return NextResponse.json({ error: 'Tag not found' }, { status: 404 })
-    if (tag.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const accessCheck = checkResourceOwnership(tag.userId, user.id)
+    if (accessCheck) return accessCheck
 
     return NextResponse.json({
         id: tag.id,
@@ -58,9 +60,8 @@ async function PATCHHandler(
             return NextResponse.json({ error: 'Tag not found' }, { status: 404 })
         }
 
-        if (existingTag.userId !== user.id) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
+        const accessCheck = checkResourceOwnership(existingTag.userId, user.id)
+        if (accessCheck) return accessCheck
 
         const body = await request.json()
         const updates: { name?: string; color?: string } = {}
@@ -146,9 +147,8 @@ async function DELETEHandler(
             return NextResponse.json({ error: 'Tag not found' }, { status: 404 })
         }
 
-        if (tag.userId !== user.id) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
+        const accessCheck = checkResourceOwnership(tag.userId, user.id)
+        if (accessCheck) return accessCheck
 
         await prisma.invoiceTag.deleteMany({ where: { tagId: id } })
         await prisma.tag.delete({ where: { id } })

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'async_hooks'
 import { randomBytes } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
+import { ROUTES_B_SCHEMA_VERSION, isSchemaCompatible } from './schema-version'
 
 type RequestContext = {
   requestId: string
@@ -79,6 +80,7 @@ function attachRequestId(response: Response, requestId: string): Response {
   })
 
   cloned.headers.set('X-Request-Id', requestId)
+  cloned.headers.set('X-Routes-B-Schema', ROUTES_B_SCHEMA_VERSION)
   return cloned
 }
 
@@ -87,6 +89,12 @@ patchLogger()
 export function withRequestId<T extends RouteHandler>(handler: T) {
   return async (req: NextRequest, ...args: any[]): Promise<Response> => {
     const requestId = resolveRequestId(req)
+
+    const acceptSchema = req.headers.get('x-accept-schema')
+    if (acceptSchema && !isSchemaCompatible(acceptSchema)) {
+      const response = NextResponse.json({ error: 'Incompatible schema version' }, { status: 406 })
+      return attachRequestId(response, requestId)
+    }
 
     try {
       const result = await requestContext.run({ requestId }, () =>

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createEntityEtag, ifMatchSatisfied } from '../../_lib/etag'
+import { checkResourceOwnership } from '../../_lib/access-control'
 
 function isValidIsoDate(value: string) {
   const date = new Date(value)
@@ -50,9 +51,8 @@ async function GETHandler(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   }
 
-  if (invoice.userId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const accessCheck = checkResourceOwnership(invoice.userId, user.id)
+  if (accessCheck) return accessCheck
 
   const etag = createEntityEtag(invoice.id, invoice.updatedAt)
   const response = NextResponse.json({
@@ -101,23 +101,17 @@ async function PATCHHandler(
     return NextResponse.json({ error: 'Wildcard If-Match is admin only' }, { status: 403 })
   }
 
-  const ownedInvoice = await prisma.invoice.findFirst({
-    where: { id, userId: requester.id },
-    select: { id: true, status: true, updatedAt: true },
+  const ownedInvoice = await prisma.invoice.findUnique({
+    where: { id },
+    select: { id: true, userId: true, status: true, updatedAt: true },
   })
 
   if (!ownedInvoice) {
-    const existingInvoice = await prisma.invoice.findUnique({
-      where: { id },
-      select: { id: true },
-    })
-
-    if (existingInvoice) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   }
+
+  const accessCheck = checkResourceOwnership(ownedInvoice.userId, requester.id)
+  if (accessCheck) return accessCheck
 
   if (ownedInvoice.status !== 'pending') {
     return NextResponse.json({ error: 'Only pending invoices can be edited' }, { status: 422 })
