@@ -2,6 +2,7 @@ import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
+import { checkResourceOwnership } from '../../_lib/access-control'
 
 async function GETHandler(
   request: NextRequest,
@@ -34,8 +35,8 @@ async function GETHandler(
       { status: 404 },
     );
 
-  if (transaction.userId !== user.id)
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const accessCheck = checkResourceOwnership(transaction.userId, user.id);
+  if (accessCheck) return accessCheck;
 
   return NextResponse.json({
     transaction: {

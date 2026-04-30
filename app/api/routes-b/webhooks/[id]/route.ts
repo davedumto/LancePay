@@ -12,6 +12,7 @@ import {
   validateCustomHeaders,
 } from '../../_lib/webhook-custom-headers'
 import { z } from 'zod'
+import { checkResourceOwnership } from '../../_lib/access-control'
 
 // Register OpenAPI documentation
 registerRoute({
@@ -111,9 +112,8 @@ async function GETHandler(
     return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
   }
 
-  if (webhook.userId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const accessCheck = checkResourceOwnership(webhook.userId, user.id)
+  if (accessCheck) return accessCheck
 
   return NextResponse.json({
     webhook: {
@@ -151,9 +151,8 @@ async function PATCHHandler(
     return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
   }
 
-  if (webhook.userId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const accessCheck = checkResourceOwnership(webhook.userId, user.id)
+  if (accessCheck) return accessCheck
 
   const body = await request.json()
   const { targetUrl, description, eventTypes, isActive, headers } = body
@@ -279,9 +278,8 @@ async function DELETEHandler(
     return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
   }
 
-  if (webhook.userId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const accessCheck = checkResourceOwnership(webhook.userId, user.id)
+  if (accessCheck) return accessCheck
 
   await prisma.userWebhook.delete({ where: { id } })
   clearCustomHeaders(id)

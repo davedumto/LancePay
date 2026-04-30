@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { withRetry } from '../../_lib/retry'
 import { logger } from '@/lib/logger'
+import { checkResourceOwnership } from '../../_lib/access-control'
 
 type OfframpStatusResponse = { status?: string; description?: string }
 
@@ -46,7 +47,9 @@ async function GETHandler(
 
     if (!transaction) return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
     if (transaction.type !== 'withdrawal') return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    if (transaction.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    
+    const accessCheck = checkResourceOwnership(transaction.userId, user.id)
+    if (accessCheck) return accessCheck
 
     const providerStatus = transaction.txHash
         ? await withRetry(
