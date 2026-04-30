@@ -1,127 +1,127 @@
 import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { Invoice } from '@prisma/client'
 import { verifyAuthToken } from '@/lib/auth'
-
+import { logger } from '@/lib/logger'
 import {
-  emptyAgeingBuckets,
-  getAgeingBucket,
-  getDaysOverdueUtc,
-} from '../../_lib/ageing'
-import {
-  getArchiveFilter,
-  parseIncludeArchivedParam,
-} from '../../_lib/invoice-archive'
+  findContactById,
+  softDeleteContact,
+  supportsContactSoftDelete,
+} from '../../_lib/contacts'
 
-import { computeLateFee } from '../../_lib/late-fee' // Issue #599
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  if (!authToken) return null
 
-async function GETHandler(request: NextRequest) {
-  // 1. Auth
-  const authToken = request.headers
-    .get('authorization')
-    ?.replace('Bearer ', '')
+  const claims = await verifyAuthToken(authToken)
+  if (!claims) return null
 
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const user = await prisma.user.findUnique({
+  return prisma.user.findUnique({
     where: { privyId: claims.userId },
-  })
-
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
-
-  // 2. Query params (FIXED DUPLICATE BUG HERE)
-  const { searchParams } = new URL(request.url)
-
-  const includeArchived = parseIncludeArchivedParam(
-    searchParams.get('includeArchived')
-  )
-
-  const bucketed = searchParams.get('bucketed') === 'true'
-  const withLateFee = searchParams.get('withLateFee') === 'true'
-
-  const now = new Date()
-
-  // 3. Fetch overdue invoices
-  const overdueInvoices = await prisma.invoice.findMany({
-    where: {
-      userId: user.id,
-      status: 'pending',
-      ...getArchiveFilter(includeArchived),
-      dueDate: {
-        not: null,
-        lt: now,
-      },
-    },
-    orderBy: { dueDate: 'asc' },
-  })
-
-  // 4. Transform invoices
-  const invoices = overdueInvoices.map((inv: Invoice) => {
-    const daysOverdue = getDaysOverdueUtc(inv.dueDate!, now)
-
-    const base = {
-      id: inv.id,
-      invoiceNumber: inv.invoiceNumber,
-      clientName: inv.clientName,
-      clientEmail: inv.clientEmail,
-      amount: Number(inv.amount),
-      dueDate: inv.dueDate,
-      daysOverdue,
-    }
-
-    if (withLateFee) {
-      const fee = computeLateFee(
-        {
-          amount: Number(inv.amount),
-          currency: inv.currency,
-          dueDate: inv.dueDate,
-        },
-        now
-      )
-
-      return { ...base, lateFee: fee }
-    }
-
-    return base
-  })
-
-  // 5. Non-bucketed response
-  if (!bucketed) {
-    return NextResponse.json({
-      invoices,
-      total: invoices.length,
-    })
-  }
-
-  // 6. Bucketed ageing logic
-  const buckets = emptyAgeingBuckets<typeof invoices[number]>()
-
-  const totals = {
-    '1_30': { count: 0, amount: 0 },
-    '31_60': { count: 0, amount: 0 },
-    '61_90': { count: 0, amount: 0 },
-    '90_plus': { count: 0, amount: 0 },
-  }
-
-  for (const invoice of invoices) {
-    const key = getAgeingBucket(invoice.daysOverdue)
-
-    buckets[key].push(invoice)
-
-    totals[key].count += 1
-    totals[key].amount += invoice.amount
-  }
-
-  return NextResponse.json({
-    buckets,
-    totals,
   })
 }
 
+async function GETHandler(request: NextRequest, { params }: { params: { id: string } }) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = params
+    contactId = id
+
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted: false,
+    })
+
+    if (!contact) {
+      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ contact }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'GET contact error')
+    return NextResponse.json({ error: 'Failed to fetch contact' }, { status: 500 })
+  }
+}
+
+async function PATCHHandler(request: NextRequest, { params }: { params: { id: string } }) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = params
+    contactId = id
+
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted: false,
+    })
+
+    if (!contact) {
+      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    }
+
+    const body = await request.json()
+
+    const updated = await prisma.contact.update({
+      where: { id },
+      data: {
+        name: typeof body.name === 'string' ? body.name.trim() : undefined,
+        email: typeof body.email === 'string' ? body.email.trim().toLowerCase() : undefined,
+        company: typeof body.company === 'string' ? body.company.trim() : null,
+        notes: typeof body.notes === 'string' ? body.notes.trim() : null,
+      },
+      select: { id: true, name: true, email: true, updatedAt: true },
+    })
+
+    return NextResponse.json({ contact: updated }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'PATCH contact error')
+    return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 })
+  }
+}
+
+async function DELETEHandler(request: NextRequest, { params }: { params: { id: string } }) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = params
+    contactId = id
+
+    const supported = await supportsContactSoftDelete()
+    if (!supported) {
+      return NextResponse.json(
+        { error: 'Soft delete not supported' },
+        { status: 409 }
+      )
+    }
+
+    const deleted = await softDeleteContact({
+      id,
+      userId: user.id,
+    })
+
+    if (!deleted) {
+      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ contact: deleted }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'DELETE contact error')
+    return NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 })
+  }
+}
+
 export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)
+export const DELETE = withRequestId(DELETEHandler)

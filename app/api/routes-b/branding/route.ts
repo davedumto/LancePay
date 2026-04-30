@@ -42,9 +42,7 @@ function formatFieldErrors(error: {
 }) {
   return error.issues.reduce<Record<string, string>>((fields, issue) => {
     const key = typeof issue.path[0] === 'string' ? issue.path[0] : 'body'
-    if (!fields[key]) {
-      fields[key] = issue.message
-    }
+    if (!fields[key]) fields[key] = issue.message
     return fields
   }, {})
 }

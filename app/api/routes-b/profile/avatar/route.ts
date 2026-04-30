@@ -18,11 +18,9 @@ async function PATCHHandler(request: NextRequest) {
     ?.replace('Bearer ', '')
 
   const claims = await verifyAuthToken(authToken || '')
+
   if (!claims) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { avatarUrl?: unknown }

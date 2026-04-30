@@ -13,8 +13,7 @@ registerRoute({
   method: 'GET',
   path: '/tags',
   summary: 'List tags',
-  description:
-    'Get all tags for the authenticated user with invoice counts.',
+  description: 'Get all tags for the authenticated user with invoice counts.',
   responseSchema: z.object({
     tags: z.array(
       z.object({
@@ -36,10 +35,7 @@ registerRoute({
   description: 'Create a new tag for organizing invoices.',
   requestSchema: z.object({
     name: z.string().min(1).max(50),
-    color: z
-      .string()
-      .regex(/^#[0-9A-Fa-f]{6}$/)
-      .default('#6366f1'),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#6366f1'),
   }),
   responseSchema: z.object({
     id: z.string(),
@@ -71,10 +67,7 @@ async function GETHandler(request: NextRequest) {
   const user = await getAuthenticatedUser(request)
 
   if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const tags = await prisma.tag.findMany({
@@ -102,10 +95,7 @@ async function POSTHandler(request: NextRequest) {
   const user = await getAuthenticatedUser(request)
 
   if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { name?: unknown; color?: unknown }
@@ -121,11 +111,8 @@ async function POSTHandler(request: NextRequest) {
 
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   const color =
-    typeof body.color === 'string'
-      ? body.color
-      : '#6366f1'
+    typeof body.color === 'string' ? body.color : '#6366f1'
 
-  // validation
   if (!name) {
     return NextResponse.json(
       { error: 'Tag name is required' },
@@ -147,7 +134,6 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
-  // duplicate check
   const existingTag = await prisma.tag.findUnique({
     where: {
       userId_name: { userId: user.id, name },
@@ -167,6 +153,9 @@ async function POSTHandler(request: NextRequest) {
       name,
       color,
     },
+    include: {
+      _count: { select: { invoiceTags: true } },
+    },
   })
 
   return NextResponse.json(
@@ -174,7 +163,7 @@ async function POSTHandler(request: NextRequest) {
       id: tag.id,
       name: tag.name,
       color: tag.color,
-      invoiceCount: 0,
+      invoiceCount: tag._count.invoiceTags,
     },
     { status: 201 }
   )

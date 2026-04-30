@@ -9,6 +9,9 @@ import {
   supportsContactSoftDelete,
 } from '../../_lib/contacts'
 
+/**
+ * AUTH HELPER
+ */
 async function getAuthenticatedUser(request: NextRequest) {
   const authToken = request.headers
     .get('authorization')
@@ -24,9 +27,12 @@ async function getAuthenticatedUser(request: NextRequest) {
   })
 }
 
+/**
+ * GET CONTACT
+ */
 async function GETHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   let contactId: string | undefined
 
@@ -36,7 +42,7 @@ async function GETHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = params
     contactId = id
 
     const includeDeleted =
@@ -69,9 +75,12 @@ async function GETHandler(
   }
 }
 
+/**
+ * PATCH CONTACT
+ */
 async function PATCHHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   let contactId: string | undefined
 
@@ -81,7 +90,7 @@ async function PATCHHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = params
     contactId = id
 
     const contact = await findContactById({
@@ -172,10 +181,7 @@ async function PATCHHandler(
     }
 
     if (body.company !== undefined) {
-      if (
-        body.company !== null &&
-        typeof body.company !== 'string'
-      ) {
+      if (body.company !== null && typeof body.company !== 'string') {
         return NextResponse.json(
           { error: 'company must be a string' },
           { status: 400 }
@@ -197,10 +203,7 @@ async function PATCHHandler(
     }
 
     if (body.notes !== undefined) {
-      if (
-        body.notes !== null &&
-        typeof body.notes !== 'string'
-      ) {
+      if (body.notes !== null && typeof body.notes !== 'string') {
         return NextResponse.json(
           { error: 'notes must be a string' },
           { status: 400 }
@@ -243,26 +246,25 @@ async function PATCHHandler(
   }
 }
 
+/**
+ * DELETE CONTACT
+ */
 async function DELETEHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   let contactId: string | undefined
 
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = params
     contactId = id
 
-    const softDeleteSupported =
-      await supportsContactSoftDelete()
+    const softDeleteSupported = await supportsContactSoftDelete()
 
     if (!softDeleteSupported) {
       return NextResponse.json(
@@ -291,10 +293,7 @@ async function DELETEHandler(
       { status: 200 }
     )
   } catch (error) {
-    logger.error(
-      { err: error, contactId },
-      'Routes B contact DELETE error'
-    )
+    logger.error({ err: error, contactId }, 'Routes B contact DELETE error')
     return NextResponse.json(
       { error: 'Failed to delete contact' },
       { status: 500 }
@@ -302,6 +301,9 @@ async function DELETEHandler(
   }
 }
 
+/**
+ * EXPORT ROUTES
+ */
 export const GET = withRequestId(GETHandler)
 export const PATCH = withRequestId(PATCHHandler)
 export const DELETE = withRequestId(DELETEHandler)
