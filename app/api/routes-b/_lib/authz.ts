@@ -19,7 +19,7 @@ export async function resolveRoutesBAuth(req: NextRequest): Promise<AuthContext 
   if (claims?.userId) {
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId }, select: { id: true, role: true } })
     if (!user) return null
-    return { userId: user.id, role: user.role, scopes: ['routes-b:read'] }
+    return { userId: user.id, role: user.role, scopes: ['routes-b:read', 'routes-b:write'] }
   }
 
   const hashedKey = crypto.createHash('sha256').update(token).digest('hex')
@@ -30,7 +30,7 @@ export async function resolveRoutesBAuth(req: NextRequest): Promise<AuthContext 
   if (!user) return null
 
   await prisma.apiKey.update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } })
-  return { userId: apiKey.userId, role: user.role, scopes: ['routes-b:read'] }
+  return { userId: apiKey.userId, role: user.role, scopes: ['routes-b:read', 'routes-b:write'] }
 }
 
 export async function requireScope(req: NextRequest, scope: string): Promise<AuthContext> {
