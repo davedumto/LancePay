@@ -182,3 +182,28 @@ async function PATCHHandler(request: NextRequest) {
 export const PATCH = withRequestId(
   withBodyLimit(PATCHHandler, { limitBytes: 1024 * 1024 })
 )
+
+// GET /api/routes-b/branding — return the authenticated user's branding
+// settings, or { branding: null } (200, not 404) when none has been set up.
+async function GETHandler(request: NextRequest) {
+  const user = await getAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const branding = await prisma.brandingSettings.findUnique({
+    where: { userId: user.id },
+    select: {
+      id: true,
+      logoUrl: true,
+      primaryColor: true,
+      footerText: true,
+      signatureUrl: true,
+      createdAt: true,
+    },
+  })
+
+  return NextResponse.json({ branding: branding ?? null })
+}
+
+export const GET = withRequestId(GETHandler)
