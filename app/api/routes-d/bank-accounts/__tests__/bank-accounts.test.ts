@@ -7,6 +7,7 @@ vi.mock('@/lib/db', () => ({
     user: { findUnique: vi.fn() },
     bankAccount: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       updateMany: vi.fn(),
@@ -21,6 +22,7 @@ import { GET, POST } from '../route'
 const mockedVerify = vi.mocked(verifyAuthToken)
 const mockedUserFind = vi.mocked(prisma.user.findUnique)
 const mockedFindMany = vi.mocked(prisma.bankAccount.findMany)
+const mockedFindFirst = vi.mocked(prisma.bankAccount.findFirst)
 const mockedCount = vi.mocked(prisma.bankAccount.count)
 const mockedCreate = vi.mocked(prisma.bankAccount.create)
 
@@ -53,6 +55,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   mockedVerify.mockResolvedValue({ userId: 'privy-1' } as never)
   mockedUserFind.mockResolvedValue({ id: 'user-1' } as never)
+  mockedFindFirst.mockResolvedValue(null as never)
 })
 
 describe('GET /api/routes-d/bank-accounts', () => {
@@ -114,5 +117,33 @@ describe('POST /api/routes-d/bank-accounts', () => {
     const res = await POST(postReq(validAccount))
     expect([200, 201]).toContain(res.status)
     expect(mockedCreate).toHaveBeenCalled()
+  })
+
+  it('returns 409 when bank account already exists', async () => {
+    mockedFindFirst.mockResolvedValue({ id: 'existing-b1' } as never)
+    const res = await POST(postReq(validAccount))
+    expect(res.status).toBe(409)
+    const json = await res.json()
+    expect(json.error).toMatch(/already exists/i)
+    expect(json.existingId).toBe('existing-b1')
+  })
+
+  it('does not create when a duplicate account is detected', async () => {
+    mockedFindFirst.mockResolvedValue({ id: 'existing-b1' } as never)
+    await POST(postReq(validAccount))
+    expect(mockedCreate).not.toHaveBeenCalled()
+  })
+
+  it('allows creation when no duplicate exists', async () => {
+    mockedFindFirst.mockResolvedValue(null as never)
+    mockedCount.mockResolvedValue(0 as never)
+    mockedCreate.mockResolvedValue({
+      id: 'b2',
+      ...validAccount,
+      isDefault: true,
+      createdAt: new Date(),
+    } as never)
+    const res = await POST(postReq(validAccount))
+    expect([200, 201]).toContain(res.status)
   })
 })
