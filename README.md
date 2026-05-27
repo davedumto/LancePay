@@ -1,70 +1,61 @@
 # LancePay 💸
 
-**Instant international payments for Nigerian freelancers — powered by Stellar and stablecoins.**
+> **Instant international payments for Nigerian freelancers — powered by Stellar and stablecoins.**
 
-LancePay enables freelancers to receive payments from global clients in minutes, not days, with fees under 1%. Blockchain complexity is completely abstracted — users see invoices, balances, and bank withdrawals, nothing else.
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](./LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
+[![Stellar](https://img.shields.io/badge/Stellar-Network-blue?logo=stellar)](https://stellar.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-336791?logo=postgresql)](https://neon.tech/)
+
+LancePay lets freelancers receive payments from global clients in **minutes, not days**, with fees under **1%**. All blockchain complexity is completely abstracted — users only ever see invoices, balances, and bank withdrawals.
 
 ---
 
-## 🎯 What We're Building
+## 📌 Table of Contents
 
-A fintech platform that solves the biggest pain point for Nigerian freelancers: **receiving international payments quickly and cheaply**.
+- [The Problem](#-the-problem)
+- [Our Solution](#-our-solution)
+- [How It Works](#-how-it-works)
+- [Tech Stack](#️-tech-stack)
+- [Why Stellar?](#-why-stellar)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [Environment Variables](#-environment-variables)
+- [Contributing](#-contributing)
+- [Cron Jobs](#️-cron-jobs)
+- [Documentation](#-documentation)
+- [License](#-license)
 
-### The Problem
-- Traditional payment methods (PayPal, Wise) have high fees (5-10%) and slow settlement (3-7 days)
-- Nigerian freelancers lose significant portions of their earnings to fees and exchange rate markups
-- Crypto solutions are too complex for non-technical users
+---
 
-### Our Solution
-- **Create invoice** → Get shareable payment link
-- **Client pays** → Card payment converts to USDC on Stellar
-- **Instant settlement** → Funds arrive in 3-5 seconds
-- **Withdraw to bank** → Convert to NGN via Yellow Card, instant bank transfer
-- **Keep 99%+ of earnings** → Fees under 1%
+## 😤 The Problem
+
+Nigerian freelancers face a painful reality when getting paid internationally:
+
+| Method | Fees | Settlement Time |
+|--------|------|-----------------|
+| PayPal | 5–10% | 3–7 days |
+| Wise | 3–6% | 1–3 days |
+| Crypto (DIY) | <1% | Minutes — but too complex |
+| **LancePay** | **<1%** | **3–5 seconds** |
+
+Traditional platforms eat into earnings with high fees and slow settlement. DIY crypto is cheap but inaccessible to non-technical users. **LancePay bridges that gap.**
+
+---
+
+## ✅ Our Solution
+
+```
+Create invoice  →  Share link  →  Client pays  →  Funds arrive in seconds  →  Withdraw to bank
+```
+
+1. **Create an invoice** — Freelancer generates a shareable payment link
+2. **Client pays** — No crypto account needed; client pays by card
+3. **Instant settlement** — MoonPay converts card payment to USDC on Stellar
+4. **Funds arrive** — Freelancer's embedded wallet receives USDC in 3–5 seconds
+5. **Withdraw to NGN** — Yellow Card converts USDC → NGN and sends to bank account
 
 **Zero crypto knowledge required** — users never see wallets, private keys, or blockchain jargon.
-
----
-
-## 🛠️ Tech Stack
-
-- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4
-- **Backend:** Next.js API routes, Prisma ORM, PostgreSQL (Neon)
-- **Authentication:** Privy (OAuth + embedded Stellar wallets)
-- **Blockchain:** Stellar Network (USDC stablecoin)
-- **Payments:** MoonPay (on-ramp), Yellow Card (off-ramp to Nigerian banks)
-- **Email:** Resend
-
----
-
-## 🌟 Why Stellar?
-
-- ✅ **3-5 second settlement** with fees <$0.01
-- ✅ **Yellow Card integration** — Direct off-ramp to Nigerian banks in 20+ African countries
-- ✅ **475,000+ on/off-ramp access points** worldwide
-- ✅ **Battle-tested** — Used by MoneyGram, Onafriq, and major African payment providers
-- ✅ **Lower costs** — ~$0.75 per wallet (XLM reserves) vs building custom infrastructure
-
-## 📁 Project Structure
-
-```
-├── app/              # Next.js app router (pages & API routes)
-├── components/       # Reusable UI components
-├── lib/              # Utilities, configs, and helpers
-├── hooks/            # Custom React hooks
-├── prisma/           # Database schema and migrations
-├── docs/             # Technical documentation
-└── public/           # Static assets
-```
-
----
-
-## 📖 Documentation
-
-For contributors and developers:
-
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** — How to contribute to this project
-- **[Code Style Guide](./docs/CODE_STYLE.md)** — Code standards and best practices
 
 ---
 
@@ -73,33 +64,220 @@ For contributors and developers:
 ### Payment Flow
 
 ```
-1. Freelancer creates invoice → Unique payment link generated
-2. Client opens link → No account needed
-3. Client pays via card → MoonPay converts to USDC on Stellar
-4. Payment arrives → Freelancer's embedded wallet (3-5 seconds)
-5. Email notification → Freelancer sees balance update
-6. Freelancer withdraws → Yellow Card converts USDC → NGN
-7. Funds arrive → Nigerian bank account (instant)
+1. Freelancer creates invoice  →  Unique payment link generated
+2. Client opens link           →  No account needed
+3. Client pays via card        →  MoonPay converts to USDC on Stellar
+4. Payment arrives             →  Freelancer's embedded Stellar wallet (3–5 sec)
+5. Email notification          →  Freelancer sees balance update
+6. Freelancer withdraws        →  Yellow Card converts USDC → NGN
+7. Funds arrive                →  Nigerian bank account (instant)
 ```
 
 ### Technical Flow
 
 ```
 Client Card Payment
-    ↓
-MoonPay (Fiat → USDC on Stellar)
-    ↓
-Freelancer's Stellar Wallet (Privy embedded)
-    ↓
-Yellow Card API (USDC → NGN)
-    ↓
-Nigerian Bank Account
+        ↓
+  MoonPay API
+  (Fiat → USDC on Stellar)
+        ↓
+  Freelancer's Stellar Wallet
+  (Privy embedded wallet)
+        ↓
+  Yellow Card API
+  (USDC → NGN conversion)
+        ↓
+  Nigerian Bank Account
 ```
 
-**Key Benefits:**
-- Freelancers keep **99%+ of earnings** (fees <1%)
-- Payments arrive in **minutes, not days**
-- No crypto knowledge required — just invoices and bank transfers
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | Next.js 16 (App Router), React 19, Tailwind CSS v4 |
+| **Backend** | Next.js API Routes, Prisma ORM |
+| **Database** | PostgreSQL (Neon serverless) |
+| **Authentication** | Privy (OAuth + embedded Stellar wallets) |
+| **Blockchain** | Stellar Network (USDC stablecoin) |
+| **On-Ramp** | MoonPay (card → USDC) |
+| **Off-Ramp** | Yellow Card (USDC → NGN → bank) |
+| **Email** | Resend |
+| **Deployment** | Vercel |
+
+---
+
+## 🌟 Why Stellar?
+
+| Feature | Benefit |
+|---------|---------|
+| ⚡ **3–5 second settlement** | Fastest finality of any public blockchain |
+| 💰 **Fees < $0.01** | Near-zero transaction costs |
+| 🏦 **Yellow Card integration** | Direct off-ramp to banks in 20+ African countries |
+| 🌍 **475,000+ access points** | Global on/off-ramp coverage |
+| 🔒 **Battle-tested** | Powers MoneyGram, Onafriq, and major African fintechs |
+| 📉 **Low infrastructure cost** | ~$0.75 per wallet vs building custom rails |
+
+---
+
+## 📁 Project Structure
+
+```
+lancepay/
+├── app/
+│   ├── api/
+│   │   ├── bank-accounts/       # Bank account management
+│   │   ├── cron/                # Scheduled jobs
+│   │   ├── exchange-rate/       # FX rate endpoints
+│   │   ├── invoices/            # Invoice CRUD & payment
+│   │   ├── pay/                 # Payment processing
+│   │   ├── routes-b/            # API v2 routes
+│   │   ├── routes-d/            # API v4 routes
+│   │   ├── transactions/        # Transaction history
+│   │   ├── user/                # User profile & settings
+│   │   ├── webhooks/            # MoonPay & Privy webhooks
+│   │   └── withdrawals/         # Off-ramp to bank
+│   └── (pages)/                 # Next.js App Router pages
+├── components/                  # Reusable UI components
+├── hooks/                       # Custom React hooks
+├── lib/                         # Utilities, configs, helpers
+│   ├── stellar.ts               # Stellar SDK wrapper
+│   ├── assets.ts                # Asset definitions
+│   └── ...
+├── prisma/                      # Database schema & migrations
+├── docs/                        # Technical documentation
+└── public/                      # Static assets
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- PostgreSQL database (or [Neon](https://neon.tech) account)
+- [Privy](https://privy.io) account
+- [MoonPay](https://moonpay.com) API keys
+- [Yellow Card](https://yellowcard.io) API keys
+
+### Installation
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/davedumto/LancePay.git
+cd LancePay
+
+# 2. Install dependencies
+npm install
+
+# 3. Set up environment variables
+cp .env.example .env.local
+# Fill in your keys (see Environment Variables below)
+
+# 4. Set up the database
+npx prisma migrate dev
+
+# 5. Start the dev server
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to see the app.
+
+---
+
+## 🔐 Environment Variables
+
+Create a `.env.local` file in the root directory with the following:
+
+```env
+# Database
+DATABASE_URL=
+
+# Privy (Authentication + Wallets)
+NEXT_PUBLIC_PRIVY_APP_ID=
+PRIVY_APP_SECRET=
+
+# MoonPay (On-ramp)
+MOONPAY_API_KEY=
+MOONPAY_SECRET_KEY=
+
+# Yellow Card (Off-ramp)
+YELLOW_CARD_API_KEY=
+YELLOW_CARD_SECRET_KEY=
+
+# Resend (Email)
+RESEND_API_KEY=
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+CRON_SECRET=
+```
+
+> ⚠️ Never commit `.env.local` to version control.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
+
+### Quick Start for Contributors
+
+```bash
+# Fork and clone the repo
+git clone https://github.com/YOUR_USERNAME/LancePay.git
+
+# Create a feature branch
+git checkout -b feat-your-feature-name
+
+# Make changes, then commit
+git commit -m "feat: describe your change"
+
+# Push and open a PR
+git push origin feat-your-feature-name
+```
+
+**Branch naming conventions:**
+- `feat-` — new features
+- `fix-` — bug fixes
+- `docs-` — documentation updates
+- `refactor-` — code refactoring
+- `chore-` — maintenance tasks
+
+---
+
+## 🕰️ Cron Jobs
+
+LancePay uses **Vercel Cron Jobs** to automate maintenance tasks.
+
+### Auto-Cancellation of Overdue Invoices
+
+- **Schedule:** Daily at 2:00 AM UTC (`0 2 * * *`)
+- **Action:** Cancels unpaid invoices that are overdue by more than 90 days
+- **Exclusions:** Invoices with active escrow, active disputes, or `doNotAutoCancel: true` are never auto-cancelled
+
+**Test locally:**
+```bash
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" \
+  http://localhost:3000/api/cron/cancel-overdue-invoices
+```
+
+---
+
+## 📖 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute to this project |
+| [CODE_STYLE.md](./docs/CODE_STYLE.md) | Code standards and best practices |
+| [DEVOPS.md](./docs/DEVOPS.md) | Deployment and infrastructure guide |
+| [FEE_QUOTE_API.md](./docs/FEE_QUOTE_API.md) | Fee quote API reference |
+| [MODULES.md](./docs/MODULES.md) | Module architecture overview |
+| [MULTISIG_COLLECTIVE_WALLETS.md](./docs/MULTISIG_COLLECTIVE_WALLETS.md) | Multisig wallet documentation |
+
+---
 
 ## 📄 License
 
@@ -107,21 +285,7 @@ This project is proprietary. All rights reserved.
 
 ---
 
-Built with ❤️ for Nigerian freelancers.
-
----
-
-## 🕰️ Cron Jobs
-
-This project uses Vercel Cron Jobs to automate maintenance tasks.
-
-**Auto-Cancellation of Overdue Invoices:**
-Runs daily at 2:00 AM UTC (`0 2 * * *`). It automatically cancels unpaid invoices that meet the following criteria:
-- **Status:** Pending
-- **Due Date:** More than 90 days ago
-- **Exclusions:** Invoices with active escrow, active disputes, or `doNotAutoCancel: true` are never auto-cancelled.
-
-To manually test the auto-cancellation cron locally, run:
-```bash
-curl -H "Authorization: Bearer YOUR_CRON_SECRET" http://localhost:3000/api/cron/cancel-overdue-invoices
-```
+<div align="center">
+  Built with ❤️ for Nigerian freelancers.<br/>
+  <strong>LancePay</strong> — Keep more of what you earn.
+</div>
