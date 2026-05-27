@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { getAccountBalance, AssetBalance } from '@/lib/stellar'
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,12 +20,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ wallet: null }, { status: 200 })
     }
 
+    let balances: AssetBalance[] = []
+    try {
+      balances = await getAccountBalance(wallet.address)
+    } catch (err) {
+      logger.error({ err, address: wallet.address }, 'Failed to fetch wallet balances from Stellar')
+      // Continue and return the wallet without balances if the network call fails
+    }
+
     return NextResponse.json({
       wallet: {
         id: wallet.id,
         stellarAddress: wallet.address,
         network: 'testnet',
         createdAt: wallet.createdAt,
+        balances,
       },
     })
   } catch (error) {
