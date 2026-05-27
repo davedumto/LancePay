@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { createRouteLogger } from '../_shared/logger'
 
 const INVOICE_STATUSES = ['pending', 'paid', 'overdue', 'cancelled'] as const
 type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
@@ -23,11 +24,14 @@ async function getAuthenticatedUserId(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const routeLogger = createRouteLogger({ route: '/api/routes-d/dashboard' })
+
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  try {
   const startOfThisMonth = new Date()
   startOfThisMonth.setUTCDate(1)
   startOfThisMonth.setUTCHours(0, 0, 0, 0)
@@ -114,4 +118,8 @@ export async function GET(request: NextRequest) {
       })),
     },
   })
+  } catch (error) {
+    routeLogger.error({ err: error }, 'Dashboard GET error')
+    return NextResponse.json({ error: 'Failed to load dashboard' }, { status: 500 })
+  }
 }

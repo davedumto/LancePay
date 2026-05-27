@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { createRouteLogger } from '../_shared/logger'
 
 const MAX_BANK_NAME_LENGTH = 100
 const MAX_ACCOUNT_NAME_LENGTH = 100
@@ -32,31 +33,38 @@ function maskAccountNumber(accountNumber: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const routeLogger = createRouteLogger({ route: '/api/routes-d/bank-accounts' })
+
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const bankAccounts = await prisma.bankAccount.findMany({
-    where: { userId },
-    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-    select: {
-      id: true,
-      bankName: true,
-      bankCode: true,
-      accountNumber: true,
-      accountName: true,
-      isDefault: true,
-      createdAt: true,
-    },
-  })
+  try {
+    const bankAccounts = await prisma.bankAccount.findMany({
+      where: { userId },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        bankName: true,
+        bankCode: true,
+        accountNumber: true,
+        accountName: true,
+        isDefault: true,
+        createdAt: true,
+      },
+    })
 
-  return NextResponse.json({
-    bankAccounts: bankAccounts.map((bankAccount: (typeof bankAccounts)[number]) => ({
-      ...bankAccount,
-      accountNumber: maskAccountNumber(bankAccount.accountNumber),
-    })),
-  })
+    return NextResponse.json({
+      bankAccounts: bankAccounts.map((bankAccount: (typeof bankAccounts)[number]) => ({
+        ...bankAccount,
+        accountNumber: maskAccountNumber(bankAccount.accountNumber),
+      })),
+    })
+  } catch (error) {
+    routeLogger.error({ err: error }, 'Failed to list bank accounts')
+    return NextResponse.json({ error: 'Failed to list bank accounts' }, { status: 500 })
+  }
 }
 
 type CreateBankAccountBody = {
@@ -85,6 +93,8 @@ function parseRequiredString(value: unknown, field: string, maxLength: number): 
 }
 
 export async function POST(request: NextRequest) {
+  const routeLogger = createRouteLogger({ route: '/api/routes-d/bank-accounts' })
+
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -165,38 +175,51 @@ export async function POST(request: NextRequest) {
       where: { userId, isDefault: true },
       data: { isDefault: false },
     })
+
+    const isFirstAccount = existingAccountCount === 0
+    const shouldBeDefault = isFirstAccount || body.isDefault === true
+
+    if (body.isDefault === true) {
+      await prisma.bankAccount.updateMany({
+        where: { userId, isDefault: true },
+        data: { isDefault: false },
+      })
+    }
+
+    const bankAccount = await prisma.bankAccount.create({
+      data: {
+        userId,
+        bankName,
+        bankCode,
+        accountNumber,
+        accountName,
+        isDefault: shouldBeDefault,
+      },
+      select: {
+        id: true,
+        bankName: true,
+        bankCode: true,
+        accountNumber: true,
+        accountName: true,
+        isDefault: true,
+        createdAt: true,
+      },
+    })
+
+    return NextResponse.json(
+      {
+        id: bankAccount.id,
+        bankName: bankAccount.bankName,
+        bankCode: bankAccount.bankCode,
+        accountNumber: bankAccount.accountNumber,
+        accountName: bankAccount.accountName,
+        isDefault: bankAccount.isDefault,
+        createdAt: bankAccount.createdAt,
+      },
+      { status: 201 },
+    )
+  } catch (error) {
+    routeLogger.error({ err: error }, 'Failed to create bank account')
+    return NextResponse.json({ error: 'Failed to create bank account' }, { status: 500 })
   }
-
-  const bankAccount = await prisma.bankAccount.create({
-    data: {
-      userId,
-      bankName,
-      bankCode,
-      accountNumber,
-      accountName,
-      isDefault: shouldBeDefault,
-    },
-    select: {
-      id: true,
-      bankName: true,
-      bankCode: true,
-      accountNumber: true,
-      accountName: true,
-      isDefault: true,
-      createdAt: true,
-    },
-  })
-
-  return NextResponse.json(
-    {
-      id: bankAccount.id,
-      bankName: bankAccount.bankName,
-      bankCode: bankAccount.bankCode,
-      accountNumber: bankAccount.accountNumber,
-      accountName: bankAccount.accountName,
-      isDefault: bankAccount.isDefault,
-      createdAt: bankAccount.createdAt,
-    },
-    { status: 201 },
-  )
 }
