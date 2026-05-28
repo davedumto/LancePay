@@ -8,6 +8,7 @@ import { registerRoute } from '../_lib/openapi'
 import { hasTableColumn } from '../_lib/table-columns'
 import { brandingSchema, type BrandingPayload } from './schema'
 import { errorResponse } from '../_lib/errors'
+import { validateLogoUrl } from '../_lib/logo-validation'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -138,6 +139,18 @@ async function writeBranding(request: NextRequest) {
     }
 
     const payload = parsed.data
+
+    if (payload.logoUrl) {
+      const logoCheck = await validateLogoUrl(payload.logoUrl)
+      if (!logoCheck.ok) {
+        return errorResponse(
+          'BAD_REQUEST',
+          'Invalid logo URL',
+          { fields: { logoUrl: logoCheck.error } },
+          422
+        )
+      }
+    }
 
     const baseFields: Record<string, unknown> = {}
 
