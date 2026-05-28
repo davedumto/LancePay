@@ -3,6 +3,7 @@ import { withBodyLimit } from '../../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { getMaxFileSize, isAllowedMimeType } from '../../_lib/file-signature'
 
 function isValidHttpsUrl(url: string): boolean {
   try {
@@ -25,7 +26,7 @@ async function PATCHHandler(request: NextRequest) {
     )
   }
 
-  let body: { avatarUrl?: unknown }
+  let body: { avatarUrl?: unknown; fileSize?: unknown; mimeType?: unknown }
 
   try {
     body = await request.json()
@@ -36,13 +37,45 @@ async function PATCHHandler(request: NextRequest) {
     )
   }
 
-  const { avatarUrl } = body ?? {}
+  const { avatarUrl, fileSize, mimeType } = body ?? {}
 
   if (avatarUrl !== null && typeof avatarUrl !== 'string') {
     return NextResponse.json(
       { error: 'avatarUrl must be a string or null' },
       { status: 400 }
     )
+  }
+
+  if (fileSize !== undefined) {
+    if (typeof fileSize !== 'number' || !Number.isFinite(fileSize) || fileSize < 0) {
+      return NextResponse.json(
+        { error: 'fileSize must be a non-negative number' },
+        { status: 400 }
+      )
+    }
+
+    if (fileSize > getMaxFileSize()) {
+      return NextResponse.json(
+        { error: `Avatar exceeds ${getMaxFileSize()} bytes` },
+        { status: 413 }
+      )
+    }
+  }
+
+  if (mimeType !== undefined) {
+    if (typeof mimeType !== 'string') {
+      return NextResponse.json(
+        { error: 'mimeType must be a string' },
+        { status: 400 }
+      )
+    }
+
+    if (!isAllowedMimeType(mimeType)) {
+      return NextResponse.json(
+        { error: 'Unsupported avatar MIME type' },
+        { status: 415 }
+      )
+    }
   }
 
   if (typeof avatarUrl === 'string') {
