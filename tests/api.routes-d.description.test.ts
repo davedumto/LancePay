@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { createHash } from 'crypto'
 
 const verifyAuthToken = vi.fn()
 const userFindUnique = vi.fn()
@@ -21,11 +22,24 @@ vi.mock('@/lib/db', () => ({
 
 const URL = 'http://localhost/api/routes-d/invoices/inv_1/description'
 
+function generateETag(id: string, description: string, updatedAt: Date): string {
+  const hash = createHash('sha256')
+  hash.update(`${id}:${description}:${updatedAt.toISOString()}`)
+  return `"${hash.digest('hex').substring(0, 8)}"`
+}
+
 function makeRequest(body: unknown, headers: Record<string, string> = { authorization: 'Bearer token' }) {
   return new NextRequest(URL, {
     method: 'PATCH',
     headers: { ...headers, 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  })
+}
+
+function makeGetRequest(headers: Record<string, string> = { authorization: 'Bearer token' }) {
+  return new NextRequest(URL, {
+    method: 'GET',
+    headers,
   })
 }
 
@@ -127,5 +141,90 @@ describe('PATCH /api/routes-d/invoices/[id]/description', () => {
         updatedAt: true,
       },
     })
+    expect(response.headers.get('ETag')).toBeDefined()
+  })
+
+  it('returns ETag on GET', async () => {
+    const updatedAt = new Date('2026-01-01T00:00:00.000Z')
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    invoiceFindUnique.mockResolvedValue({
+      id: 'inv_1',
+      userId: 'user_1',
+      description: 'Test',
+      updatedAt,
+    })
+
+    const { GET } = await import('@/app/api/routes-d/invoices/[id]/description/route')
+    const response = await GET(makeGetRequest(), {
+      params: Promise.resolve({ id: 'inv_1' }),
+    })
+
+    expect(response.status).toBe(200)
+    const eTag = response.headers.get('ETag')
+    expect(eTag).toBeDefined()
+    expect(eTag).toMatch(/^"[a-f0-9]{8}"$/)
+  })
+
+  it('rejects PATCH with mismatched If-Match header', async () => {
+    const updatedAt = new Date('2026-01-01T00:00:00.000Z')
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    invoiceFindUnique.mockResolvedValue({
+      id: 'inv_1',
+      userId: 'user_1',
+      status: 'pending',
+      description: 'Original',
+      updatedAt,
+    })
+
+    const { PATCH } = await import('@/app/api/routes-d/invoices/[id]/description/route')
+    const response = await PATCH(makeRequest({ description: 'Updated' }, {
+      authorization: 'Bearer token',
+      'if-match': '"wronghash"',
+    }), {
+      params: Promise.resolve({ id: 'inv_1' }),
+    })
+
+    expect(response.status).toBe(412)
+    await expect(response.json()).resolves.toEqual({
+      error: 'ETag mismatch - invoice may have been modified',
+      code: 'PRECONDITION_FAILED',
+    })
+    expect(invoiceUpdate).not.toHaveBeenCalled()
+  })
+
+  it('accepts PATCH with matching If-Match header', async () => {
+    const originalUpdatedAt = new Date('2026-01-01T00:00:00.000Z')
+    const newUpdatedAt = new Date('2026-01-02T00:00:00.000Z')
+    const originalETag = generateETag('inv_1', 'Original', originalUpdatedAt)
+
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    invoiceFindUnique.mockResolvedValue({
+      id: 'inv_1',
+      userId: 'user_1',
+      status: 'pending',
+      description: 'Original',
+      updatedAt: originalUpdatedAt,
+    })
+    invoiceUpdate.mockResolvedValue({
+      id: 'inv_1',
+      invoiceNumber: 'INV-001',
+      description: 'Updated',
+      updatedAt: newUpdatedAt,
+    })
+
+    const { PATCH } = await import('@/app/api/routes-d/invoices/[id]/description/route')
+    const response = await PATCH(makeRequest({ description: 'Updated' }, {
+      authorization: 'Bearer token',
+      'if-match': originalETag,
+    }), {
+      params: Promise.resolve({ id: 'inv_1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(invoiceUpdate).toHaveBeenCalled()
+    expect(response.headers.get('ETag')).toBeDefined()
   })
 })
