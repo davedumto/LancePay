@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { sniffMimeType, isAllowedMimeType, getMaxFileSize, stripExifMetadata } from './file-signature'
+export { getMaxFileSize } from './file-signature'
 
 export interface PresignedUploadResponse {
   url: string
@@ -15,19 +16,19 @@ export interface UploadValidation {
   size?: number
 }
 
-const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY
-const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET
-
 function requireCloudinaryConfig() {
-  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+
+  if (!cloudName || !apiKey || !apiSecret) {
     throw new Error('Missing Cloudinary configuration')
   }
 
   return {
-    cloudName: CLOUDINARY_CLOUD_NAME,
-    apiKey: CLOUDINARY_API_KEY,
-    apiSecret: CLOUDINARY_API_SECRET,
+    cloudName,
+    apiKey,
+    apiSecret,
   }
 }
 
@@ -114,7 +115,7 @@ export async function validateUploadedFile(key: string, buffer: ArrayBuffer): Pr
 }
 
 export function generateCloudinaryUrl(key: string): string {
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME || 'demo'}/image/upload/${key}.jpg`
+  return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME || 'demo'}/image/upload/${key}.jpg`
 }
 
 export function isExpiredKey(expiresAt: string): boolean {
