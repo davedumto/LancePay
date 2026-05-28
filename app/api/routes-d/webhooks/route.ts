@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import {
+  buildWebhookPostIdempotencyKey,
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
 
 // ── GET /api/routes-d/webhooks — list registered webhook endpoints ────
 
@@ -50,6 +55,7 @@ export async function GET(request: NextRequest) {
 // ── POST /api/routes-d/webhooks — register a new webhook endpoint ─────
 
 const MAX_WEBHOOKS_PER_USER = 10
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 function isValidHttpsUrl(url: string) {
   try {
@@ -66,6 +72,21 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
+
+    const idempotencyKey = request.headers.get('idempotency-key')?.trim() || null
+    const bodyHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')
+
+    if (idempotencyKey) {
+      const cached = getIdempotentResponse(
+        buildWebhookPostIdempotencyKey(user.id, idempotencyKey),
+      )
+      if (cached) {
+        if (cached.bodyHash !== bodyHash) {
+          return NextResponse.json({ error: 'Idempotency conflict' }, { status: 409 })
+        }
+        return NextResponse.json(cached.body, { status: cached.status })
+      }
+    }
 
     // Validate targetUrl
     if (!body.targetUrl || typeof body.targetUrl !== 'string') {
@@ -113,16 +134,23 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(
-      {
-        id: webhook.id,
-        targetUrl: webhook.targetUrl,
-        description: webhook.description ?? null,
-        signingSecret,
-        createdAt: webhook.createdAt,
-      },
-      { status: 201 },
-    )
+    const responseBody = {
+      id: webhook.id,
+      targetUrl: webhook.targetUrl,
+      description: webhook.description ?? null,
+      signingSecret,
+      createdAt: webhook.createdAt,
+    }
+
+    if (idempotencyKey) {
+      setIdempotentResponse(
+        buildWebhookPostIdempotencyKey(user.id, idempotencyKey),
+        { bodyHash, status: 201, body: responseBody },
+        IDEMPOTENCY_TTL_MS,
+      )
+    }
+
+    return NextResponse.json(responseBody, { status: 201 })
   } catch (error) {
     logger.error({ err: error }, 'Webhooks POST error')
     return NextResponse.json({ error: 'Failed to register webhook' }, { status: 500 })
