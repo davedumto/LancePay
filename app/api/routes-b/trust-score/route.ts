@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
 import { getCacheValue, setCacheValue } from '../_lib/cache'
 import { recordTrustScoreSnapshot } from '../_lib/trust-score-history'
+import { computeTrustScore } from '../_lib/trust-score-components'
 
 const TRUST_SCORE_COOLDOWN_MS = 30_000
 
@@ -14,13 +15,6 @@ type TrustScorePayload = {
     disputeCount: number
     updatedAt: Date | null
   }
-}
-
-function computeTrustScore(volume: number, successfulInvoices: number, disputeCount: number): number {
-  const volumePoints = Math.min(30, Math.floor(volume / 1000))
-  const invoicePoints = Math.min(25, successfulInvoices)
-  const disputePenalty = Math.min(40, disputeCount * 10)
-  return Math.max(0, Math.min(100, 45 + volumePoints + invoicePoints - disputePenalty))
 }
 
 async function recomputeTrustScore(userId: string): Promise<TrustScorePayload> {

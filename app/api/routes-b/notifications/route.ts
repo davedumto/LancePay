@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isNotificationSnoozed } from '../_lib/notification-snooze'
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -40,12 +41,14 @@ async function GETHandler(request: NextRequest) {
       },
     })
 
-    const unreadCount = await prisma.notification.count({
-      where: { userId: user.id, isRead: false },
-    })
+    const visibleNotifications = notifications.filter(
+      n => !isNotificationSnoozed(n.id),
+    )
+
+    const unreadCount = visibleNotifications.filter(n => !n.isRead).length
 
     return NextResponse.json({
-      notifications,
+      notifications: visibleNotifications,
       unreadCount,
     })
   } catch (error) {

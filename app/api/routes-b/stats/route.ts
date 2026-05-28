@@ -10,6 +10,7 @@ import {
 } from '../_lib/stats-cache'
 import { withCompression } from '../_lib/with-compression'
 import { errorResponse } from '../_lib/errors'
+import { parseUtcDateRange } from '../_lib/date-range'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -100,7 +101,7 @@ async function GETHandler(request: NextRequest) {
       invoiceStats.map(s => [s.status, s._count.id]),
     )
 
-    const payload = {
+    const currentStats: StatsPayload = {
       invoices: {
         total: invoiceStats.reduce((sum, s) => sum + s._count.id, 0),
         pending: counts.pending ?? 0,
@@ -116,7 +117,7 @@ async function GETHandler(request: NextRequest) {
 
     return withCompression(
       request,
-      NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } }),
+      NextResponse.json(currentStats, { headers: { 'X-Cache': 'MISS' } }),
     )
   } catch (error) {
     if (error instanceof RoutesBForbiddenError) {
