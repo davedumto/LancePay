@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { getSchedule } from '../../../../_lib/withdrawal-scheduler'
 import { calculateWithdrawalFee } from '../../../../_lib/withdrawal-fees'
+import { emitStatsInvalidated } from '../../../../_lib/events'
 
 async function fetchWalletBalance(address: string): Promise<number | null> {
   const statusUrl = process.env.CHAIN_RPC_WALLET_BALANCE_URL
@@ -83,6 +84,8 @@ async function POSTHandler(request: NextRequest, { params }: { params: Promise<{
       createdAt: true,
     },
   })
+
+  emitStatsInvalidated({ userId: user.id })
 
   return NextResponse.json({
     ...transaction,

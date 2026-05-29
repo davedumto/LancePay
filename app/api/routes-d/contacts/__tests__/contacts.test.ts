@@ -65,6 +65,7 @@ describe('GET /api/routes-d/contacts', () => {
         id: 'c-1',
         name: 'Ada',
         email: 'ada@example.com',
+        phone: '+1-555-1234',
         company: 'ACME',
         notes: null,
         createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -79,6 +80,7 @@ describe('GET /api/routes-d/contacts', () => {
       id: 'c-1',
       name: 'Ada',
       email: 'ada@example.com',
+      phone: '+1-555-1234',
       company: 'ACME',
       notes: null,
     })
@@ -87,7 +89,7 @@ describe('GET /api/routes-d/contacts', () => {
     )
   })
 
-  it('applies a case-insensitive search filter on name and email', async () => {
+  it('applies a case-insensitive search filter on name, email, and phone', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
     mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
     contactDelegate.findMany.mockResolvedValue([])
@@ -100,6 +102,7 @@ describe('GET /api/routes-d/contacts', () => {
           OR: [
             { name: { contains: 'ada', mode: 'insensitive' } },
             { email: { contains: 'ada', mode: 'insensitive' } },
+            { phone: { contains: 'ada', mode: 'insensitive' } },
           ],
         },
       }),
@@ -119,39 +122,95 @@ describe('POST /api/routes-d/contacts', () => {
     expect(contactDelegate.create).not.toHaveBeenCalled()
   })
 
-  it('returns 400 when the name is missing', async () => {
+  it('returns 400 with validation details when the name is missing', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
     mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
     const res = await POST(makePost({ email: 'ada@example.com' }))
     expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Validation failed')
+    expect(body.details).toBeDefined()
     expect(contactDelegate.create).not.toHaveBeenCalled()
   })
 
-  it('returns 400 when the email is invalid', async () => {
+  it('returns 400 with validation details when the email is invalid', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
     mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
     const res = await POST(makePost({ name: 'Ada', email: 'not-an-email' }))
     expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Validation failed')
+    expect(body.details).toBeDefined()
     expect(contactDelegate.create).not.toHaveBeenCalled()
   })
 
-  it('returns 400 when notes exceed the maximum length', async () => {
+  it('returns 400 with validation details when the phone is invalid', async () => {
+    mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
+    mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
+    const res = await POST(makePost({ name: 'Ada', email: 'ada@example.com', phone: '123' }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Validation failed')
+    expect(body.details).toBeDefined()
+    expect(contactDelegate.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 with validation details when notes exceed the maximum length', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
     mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
     const res = await POST(
       makePost({ name: 'Ada', email: 'ada@example.com', notes: 'x'.repeat(501) }),
     )
     expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Validation failed')
+    expect(body.details).toBeDefined()
     expect(contactDelegate.create).not.toHaveBeenCalled()
   })
 
-  it('creates a contact and returns 201 with normalised fields', async () => {
+  it('creates a contact and returns 201 with normalised fields including phone', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
     mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
     contactDelegate.create.mockResolvedValue({
       id: 'c-1',
       name: 'Ada',
       email: 'ada@example.com',
+      phone: '+1-555-1234',
+      company: null,
+      notes: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    })
+
+    const res = await POST(makePost({ name: 'Ada', email: 'Ada@Example.com', phone: '+1-555-1234' }))
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toMatchObject({ 
+      id: 'c-1', 
+      email: 'ada@example.com', 
+      phone: '+1-555-1234',
+      company: null, 
+      notes: null 
+    })
+    expect(contactDelegate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ 
+          userId: 'user_1', 
+          name: 'Ada', 
+          email: 'ada@example.com',
+          phone: '+1-555-1234',
+        }),
+      }),
+    )
+  })
+
+  it('creates a contact without phone field', async () => {
+    mockedVerify.mockResolvedValue({ userId: 'privy_1' } as never)
+    mockedUserFindUnique.mockResolvedValue({ id: 'user_1' } as never)
+    contactDelegate.create.mockResolvedValue({
+      id: 'c-1',
+      name: 'Ada',
+      email: 'ada@example.com',
+      phone: null,
       company: null,
       notes: null,
       createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -160,12 +219,7 @@ describe('POST /api/routes-d/contacts', () => {
     const res = await POST(makePost({ name: 'Ada', email: 'Ada@Example.com' }))
     expect(res.status).toBe(201)
     const body = await res.json()
-    expect(body).toMatchObject({ id: 'c-1', email: 'ada@example.com', company: null, notes: null })
-    expect(contactDelegate.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ userId: 'user_1', name: 'Ada', email: 'ada@example.com' }),
-      }),
-    )
+    expect(body.phone).toBeNull()
   })
 
   it('returns 409 when a contact with the same email already exists', async () => {

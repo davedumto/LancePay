@@ -1,9 +1,12 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { logger } from '@/lib/logger'
+import { createRouteLogger } from '../_shared/logger'
 import { listContacts } from '../_lib/contacts'
+
+const log = createRouteLogger({ route: '/api/routes-b/contacts' })
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -38,9 +41,11 @@ async function GETHandler(request: NextRequest) {
 
     return NextResponse.json({ contacts })
   } catch (error) {
-    logger.error({ err: error }, 'Routes B contacts GET error')
+    log.error({ err: error }, 'Routes B contacts GET error')
     return NextResponse.json({ error: 'Failed to get contacts' }, { status: 500 })
   }
 }
 
-export const GET = withRequestId(GETHandler)
+export const { GET } = withMethods({
+  GET: withRequestId(GETHandler),
+})

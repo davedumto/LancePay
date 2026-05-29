@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
 import { registerRoute } from '../_lib/openapi'
-import { getCacheValue, setCacheValue } from '../_lib/cache'
+import {
+  ensureStatsCacheInvalidationHooks,
+  getCachedStats,
+  setCachedStats,
+} from '../_lib/stats-cache'
 import { withCompression } from '../_lib/with-compression'
 import { errorResponse } from '../_lib/errors'
 import { parseUtcDateRange } from '../_lib/date-range'
@@ -42,30 +46,14 @@ type StatsPayload = {
   pendingWithdrawals: number
 }
 
-type BaselinePayload = StatsPayload & {
-  deltaPct: {
-    totalEarned: number
-    invoicesPaid: number
-  }
-}
-
-function computeDeltaPct(current: number, baseline: number): number {
-  if (baseline === 0) return current > 0 ? 100 : 0
-  return Math.round(((current - baseline) / baseline) * 10000) / 100
-}
-
 async function GETHandler(request: NextRequest) {
   const requestId = request.headers.get('x-request-id')
 
   try {
+    ensureStatsCacheInvalidationHooks()
     const auth = await requireScope(request, 'routes-b:read')
 
-    const baselineFrom = request.nextUrl.searchParams.get('baselineFrom')
-    const baselineTo = request.nextUrl.searchParams.get('baselineTo')
-
-    const cacheKey = `routes-b:stats:${auth.userId}:${baselineFrom ?? ''}:${baselineTo ?? ''}`
-
-    const cached = getCacheValue<StatsPayload | BaselinePayload>(cacheKey)
+    const cached = getCachedStats<StatsPayload>(auth.userId)
 
     if (cached) {
       return withCompression(
@@ -125,71 +113,7 @@ async function GETHandler(request: NextRequest) {
       pendingWithdrawals,
     }
 
-    if (baselineFrom && baselineTo) {
-      const baselineParams = new URLSearchParams({
-        from: baselineFrom,
-        to: baselineTo,
-      })
-      const baselineRange = parseUtcDateRange(baselineParams)
-      if (!baselineRange.ok) {
-        return withCompression(
-          request,
-          errorResponse(
-            'BAD_REQUEST',
-            baselineRange.error.error,
-            { fields: baselineRange.error.fields },
-            422,
-            requestId,
-          ),
-        )
-      }
-
-      const { from, toExclusive } = baselineRange.value
-
-      const [baselineInvoiceStats, baselineTotalEarned] = await Promise.all([
-        prisma.invoice.groupBy({
-          by: ['status'],
-          where: {
-            userId: user.id,
-            createdAt: { gte: from, lt: toExclusive },
-          },
-          _count: { id: true },
-        }),
-        prisma.transaction.aggregate({
-          where: {
-            userId: user.id,
-            type: 'payment',
-            status: 'completed',
-            createdAt: { gte: from, lt: toExclusive },
-          },
-          _sum: { amount: true },
-        }),
-      ])
-
-      const baselineCounts = Object.fromEntries(
-        baselineInvoiceStats.map(s => [s.status, s._count.id]),
-      )
-
-      const baselinePaid = baselineCounts.paid ?? 0
-      const baselineEarned = Number(baselineTotalEarned._sum.amount ?? 0)
-
-      const payload: BaselinePayload = {
-        ...currentStats,
-        deltaPct: {
-          totalEarned: computeDeltaPct(currentStats.totalEarned, baselineEarned),
-          invoicesPaid: computeDeltaPct(currentStats.invoices.paid, baselinePaid),
-        },
-      }
-
-      setCacheValue(cacheKey, payload, 60_000)
-
-      return withCompression(
-        request,
-        NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } }),
-      )
-    }
-
-    setCacheValue(cacheKey, currentStats, 60_000)
+    setCachedStats(auth.userId, currentStats)
 
     return withCompression(
       request,

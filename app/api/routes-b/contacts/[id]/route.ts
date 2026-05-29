@@ -8,6 +8,7 @@ import {
   softDeleteContact,
   supportsContactSoftDelete,
 } from '../../_lib/contacts'
+import { normalizeString } from '../../_lib/normalize'
 
 /**
  * AUTH HELPER
@@ -126,11 +127,11 @@ async function PATCHHandler(
         )
       }
 
-      updateData.name = body.name.trim()
+      updateData.name = normalizeString(body.name)
     }
 
     if (body.email !== undefined) {
-      const email = body.email?.trim()?.toLowerCase()
+      const email = normalizeString(body.email?.trim() || '').toLowerCase()
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
       if (!email || !emailPattern.test(email)) {
@@ -170,7 +171,7 @@ async function PATCHHandler(
 
       if (
         typeof body.company === 'string' &&
-        body.company.trim().length > 100
+        normalizeString(body.company).length > 100
       ) {
         return NextResponse.json(
           { error: 'company must be 100 characters or fewer' },
@@ -180,7 +181,7 @@ async function PATCHHandler(
 
       updateData.company =
         typeof body.company === 'string'
-          ? body.company.trim()
+          ? normalizeString(body.company) || null
           : null
     }
 
@@ -194,7 +195,7 @@ async function PATCHHandler(
 
       if (
         typeof body.notes === 'string' &&
-        body.notes.trim().length > 500
+        normalizeString(body.notes).length > 500
       ) {
         return NextResponse.json(
           { error: 'notes must be 500 characters or fewer' },
@@ -204,7 +205,7 @@ async function PATCHHandler(
 
       updateData.notes =
         typeof body.notes === 'string'
-          ? body.notes.trim()
+          ? normalizeString(body.notes) || null
           : null
     }
 

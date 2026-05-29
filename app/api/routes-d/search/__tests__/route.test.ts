@@ -76,4 +76,45 @@ describe('GET /api/routes-d/search', () => {
     expect(json.results.contacts).toHaveLength(1)
     expect(json.totalResults).toBe(1)
   })
+
+  it('accepts single character in typeahead mode', async () => {
+    mockedInvoiceFindMany.mockResolvedValueOnce([{ invoiceNumber: '001' }] as never)
+    mockedInvoiceFindMany.mockResolvedValueOnce([{ clientName: 'John' }] as never)
+    mockedInvoiceFindMany.mockResolvedValueOnce([{ clientEmail: 'john@example.com' }] as never)
+
+    const res = await GET(reqGET('?q=j&typeahead=true'))
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.typeahead).toBe(true)
+    expect(json.suggestions).toBeDefined()
+    expect(Array.isArray(json.suggestions)).toBe(true)
+  })
+
+  it('rejects single character in normal search mode', async () => {
+    const res = await GET(reqGET('?q=j'))
+    expect(res.status).toBe(400)
+  })
+
+  it('returns ranked typeahead suggestions with 5 per category', async () => {
+    mockedInvoiceFindMany.mockResolvedValueOnce([
+      { invoiceNumber: 'INV-001' },
+      { invoiceNumber: 'INV-002' },
+    ] as never)
+    mockedInvoiceFindMany.mockResolvedValueOnce([
+      { clientName: 'Acme Corp' },
+      { clientName: 'Apex Inc' },
+    ] as never)
+    mockedInvoiceFindMany.mockResolvedValueOnce([
+      { clientEmail: 'acme@example.com' },
+      { clientEmail: 'apex@example.com' },
+    ] as never)
+
+    const res = await GET(reqGET('?q=a&typeahead=true'))
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.suggestions).toHaveLength(6)
+    expect(json.suggestions).toContain('INV-001')
+    expect(json.suggestions).toContain('Acme Corp')
+    expect(json.suggestions).toContain('acme@example.com')
+  })
 })

@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 
 import { withRequestId } from '../_lib/with-request-id'
 import { withBodyLimit } from '../_lib/with-body-limit'
+import { withMethods } from '../_lib/with-methods'
 
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -389,10 +390,11 @@ async function POSTHandler(request: NextRequest) {
 
 /* ---------------- EXPORTS ---------------- */
 
-export const GET = withRequestId(GETHandler)
-
-export const POST = withRequestId(
-  withBodyLimit(POSTHandler, {
-    limitBytes: 1024 * 1024,
-  })
-)
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(
+    withBodyLimit(POSTHandler, {
+      limitBytes: 1024 * 1024,
+    })
+  ),
+})

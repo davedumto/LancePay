@@ -49,6 +49,17 @@ async function GETHandler(request: NextRequest) {
     }
 
     const { from, to, toExclusive, days, tz } = parsedRange.value
+
+    const MAX_EARNINGS_RANGE_DAYS = 365
+    if (days > MAX_EARNINGS_RANGE_DAYS) {
+      return NextResponse.json(
+        {
+          error: 'Date range too large',
+          fields: { from: `Earnings date range cannot exceed ${MAX_EARNINGS_RANGE_DAYS} days` },
+        },
+        { status: 400 },
+      )
+    }
     const where = {
       userId: user.id,
       type: 'payment',

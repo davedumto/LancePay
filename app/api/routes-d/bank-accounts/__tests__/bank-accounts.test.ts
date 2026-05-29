@@ -150,4 +150,78 @@ describe('POST /api/routes-d/bank-accounts', () => {
     const res = await POST(postReq(validAccount))
     expect([200, 201]).toContain(res.status)
   })
+
+  it('returns 400 for invalid IBAN format', async () => {
+    const res = await POST(postReq({ ...validAccount, iban: 'INVALID' }))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/IBAN/i)
+  })
+
+  it('returns 400 for invalid SWIFT/BIC format', async () => {
+    const res = await POST(postReq({ ...validAccount, swift: 'INVALID123' }))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/SWIFT/i)
+  })
+
+  it('creates a bank account with valid IBAN', async () => {
+    mockedFindFirst.mockResolvedValue(null as never)
+    mockedCount.mockResolvedValue(0 as never)
+    mockedCreate.mockResolvedValue({
+      id: 'b3',
+      ...validAccount,
+      isDefault: true,
+      createdAt: new Date(),
+    } as never)
+    const res = await POST(postReq({ ...validAccount, iban: 'DE89370400440532013000' }))
+    expect([200, 201]).toContain(res.status)
+    expect(mockedCreate).toHaveBeenCalled()
+  })
+
+  it('creates a bank account with valid SWIFT/BIC', async () => {
+    mockedFindFirst.mockResolvedValue(null as never)
+    mockedCount.mockResolvedValue(0 as never)
+    mockedCreate.mockResolvedValue({
+      id: 'b4',
+      ...validAccount,
+      isDefault: true,
+      createdAt: new Date(),
+    } as never)
+    const res = await POST(postReq({ ...validAccount, swift: 'DEUTDEFF500' }))
+    expect([200, 201]).toContain(res.status)
+    expect(mockedCreate).toHaveBeenCalled()
+  })
+
+  it('sets first bank account as default automatically', async () => {
+    mockedFindFirst.mockResolvedValue(null as never)
+    mockedCount.mockResolvedValue(0 as never)
+    mockedCreate.mockResolvedValue({
+      id: 'b5',
+      ...validAccount,
+      isDefault: true,
+      createdAt: new Date(),
+    } as never)
+    await POST(postReq(validAccount))
+    expect(mockedCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          isDefault: true,
+        }),
+      }),
+    )
+  })
+
+  it('updates default flag when isDefault is true and account exists', async () => {
+    mockedFindFirst.mockResolvedValue(null as never)
+    mockedCount.mockResolvedValue(1 as never)
+    mockedCreate.mockResolvedValue({
+      id: 'b6',
+      ...validAccount,
+      isDefault: true,
+      createdAt: new Date(),
+    } as never)
+    await POST(postReq({ ...validAccount, isDefault: true }))
+    expect(mockedCreate).toHaveBeenCalled()
+  })
 })

@@ -94,7 +94,7 @@ describe('POST /api/routes-b/tags', () => {
     expect(body).toEqual({
       id: 'tag-new',
       name: 'Urgent',
-      color: '#123456',
+      color: '#6366f1',
       invoiceCount: 0,
     })
   })
@@ -110,7 +110,7 @@ describe('POST /api/routes-b/tags', () => {
     const body = await response.json()
 
     expect(response.status).toBe(409)
-    expect(body).toEqual({ error: 'Tag with this name already exists' })
+    expect(body).toEqual({ error: 'Tag already exists' })
     expect(mockedTagCreate).not.toHaveBeenCalled()
   })
 

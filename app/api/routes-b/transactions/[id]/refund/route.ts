@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createCreditNote } from '../../../_lib/credit-notes'
+import { emitStatsInvalidated } from '../../../_lib/events'
 import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'
 
@@ -79,6 +80,8 @@ async function POSTHandler(
 
       return { updatedTx, note }
     })
+
+    emitStatsInvalidated({ userId: user.id })
 
     return NextResponse.json({
       id: result.updatedTx.id,
