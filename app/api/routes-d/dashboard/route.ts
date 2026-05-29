@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createRouteLogger } from '../_shared/logger'
+import { getCachedDashboard, setCachedDashboard } from '../_shared/cache'
 
 const INVOICE_STATUSES = ['pending', 'paid', 'overdue', 'cancelled'] as const
 type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
@@ -29,6 +30,11 @@ export async function GET(request: NextRequest) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const cachedData = getCachedDashboard(userId)
+  if (cachedData) {
+    return NextResponse.json(cachedData)
   }
 
   try {
@@ -95,7 +101,7 @@ export async function GET(request: NextRequest) {
   }
   const earnings = earningStats[0] ?? { totalEarned: 0, thisMonth: 0 }
 
-  return NextResponse.json({
+  const result = {
     summary: {
       invoices: {
         total: totalInvoices,
@@ -117,7 +123,10 @@ export async function GET(request: NextRequest) {
         createdAt: transaction.createdAt,
       })),
     },
-  })
+  }
+
+  setCachedDashboard(userId, result)
+  return NextResponse.json(result)
   } catch (error) {
     routeLogger.error({ err: error }, 'Dashboard GET error')
     return NextResponse.json({ error: 'Failed to load dashboard' }, { status: 500 })

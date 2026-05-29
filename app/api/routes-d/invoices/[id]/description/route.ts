@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { invalidateDashboardCache } from '../../../_shared/cache'
 
 export async function PATCH(
   request: NextRequest,
@@ -85,6 +86,8 @@ export async function PATCH(
         updatedAt: true,
       },
     })
+
+    invalidateDashboardCache(user.id)
 
     return NextResponse.json(updatedInvoice, { status: 200 })
 
