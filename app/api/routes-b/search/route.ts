@@ -1,4 +1,4 @@
-import { withRequestId } from '../_lib/with-request-id'
+import { withRequestId, getRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -54,9 +54,12 @@ type Facets = {
   statuses: Record<string, number>
 }
 
+const ALLOWED_TYPES = new Set(['invoices', 'bank-accounts', 'contacts', 'tags'])
+
 async function GETHandler(request: NextRequest) {
+  const requestId = getRequestId()
+
   try {
-    const requestId = request.headers.get('x-request-id')
     const authToken = request.headers
       .get('authorization')
       ?.replace('Bearer ', '')
@@ -64,9 +67,8 @@ async function GETHandler(request: NextRequest) {
       return errorResponse(
         'UNAUTHORIZED',
         'Unauthorized',
-        undefined,
+        { requestId },
         401,
-        requestId,
       )
 
     const claims = await verifyAuthToken(authToken)
@@ -74,21 +76,20 @@ async function GETHandler(request: NextRequest) {
       return errorResponse(
         'UNAUTHORIZED',
         'Invalid token',
-        undefined,
+        { requestId },
         401,
-        requestId,
       )
 
     const user = await prisma.user.findUnique({
       where: { privyId: claims.userId },
+      select: { id: true },
     })
     if (!user)
       return errorResponse(
         'NOT_FOUND',
         'User not found',
-        undefined,
+        { requestId },
         404,
-        requestId,
       )
 
     const url = new URL(request.url)
@@ -98,10 +99,23 @@ async function GETHandler(request: NextRequest) {
     if (!query.ok) {
       return errorResponse(
         'BAD_REQUEST',
-        query.error,
-        undefined,
+        query.error.message,
+        { fields: { q: query.error.message }, requestId },
         400,
-        requestId,
+      )
+    }
+
+    if (type && !ALLOWED_TYPES.has(type)) {
+      return errorResponse(
+        'BAD_REQUEST',
+        'Invalid type',
+        {
+          fields: {
+            type: 'Allowed values are invoices, bank-accounts, contacts, or tags',
+          },
+          requestId,
+        },
+        400,
       )
     }
 
@@ -152,7 +166,7 @@ async function GETHandler(request: NextRequest) {
               ],
             },
             take: 10,
-·            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc' },
           }),
         filterType && filterType !== 'contacts'
           ? Promise.resolve([])
@@ -268,9 +282,8 @@ async function GETHandler(request: NextRequest) {
     return errorResponse(
       'INTERNAL',
       'Failed to search records',
-      undefined,
+      { requestId },
       500,
-      request.headers.get('x-request-id'),
     )
   }
 }
