@@ -129,12 +129,16 @@ export async function GET(request: NextRequest) {
         select: {
           invoiceTags: true,   // usage in invoices
           contactTags: true,   // usage in contacts
+<<<<<<< HEAD
 >>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
         },
       },
     },
   })
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   return NextResponse.json({
     tags: tags.map((tag) => ({
@@ -146,6 +150,8 @@ export async function GET(request: NextRequest) {
     })),
   })
 =======
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
   const enrichedTags = tags.map((tag) => ({
     id: tag.id,
     name: tag.name,
@@ -160,7 +166,10 @@ export async function GET(request: NextRequest) {
   setCachedTags(user.id, responseData)
 
   return NextResponse.json(responseData)
+<<<<<<< HEAD
 >>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
 }
 
 /* ---------------- POST ---------------- */
@@ -248,17 +257,24 @@ async function POSTHandler(request: NextRequest) {
     return NextResponse.json(
       {
 <<<<<<< HEAD
+<<<<<<< HEAD
         error:
           'Tag name must be at most 50 characters',
 =======
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
         id: result.id,
         name: result.name,
         color: result.color,
         usageCount: 0,                    // New tag has zero usage
+<<<<<<< HEAD
 >>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
       },
       { status: 400 }
     )
+<<<<<<< HEAD
 <<<<<<< HEAD
   }
 
@@ -322,6 +338,8 @@ export const POST = withRequestId(
   })
 )
 =======
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
   } catch (error: any) {
     // Handle validation errors
     if (error.name === 'ZodError') {
@@ -353,5 +371,9 @@ export const POST = withRequestId(
     console.error('Tag creation error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+<<<<<<< HEAD
 }
 >>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
+=======
+}
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e

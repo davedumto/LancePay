@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 type CacheEntry<T> = {
   value: T
   expiresAt: number
@@ -53,6 +54,8 @@ export function deleteCachedValue(key: string) {
 }
 
 =======
+=======
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
 import { prisma } from '@/lib/db';
 
 const CACHE_TTL = 30 * 1000; // 30 seconds
@@ -80,5 +83,9 @@ export function setCachedTags(userId: string, data: any) {
 export function invalidateTagsCache(userId: string) {
   const cacheKey = `tags-list:${userId}`;
   tagListCache.delete(cacheKey);
+<<<<<<< HEAD
 }
 >>>>>>> 7added4 (feat(routes-b): add usageCount to tags GET endpoint with caching)
+=======
+}
+>>>>>>> c5bb930d507df139703c52f2ff5dcff787713d4e
