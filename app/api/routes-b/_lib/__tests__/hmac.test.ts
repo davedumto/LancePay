@@ -164,13 +164,15 @@ describe("hmac helpers", () => {
       const signature = signWebhookPayload(secret, timestamp, body);
 
       // Verify by signing the same payload manually
-      const crypto = require("crypto");
-      const expectedSig = crypto
-        .createHmac("sha256", secret)
-        .update(`${timestamp}.${body}`)
-        .digest("hex");
+      import("crypto").then((cryptoModule) => {
+        const crypto = cryptoModule.default;
+        const expectedSig = crypto
+          .createHmac("sha256", secret)
+          .update(`${timestamp}.${body}`)
+          .digest("hex");
 
-      expect(signature).toBe(expectedSig);
+        expect(signature).toBe(expectedSig);
+      });
     });
   });
 

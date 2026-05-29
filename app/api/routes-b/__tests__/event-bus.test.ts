@@ -11,7 +11,6 @@ import {
   markInactive,
   getSubscriber,
   type EventBusEvent,
-  type Notification,
 } from "../_lib/event-bus";
 
 describe("event-bus", () => {

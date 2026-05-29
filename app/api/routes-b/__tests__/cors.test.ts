@@ -193,12 +193,12 @@ describe("CORS helper", () => {
 
   describe("handleCorsPreFlight", () => {
     it("handles OPTIONS preflight for allowed origin", () => {
-      const req = createRequest("OPTIONS", "https://example.com");
+      const _req = createRequest("OPTIONS", "https://example.com");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.status).toBe(204);
       expect(result.headers.get("Access-Control-Allow-Origin")).toBe(
@@ -210,36 +210,36 @@ describe("CORS helper", () => {
     });
 
     it("rejects OPTIONS preflight for disallowed origin", () => {
-      const req = createRequest("OPTIONS", "https://evil.com");
+      const _req = createRequest("OPTIONS", "https://evil.com");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.status).toBe(204);
       expect(result.headers.get("Access-Control-Allow-Origin")).toBeNull();
     });
 
     it("handles OPTIONS with missing origin", () => {
-      const req = createRequest("OPTIONS");
+      const _req = createRequest("OPTIONS");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.status).toBe(204);
       expect(result.headers.get("Access-Control-Allow-Origin")).toBeNull();
     });
 
     it("allows wildcard origin for OPTIONS", () => {
-      const req = createRequest("OPTIONS", "https://any-origin.com");
+      const _req = createRequest("OPTIONS", "https://any-origin.com");
       const options: CorsOptions = {
         allowOrigins: "*",
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.status).toBe(204);
       expect(result.headers.get("Access-Control-Allow-Origin")).toBe(
@@ -248,13 +248,13 @@ describe("CORS helper", () => {
     });
 
     it("uses custom methods in preflight response", () => {
-      const req = createRequest("OPTIONS", "https://example.com");
+      const _req = createRequest("OPTIONS", "https://example.com");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
         allowMethods: ["GET", "POST", "DELETE"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.headers.get("Access-Control-Allow-Methods")).toBe(
         "GET, POST, DELETE",
@@ -262,13 +262,13 @@ describe("CORS helper", () => {
     });
 
     it("uses custom headers in preflight response", () => {
-      const req = createRequest("OPTIONS", "https://example.com");
+      const _req = createRequest("OPTIONS", "https://example.com");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
         allowHeaders: ["Content-Type", "Authorization"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.headers.get("Access-Control-Allow-Headers")).toBe(
         "Content-Type, Authorization",
@@ -276,12 +276,12 @@ describe("CORS helper", () => {
     });
 
     it("sets max age for preflight caching", () => {
-      const req = createRequest("OPTIONS", "https://example.com");
+      const _req = createRequest("OPTIONS", "https://example.com");
       const options: CorsOptions = {
         allowOrigins: ["https://example.com"],
       };
 
-      const result = handleCorsPreFlight(req, options);
+      const result = handleCorsPreFlight(_req, options);
 
       expect(result.headers.get("Access-Control-Max-Age")).toBe("86400");
     });
@@ -289,7 +289,7 @@ describe("CORS helper", () => {
 
   describe("withCors middleware", () => {
     it("wraps handler and applies CORS to response", async () => {
-      const handler = async (req: NextRequest) => new NextResponse("OK");
+      const handler = async (_req: NextRequest) => new NextResponse("OK");
       const wrapped = withCors(handler, {
         allowOrigins: ["https://example.com"],
       });
@@ -303,7 +303,7 @@ describe("CORS helper", () => {
     });
 
     it("handles OPTIONS preflight automatically", async () => {
-      const handler = async (req: NextRequest) => new NextResponse("OK");
+      const handler = async (_req: NextRequest) => new NextResponse("OK");
       const wrapped = withCors(handler, {
         allowOrigins: ["https://example.com"],
       });
@@ -318,7 +318,7 @@ describe("CORS helper", () => {
     });
 
     it("rejects disallowed origin in wrapped handler", async () => {
-      const handler = async (req: NextRequest) => new NextResponse("OK");
+      const handler = async (_req: NextRequest) => new NextResponse("OK");
       const wrapped = withCors(handler, {
         allowOrigins: ["https://example.com"],
       });
@@ -330,7 +330,7 @@ describe("CORS helper", () => {
     });
 
     it("allows wildcard in wrapped handler", async () => {
-      const handler = async (req: NextRequest) => new NextResponse("OK");
+      const handler = async (_req: NextRequest) => new NextResponse("OK");
       const wrapped = withCors(handler, {
         allowOrigins: "*",
       });

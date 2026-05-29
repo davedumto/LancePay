@@ -11,7 +11,7 @@
  */
 
 import { bench, describe } from "vitest";
-import { getCacheValue, setCacheValue, clearCache } from "../cache";
+import { getCacheValue, setCacheValue } from "../cache";
 import { checkRateLimit, resetRateLimitBuckets } from "../rate-limit";
 import { signWebhookPayload, generateWebhookSecret } from "../hmac";
 
