@@ -113,7 +113,7 @@ async function GETHandler(request: NextRequest) {
       pendingWithdrawals,
     }
 
-    setCachedStats(auth.userId, payload)
+    setCachedStats(auth.userId, currentStats)
 
     return withCompression(
       request,
