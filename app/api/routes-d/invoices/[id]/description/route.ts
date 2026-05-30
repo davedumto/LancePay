@@ -10,7 +10,7 @@ import {
   unprocessableEntity,
   internalServerError,
   preconditionFailed,
-} from '../../_shared/error'
+} from '../../../_shared/error'
 import { createHash } from 'crypto'
 import { invalidateDashboardCache } from '../../../_shared/cache'
 
