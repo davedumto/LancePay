@@ -152,7 +152,7 @@ async function GETHandler(request: NextRequest) {
               ],
             },
             take: 10,
-·            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc' },
           }),
         filterType && filterType !== 'contacts'
           ? Promise.resolve([])
