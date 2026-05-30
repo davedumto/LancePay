@@ -1,10 +1,21 @@
+import crypto from 'node:crypto'
+
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { validateIBAN } from '../_lib/iban'
 import { validateSWIFT } from '../_lib/swift'
 import { bankAccountDisplayName } from '../_lib/bank-accounts'
+import { normalizeString } from '../_lib/normalize'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 function isValidDigits(value: string, min: number, max: number) {
   const pattern = new RegExp(`^\\d{${min},${max}}$`)
@@ -62,17 +73,38 @@ async function POSTHandler(request: NextRequest) {
   const body = await request.json()
   const { bankName, bankCode, accountNumber, accountName, iban, swift, nickname } = body ?? {}
 
+  const idempotencyKey = request.headers.get('idempotency-key')
+  const bodyHash = idempotencyKey ? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex') : ''
+
+  if (idempotencyKey) {
+    const cached = getIdempotentResponse(idempotencyKey)
+
+    if (cached) {
+      if (cached.bodyHash !== bodyHash) {
+        return NextResponse.json(
+          { error: 'Idempotency-Key conflict' },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json(
+        cached.body,
+        { status: cached.status }
+      )
+    }
+  }
+  const normalizedBankName = typeof bankName === 'string' ? normalizeString(bankName) : ''
+  const normalizedAccountName = typeof accountName === 'string' ? normalizeString(accountName) : ''
+
   if (
-    typeof bankName !== 'string' ||
-    bankName.trim() === '' ||
-    bankName.trim().length > 100 ||
+    !normalizedBankName ||
+    normalizedBankName.length > 100 ||
     typeof bankCode !== 'string' ||
     !isValidDigits(bankCode, 3, 10) ||
     typeof accountNumber !== 'string' ||
     !/^\d{10}$/.test(accountNumber) ||
-    typeof accountName !== 'string' ||
-    accountName.trim() === '' ||
-    accountName.trim().length > 100
+    !normalizedAccountName ||
+    normalizedAccountName.length > 100
   ) {
     return NextResponse.json(
       {
@@ -91,8 +123,15 @@ async function POSTHandler(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid SWIFT/BIC format' }, { status: 400 })
   }
 
-  if (nickname !== undefined && nickname !== '' && (typeof nickname !== 'string' || nickname.trim().length > 32)) {
-    return NextResponse.json({ error: 'nickname must be a string of at most 32 characters' }, { status: 400 })
+  let normalizedNickname: string | undefined
+  if (nickname !== undefined) {
+    if (typeof nickname !== 'string') {
+      return NextResponse.json({ error: 'nickname must be a string of at most 32 characters' }, { status: 400 })
+    }
+    normalizedNickname = normalizeString(nickname)
+    if (normalizedNickname && normalizedNickname.length > 32) {
+      return NextResponse.json({ error: 'nickname must be a string of at most 32 characters' }, { status: 400 })
+    }
   }
 
   const existing = await prisma.bankAccount.findFirst({
@@ -113,18 +152,15 @@ async function POSTHandler(request: NextRequest) {
   const existingCount = await prisma.bankAccount.count({ where: { userId: user.id } })
   const isDefault = existingCount === 0
 
-  const resolvedNickname =
-    typeof nickname === 'string' && nickname.trim() !== '' ? nickname.trim() : null
-
   const bankAccount = await prisma.bankAccount.create({
     data: {
       userId: user.id,
-      bankName: bankName.trim(),
+      bankName: normalizedBankName,
       bankCode,
       accountNumber,
-      accountName: accountName.trim(),
+      accountName: normalizedAccountName,
       isDefault,
-      nickname: resolvedNickname,
+      nickname: normalizedNickname || null,
     },
     select: {
       id: true,
@@ -138,11 +174,27 @@ async function POSTHandler(request: NextRequest) {
     },
   })
 
+  const responseBody = { ...bankAccount, displayName: bankAccountDisplayName(bankAccount) }
+
+  if (idempotencyKey) {
+    setIdempotentResponse(
+      idempotencyKey,
+      {
+        bodyHash,
+        status: 201,
+        body: responseBody,
+      },
+      IDEMPOTENCY_TTL_MS
+    )
+  }
+
   return NextResponse.json(
-    { ...bankAccount, displayName: bankAccountDisplayName(bankAccount) },
+    responseBody,
     { status: 201 },
   )
 }
 
-export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(POSTHandler),
+})

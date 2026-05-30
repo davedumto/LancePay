@@ -19,6 +19,7 @@ vi.mock('@prisma/client', () => ({
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { GET } from '../route'
+import { clearDashboardCache } from '../../_shared/cache'
 
 const mockedVerify = vi.mocked(verifyAuthToken)
 const mockedUserFind = vi.mocked(prisma.user.findUnique)
@@ -35,6 +36,7 @@ function getReq(auth = 'Bearer token'): NextRequest {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  clearDashboardCache()
   mockedVerify.mockResolvedValue({ userId: 'privy-1' } as never)
   mockedUserFind.mockResolvedValue({ id: 'user-1' } as never)
   mockedGroupBy.mockResolvedValue([] as never)
@@ -142,5 +144,38 @@ describe('GET /api/routes-d/dashboard', () => {
     const json = await res.json()
     expect(json.summary.invoices.paid).toBe(2)
     expect(json.summary.invoices.total).toBe(7)
+  })
+
+  it('caches the dashboard response and returns it on subsequent requests', async () => {
+    // 1st request
+    const res1 = await GET(getReq())
+    expect(res1.status).toBe(200)
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(1)
+
+    // Reset call counts
+    vi.mocked(prisma.invoice.groupBy).mockClear()
+
+    // 2nd request
+    const res2 = await GET(getReq())
+    expect(res2.status).toBe(200)
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(0)
+  })
+
+  it('invalidates cache when cleared', async () => {
+    // 1st request
+    const res1 = await GET(getReq())
+    expect(res1.status).toBe(200)
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(1)
+
+    // Clear cache
+    clearDashboardCache()
+
+    // Reset call counts
+    vi.mocked(prisma.invoice.groupBy).mockClear()
+
+    // 2nd request (should query database again)
+    const res2 = await GET(getReq())
+    expect(res2.status).toBe(200)
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(1)
   })
 })

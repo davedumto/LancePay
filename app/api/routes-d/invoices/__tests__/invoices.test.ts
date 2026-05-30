@@ -100,6 +100,32 @@ describe('GET /api/routes-d/invoices', () => {
       expect.objectContaining({ where: expect.objectContaining({ status: 'paid' }) }),
     )
   })
+
+  it('returns 400 when search query is less than 2 characters', async () => {
+    const req = makeRequest('GET', 'http://localhost/api/routes-d/invoices?search=a')
+    const res = await GET(req)
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toContain('at least 2 characters')
+  })
+
+  it('filters by search query matching clientName, clientEmail, invoiceNumber, description', async () => {
+    mockedInvoiceFindMany.mockResolvedValue([] as never)
+    const req = makeRequest('GET', 'http://localhost/api/routes-d/invoices?search=test')
+    await GET(req)
+    expect(mockedInvoiceFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { clientName: { contains: 'test', mode: 'insensitive' } },
+            { clientEmail: { contains: 'test', mode: 'insensitive' } },
+            { invoiceNumber: { contains: 'test', mode: 'insensitive' } },
+            { description: { contains: 'test', mode: 'insensitive' } },
+          ],
+        }),
+      }),
+    )
+  })
 })
 
 /* ──────────────── POST ──────────────── */

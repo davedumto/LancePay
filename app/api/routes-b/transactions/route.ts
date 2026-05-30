@@ -1,7 +1,10 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { decodeCursor, encodeCursor } from '../_lib/cursor'
+import { buildLinkHeader } from '../_lib/link-header'
 
 const ALLOWED_TYPES = new Set(['payment', 'withdrawal'])
 
@@ -34,11 +37,17 @@ async function GETHandler(request: NextRequest) {
   const type = url.searchParams.get('type')
   const from = parseDateParam(url.searchParams.get('from'), 'from')
   const to = parseDateParam(url.searchParams.get('to'), 'to')
-  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1)
   const limit = Math.min(
     100,
     Math.max(1, Number.parseInt(url.searchParams.get('limit') || '20', 10) || 20),
   )
+
+  const cursorParam = url.searchParams.get('cursor')
+  const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
+
+  if (cursorParam && !decodedCursor) {
+    return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+  }
 
   if (type && !ALLOWED_TYPES.has(type)) {
     return NextResponse.json(
@@ -67,27 +76,64 @@ async function GETHandler(request: NextRequest) {
     userId: user.id,
     ...(type ? { type } : {}),
     ...(createdAt ? { createdAt } : {}),
+    ...(decodedCursor
+      ? {
+          OR: [
+            {
+              createdAt: {
+                lt: new Date(decodedCursor.createdAt),
+              },
+            },
+            {
+              AND: [
+                {
+                  createdAt: new Date(
+                    decodedCursor.createdAt
+                  ),
+                },
+                {
+                  id: {
+                    lt: decodedCursor.id,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
   }
 
-  const [transactions, total] = await Promise.all([
-    prisma.transaction.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        invoice: {
-          select: {
-            invoiceNumber: true,
-          },
+  const transactions = await prisma.transaction.findMany({
+    where,
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    take: limit + 1,
+    include: {
+      invoice: {
+        select: {
+          invoiceNumber: true,
         },
       },
-    }),
-    prisma.transaction.count({ where }),
-  ])
+    },
+  })
 
-  return NextResponse.json({
-    transactions: transactions.map((transaction) => ({
+  const hasNext = transactions.length > limit
+  const page = hasNext
+    ? transactions.slice(0, limit)
+    : transactions
+
+  const last = page[page.length - 1]
+  const nextCursor = hasNext && last
+    ? encodeCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      })
+    : null
+
+  const response = NextResponse.json({
+    transactions: page.map((transaction) => ({
       id: transaction.id,
       type: transaction.type,
       status: transaction.status,
@@ -100,13 +146,17 @@ async function GETHandler(request: NextRequest) {
           : 'Transaction recorded',
       createdAt: transaction.createdAt,
     })),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    nextCursor,
   })
+
+  const linkHeader = buildLinkHeader(request.url, nextCursor)
+  if (linkHeader) {
+    response.headers.set('Link', linkHeader)
+  }
+
+  return response
 }
 
-export const GET = withRequestId(GETHandler)
+export const { GET } = withMethods({
+  GET: withRequestId(GETHandler),
+})

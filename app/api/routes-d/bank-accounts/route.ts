@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createRouteLogger } from '../_shared/logger'
+import { withRequestId } from '../_shared/with-request-id'
+import { validateIBAN } from '../_lib/iban'
+import { validateSWIFT } from '../_lib/swift'
 
 const MAX_BANK_NAME_LENGTH = 100
 const MAX_ACCOUNT_NAME_LENGTH = 100
@@ -32,7 +35,7 @@ function maskAccountNumber(accountNumber: string) {
   return `${'*'.repeat(Math.max(0, accountNumber.length - 4))}${accountNumber.slice(-4)}`
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const routeLogger = createRouteLogger({ route: '/api/routes-d/bank-accounts' })
 
   const userId = await getAuthenticatedUserId(request)
@@ -72,6 +75,8 @@ type CreateBankAccountBody = {
   bankCode?: unknown
   accountNumber?: unknown
   accountName?: unknown
+  iban?: unknown
+  swift?: unknown
   isDefault?: unknown
 }
 
@@ -92,7 +97,7 @@ function parseRequiredString(value: unknown, field: string, maxLength: number): 
   return trimmed
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const routeLogger = createRouteLogger({ route: '/api/routes-d/bank-accounts' })
 
   const userId = await getAuthenticatedUserId(request)
@@ -143,6 +148,14 @@ export async function POST(request: NextRequest) {
   )
   if (typeof accountName !== 'string') {
     return NextResponse.json({ error: accountName.message }, { status: 400 })
+  }
+
+  if (body.iban !== undefined && (typeof body.iban !== 'string' || !validateIBAN(body.iban))) {
+    return NextResponse.json({ error: 'Invalid IBAN format' }, { status: 400 })
+  }
+
+  if (body.swift !== undefined && (typeof body.swift !== 'string' || !validateSWIFT(body.swift))) {
+    return NextResponse.json({ error: 'Invalid SWIFT/BIC format' }, { status: 400 })
   }
 
   if (body.isDefault !== undefined && typeof body.isDefault !== 'boolean') {
@@ -215,3 +228,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create bank account' }, { status: 500 })
   }
 }
+
+export const GET = withRequestId(GETHandler)
+export const POST = withRequestId(POSTHandler)

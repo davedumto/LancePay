@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { z } from 'zod'
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const contactSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email('Invalid email format'),
+  phone: z.string().regex(/^[+]?[\d\s\-()]{10,}$/, 'Invalid phone format').optional().nullable(),
+  company: z.string().max(100).optional().nullable(),
+  notes: z.string().max(500).optional().nullable(),
+})
 
 type ContactDelegate = {
   findMany: (args: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>
@@ -58,6 +65,7 @@ export async function GET(request: NextRequest) {
             OR: [
               { name: { contains: search, mode: 'insensitive' } },
               { email: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search, mode: 'insensitive' } },
             ],
           }
         : {}),
@@ -67,6 +75,7 @@ export async function GET(request: NextRequest) {
       id: true,
       name: true,
       email: true,
+      phone: true,
       company: true,
       notes: true,
       createdAt: true,
@@ -78,6 +87,7 @@ export async function GET(request: NextRequest) {
       id: contact.id,
       name: contact.name,
       email: contact.email,
+      phone: contact.phone ?? null,
       company: contact.company ?? null,
       notes: contact.notes ?? null,
       createdAt: contact.createdAt,
@@ -92,26 +102,20 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const name = typeof body?.name === 'string' ? body.name.trim() : ''
-  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
-  const company = normalizeOptionalString(body?.company, 100)
-  const notes = normalizeOptionalString(body?.notes, 500)
 
-  if (!name || name.length > 100) {
-    return NextResponse.json({ error: 'Name is required and must be at most 100 characters' }, { status: 400 })
+  // Validate using Zod schema
+  const validationResult = contactSchema.safeParse(body)
+  if (!validationResult.success) {
+    return NextResponse.json(
+      {
+        error: 'Validation failed',
+        details: validationResult.error.errors,
+      },
+      { status: 400 },
+    )
   }
 
-  if (!email || !EMAIL_REGEX.test(email)) {
-    return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
-  }
-
-  if (company === undefined) {
-    return NextResponse.json({ error: 'Company must be at most 100 characters' }, { status: 400 })
-  }
-
-  if (notes === undefined) {
-    return NextResponse.json({ error: 'Notes must be at most 500 characters' }, { status: 400 })
-  }
+  const { name, email, phone, company, notes } = validationResult.data
 
   const contactDelegate = getContactDelegate()
 
@@ -119,15 +123,17 @@ export async function POST(request: NextRequest) {
     const contact = await contactDelegate.create({
       data: {
         userId: user.id,
-        name,
-        email,
-        company,
-        notes,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone?.trim() || null,
+        company: company?.trim() || null,
+        notes: notes?.trim() || null,
       },
       select: {
         id: true,
         name: true,
         email: true,
+        phone: true,
         company: true,
         notes: true,
         createdAt: true,
@@ -139,6 +145,7 @@ export async function POST(request: NextRequest) {
         id: contact.id,
         name: contact.name,
         email: contact.email,
+        phone: contact.phone ?? null,
         company: contact.company ?? null,
         notes: contact.notes ?? null,
         createdAt: contact.createdAt,

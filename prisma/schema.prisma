@@ -107,6 +107,7 @@ model Contact {
   userId    String
   name      String
   email     String
+  phone     String?
   company   String?
   notes     String?
   createdAt DateTime  @default(now())

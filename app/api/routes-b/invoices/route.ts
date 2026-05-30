@@ -1,4 +1,7 @@
+import crypto from 'node:crypto'
+
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
@@ -13,9 +16,18 @@ import {
 
 import { decodeCursor, encodeCursor } from '../_lib/cursor'
 import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+import { emitStatsInvalidated } from '../_lib/events'
+import { buildLinkHeader } from '../_lib/link-header'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
 
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /* ---------------- OPENAPI ---------------- */
 
@@ -233,19 +245,28 @@ async function GETHandler(request: NextRequest) {
 
   const last = page[page.length - 1]
 
-  return NextResponse.json({
+  const nextCursor = hasNext && last
+    ? encodeCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      })
+    : null
+
+  const response = NextResponse.json({
     data: page.map((i) => ({
       ...i,
       amount: Number(i.amount),
     })),
 
-    nextCursor: hasNext && last
-      ? encodeCursor({
-          createdAt: last.createdAt.toISOString(),
-          id: last.id,
-        })
-      : null,
+    nextCursor,
   })
+
+  const linkHeader = buildLinkHeader(request.url, nextCursor)
+  if (linkHeader) {
+    response.headers.set('Link', linkHeader)
+  }
+
+  return response
 }
 
 /* ---------------- POST ---------------- */
@@ -256,6 +277,27 @@ async function POSTHandler(request: NextRequest) {
   if ('error' in auth) return auth.error
 
   const body = await request.json().catch(() => null)
+
+  const idempotencyKey = request.headers.get('idempotency-key')
+  const bodyHash = body ? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex') : ''
+
+  if (idempotencyKey) {
+    const cached = getIdempotentResponse(idempotencyKey)
+
+    if (cached) {
+      if (cached.bodyHash !== bodyHash) {
+        return NextResponse.json(
+          { error: 'Idempotency-Key conflict' },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json(
+        cached.body,
+        { status: cached.status }
+      )
+    }
+  }
 
   if (!body) {
     return NextResponse.json(
@@ -339,20 +381,38 @@ async function POSTHandler(request: NextRequest) {
     },
   })
 
+  emitStatsInvalidated({ userId: auth.user.id })
+
+  const responseBody = {
+    id: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    paymentLink: invoice.paymentLink,
+    status: invoice.status,
+    amount: Number(invoice.amount),
+    currency: invoice.currency,
+  }
+
+  if (idempotencyKey) {
+    setIdempotentResponse(
+      idempotencyKey,
+      {
+        bodyHash,
+        status: 201,
+        body: responseBody,
+      },
+      IDEMPOTENCY_TTL_MS
+    )
+  }
+
   return NextResponse.json(
-    {
-      id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      paymentLink: invoice.paymentLink,
-      status: invoice.status,
-      amount: Number(invoice.amount),
-      currency: invoice.currency,
-    },
+    responseBody,
     { status: 201 }
   )
 }
 
 /* ---------------- EXPORTS ---------------- */
 
-export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(POSTHandler),
+})

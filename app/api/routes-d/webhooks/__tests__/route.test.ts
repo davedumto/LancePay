@@ -41,13 +41,18 @@ function makeGET(auth = 'Bearer token'): NextRequest {
   })
 }
 
-function makePOST(body: unknown, auth = 'Bearer token'): NextRequest {
+function makePOST(
+  body: unknown,
+  options: { auth?: string; idempotencyKey?: string } = {},
+): NextRequest {
+  const auth = options.auth ?? 'Bearer token'
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (auth) headers.authorization = auth
+  if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey
+
   return new NextRequest(BASE_URL, {
     method: 'POST',
-    headers: {
-      ...(auth ? { authorization: auth } : {}),
-      'content-type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   })
 }
@@ -120,13 +125,13 @@ describe('GET /api/routes-d/webhooks', () => {
 describe('POST /api/routes-d/webhooks', () => {
   it('returns 401 without authorization header', async () => {
     mockedVerify.mockResolvedValue(null as never)
-    const res = await POST(makePOST({ targetUrl: 'https://example.com/wh' }, ''))
+    const res = await POST(makePOST({ targetUrl: 'https://example.com/wh' }, { auth: '' }))
     expect(res.status).toBe(401)
   })
 
   it('returns 401 with invalid token', async () => {
     mockedVerify.mockResolvedValue(null as never)
-    const res = await POST(makePOST({ targetUrl: 'https://example.com/wh' }, 'Bearer bad'))
+    const res = await POST(makePOST({ targetUrl: 'https://example.com/wh' }, { auth: 'Bearer bad' }))
     expect(res.status).toBe(401)
   })
 
@@ -202,4 +207,5 @@ describe('POST /api/routes-d/webhooks', () => {
     // signing secret is returned only in the creation response, not from the select
     expect(json).toHaveProperty('signingSecret')
   })
+
 })

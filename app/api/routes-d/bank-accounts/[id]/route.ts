@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { withRequestId } from '../../_shared/with-request-id'
 
 async function getAuthenticatedUserId(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -18,7 +19,7 @@ async function getAuthenticatedUserId(request: NextRequest) {
   return user?.id ?? null
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -72,3 +73,5 @@ export async function DELETE(
 
   return new NextResponse(null, { status: 204 })
 }
+
+export const DELETE = withRequestId(DELETEHandler)

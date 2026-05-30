@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
 import { logger } from '@/lib/logger'
+import { invalidateDashboardCache } from '../_shared/cache'
 
 const MAX_LIMIT = 50
 const DEFAULT_LIMIT = 20
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') ?? undefined
     const cursor = searchParams.get('cursor') ?? undefined
     const limitParam = searchParams.get('limit')
+    const search = searchParams.get('search') ?? searchParams.get('q') ?? undefined
 
     const VALID_STATUSES = ['pending', 'paid', 'overdue', 'cancelled']
     if (status && !VALID_STATUSES.includes(status)) {
@@ -40,6 +42,21 @@ export async function GET(request: NextRequest) {
         { error: `status must be one of: ${VALID_STATUSES.join(', ')}` },
         { status: 400 },
       )
+    }
+
+    let sanitizedSearch: string | undefined = undefined
+    if (search !== undefined) {
+      sanitizedSearch = search.trim()
+      if (sanitizedSearch.length > 0) {
+        if (sanitizedSearch.length < 2) {
+          return NextResponse.json(
+            { error: 'Search query must be at least 2 characters' },
+            { status: 400 },
+          )
+        }
+      } else {
+        sanitizedSearch = undefined
+      }
     }
 
     const limit = Math.min(
@@ -52,6 +69,16 @@ export async function GET(request: NextRequest) {
         userId: user.id,
         ...(status ? { status } : {}),
         ...(cursor ? { id: { lt: cursor } } : {}),
+        ...(sanitizedSearch
+          ? {
+              OR: [
+                { clientName: { contains: sanitizedSearch, mode: 'insensitive' } },
+                { clientEmail: { contains: sanitizedSearch, mode: 'insensitive' } },
+                { invoiceNumber: { contains: sanitizedSearch, mode: 'insensitive' } },
+                { description: { contains: sanitizedSearch, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -186,6 +213,8 @@ export async function POST(request: NextRequest) {
         createdAt: true,
       },
     })
+
+    invalidateDashboardCache(user.id)
 
     return NextResponse.json(
       { ...invoice, amount: Number(invoice.amount) },

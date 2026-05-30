@@ -1,47 +1,55 @@
-import { withRequestId } from '../../../_lib/with-request-id'
 /**
  * GET /api/routes-b/invoices/public/[token]
  * Read-only public view of an invoice via share token.
  * No PII, no internal IDs, no payment provider details.
  * Rate limited: 60 req/hour per token.
+ * CORS enabled for embedding in external sites.
  */
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { lookupShareToken } from '../../../_lib/share-tokens'
-import { checkRateLimit } from '../../../_lib/rate-limit'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { withRequestId } from "../../../_lib/with-request-id";
+import { withCors } from "../../../_lib/cors";
+import { lookupShareToken } from "../../../_lib/share-tokens";
+import { checkRateLimit } from "../../../_lib/rate-limit";
 
-const RATE_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 }
+const RATE_LIMIT = { limit: 60, windowMs: 60 * 60 * 1000 };
 
 async function GETHandler(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
-  const { token } = await params
+  const { token } = await params;
 
   // Rate limit per token
-  const rl = checkRateLimit(`share:${token}`, RATE_LIMIT)
+  const rl = checkRateLimit(`share:${token}`, RATE_LIMIT);
   if (!rl.allowed) {
     return NextResponse.json(
-      { error: 'Rate limit exceeded' },
+      { error: "Rate limit exceeded" },
       {
         status: 429,
-        headers: { 'Retry-After': String(rl.retryAfter) },
+        headers: { "Retry-After": String(rl.retryAfter) },
       },
-    )
+    );
   }
 
-  const entry = lookupShareToken(token)
+  const entry = lookupShareToken(token);
 
   if (!entry) {
-    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 404 })
+    return NextResponse.json(
+      { error: "Invalid or expired token" },
+      { status: 404 },
+    );
   }
 
   if (entry.revokedAt) {
-    return NextResponse.json({ error: 'Token has been revoked' }, { status: 410 })
+    return NextResponse.json(
+      { error: "Token has been revoked" },
+      { status: 410 },
+    );
   }
 
   if (new Date() > entry.expiresAt) {
-    return NextResponse.json({ error: 'Token has expired' }, { status: 410 })
+    return NextResponse.json({ error: "Token has expired" }, { status: 410 });
   }
 
   const invoice = await prisma.invoice.findUnique({
@@ -56,10 +64,10 @@ async function GETHandler(
       dueDate: true,
       createdAt: true,
     },
-  })
+  });
 
   if (!invoice) {
-    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   }
 
   // Redacted public view — no payer PII, no internal IDs, no payment provider details
@@ -72,7 +80,18 @@ async function GETHandler(
     status: invoice.status,
     dueDate: invoice.dueDate,
     createdAt: invoice.createdAt,
-  })
+  });
 }
 
-export const GET = withRequestId(GETHandler)
+// CORS configuration for public invoice sharing
+const CORS_OPTIONS = {
+  allowOrigins: "*", // Allow any origin for public invoice viewing
+  allowMethods: ["GET", "OPTIONS"],
+  allowHeaders: ["Content-Type"],
+};
+
+export const GET = withRequestId(withCors(GETHandler, CORS_OPTIONS));
+
+export const OPTIONS = withRequestId(
+  withCors(async () => new NextResponse(null, { status: 204 }), CORS_OPTIONS),
+);

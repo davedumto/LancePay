@@ -2,6 +2,7 @@ import { withRequestId } from '../../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { emitStatsInvalidated } from '../../../_lib/events'
 
 const MAX_REASON_LENGTH = 200
 
@@ -78,6 +79,8 @@ async function POSTHandler(
       cancellationReason: true,
     },
   })
+
+  emitStatsInvalidated({ userId: user.id })
 
   return NextResponse.json(updated)
 }

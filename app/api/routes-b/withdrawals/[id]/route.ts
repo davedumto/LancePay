@@ -28,6 +28,31 @@ async function fetchOfframpStatus(txHash: string): Promise<OfframpStatusResponse
     return (await response.json()) as OfframpStatusResponse
 }
 
+async function fetchProviderStatus(txHash: string): Promise<OfframpStatusResponse> {
+    try {
+        return await withRetry(
+            async () => fetchOfframpStatus(txHash),
+            {
+                maxAttempts: 3,
+                baseDelayMs: 200,
+                // Keep this endpoint responsive even if the upstream is flaky.
+                maxTotalMs: 1_500,
+                onRetry: ({ attempt, delay, error }) => {
+                    logger.warn({ attempt, delay, error }, 'routes-b withdrawal status retry')
+                },
+                shouldRetry: (error) => {
+                    const status = (error as { status?: number }).status
+                    const code = (error as { code?: string }).code
+                    return (typeof status === 'number' && status >= 500) || code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT'
+                },
+            },
+        )
+    } catch (error) {
+        logger.warn({ error }, 'routes-b withdrawal status upstream failed after retries')
+        return {}
+    }
+}
+
 async function GETHandler(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -52,21 +77,7 @@ async function GETHandler(
     if (accessCheck) return accessCheck
 
     const providerStatus = transaction.txHash
-        ? await withRetry(
-            async () => fetchOfframpStatus(transaction.txHash!),
-            {
-                maxAttempts: 3,
-                baseDelayMs: 200,
-                onRetry: ({ attempt, delay, error }) => {
-                    logger.warn({ attempt, delay, error }, 'routes-b withdrawal status retry')
-                },
-                shouldRetry: (error) => {
-                    const status = (error as { status?: number }).status
-                    const code = (error as { code?: string }).code
-                    return (typeof status === 'number' && status >= 500) || code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT'
-                },
-            },
-        )
+        ? await fetchProviderStatus(transaction.txHash!)
         : {}
 
     return NextResponse.json({

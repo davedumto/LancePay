@@ -1,11 +1,22 @@
+import crypto from 'node:crypto'
+
 import { withRequestId } from '../_lib/with-request-id'
 import { withBodyLimit } from '../_lib/with-body-limit'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { normalizeString } from '../_lib/normalize'
 
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /* ---------------- OPENAPI ---------------- */
 
@@ -125,6 +136,8 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
+  const idempotencyKey = request.headers.get('idempotency-key')
+
   let body: {
     name?: unknown
     color?: unknown
@@ -139,9 +152,29 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
+  const bodyHash = idempotencyKey ? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex') : ''
+
+  if (idempotencyKey) {
+    const cached = getIdempotentResponse(idempotencyKey)
+
+    if (cached) {
+      if (cached.bodyHash !== bodyHash) {
+        return NextResponse.json(
+          { error: 'Idempotency-Key conflict' },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json(
+        cached.body,
+        { status: cached.status }
+      )
+    }
+  }
+
   const name =
     typeof body.name === 'string'
-      ? body.name.trim()
+      ? normalizeString(body.name)
       : ''
 
   const color =
@@ -205,23 +238,38 @@ async function POSTHandler(request: NextRequest) {
     },
   })
 
+  const responseBody = {
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    invoiceCount: tag._count.invoiceTags,
+  }
+
+  if (idempotencyKey) {
+    setIdempotentResponse(
+      idempotencyKey,
+      {
+        bodyHash,
+        status: 201,
+        body: responseBody,
+      },
+      IDEMPOTENCY_TTL_MS
+    )
+  }
+
   return NextResponse.json(
-    {
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-      invoiceCount: tag._count.invoiceTags,
-    },
+    responseBody,
     { status: 201 }
   )
 }
 
 /* ---------------- EXPORTS ---------------- */
 
-export const GET = withRequestId(GETHandler)
-
-export const POST = withRequestId(
-  withBodyLimit(POSTHandler, {
-    limitBytes: 1024 * 1024,
-  })
-)
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(
+    withBodyLimit(POSTHandler, {
+      limitBytes: 1024 * 1024,
+    })
+  ),
+})
