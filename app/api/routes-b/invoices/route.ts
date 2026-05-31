@@ -1,53 +1,78 @@
+import crypto from 'node:crypto'
+
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
+
+import { buildInvoiceWhereFilters } from '../_lib/invoice-filters'
+
+import {
+  getArchiveFilter,
+  parseIncludeArchivedParam,
+} from '../_lib/invoice-archive'
+
 import { decodeCursor, encodeCursor } from '../_lib/cursor'
 import { findRecentDuplicateInvoice } from '../_lib/duplicate-detection'
+import { emitStatsInvalidated } from '../_lib/events'
+import { buildLinkHeader } from '../_lib/link-header'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
+
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
 
-// Register OpenAPI documentation
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
+
+/* ---------------- OPENAPI ---------------- */
+
 registerRoute({
   method: 'GET',
   path: '/invoices',
   summary: 'List invoices',
-  description: 'Get cursor-paginated invoices for the authenticated user, optionally filtered by status.',
+  description: 'Cursor-paginated invoices for authenticated user.',
   requestSchema: z.object({
     status: z.enum(['pending', 'paid', 'overdue', 'cancelled']).optional(),
     cursor: z.string().optional(),
-    limit: z.string().optional().default('25')
+    limit: z.string().optional(),
+    includeArchived: z.string().optional(),
   }),
   responseSchema: z.object({
-    data: z.array(z.object({
-      id: z.string(),
-      invoiceNumber: z.string(),
-      clientName: z.string().nullable(),
-      clientEmail: z.string(),
-      amount: z.number(),
-      currency: z.string(),
-      status: z.string(),
-      dueDate: z.string().nullable(),
-      createdAt: z.string()
-    })),
-    nextCursor: z.string().nullable()
+    data: z.array(
+      z.object({
+        id: z.string(),
+        invoiceNumber: z.string(),
+        clientName: z.string().nullable(),
+        clientEmail: z.string(),
+        amount: z.number(),
+        currency: z.string(),
+        status: z.string(),
+        dueDate: z.string().nullable(),
+        createdAt: z.string(),
+      })
+    ),
+    nextCursor: z.string().nullable(),
   }),
-  tags: ['invoices']
+  tags: ['invoices'],
 })
 
 registerRoute({
   method: 'POST',
   path: '/invoices',
   summary: 'Create invoice',
-  description: 'Create a new invoice. Returns 409 if a similar invoice was created recently.',
+  description: 'Create invoice, prevents duplicates unless forced.',
   requestSchema: z.object({
     clientEmail: z.string().email(),
     clientName: z.string().optional(),
     description: z.string().min(1),
     amount: z.number().positive(),
-    currency: z.string().default('USD'),
-    dueDate: z.string().optional()
+    currency: z.string().optional(),
+    dueDate: z.string().optional(),
   }),
   responseSchema: z.object({
     id: z.string(),
@@ -55,78 +80,147 @@ registerRoute({
     paymentLink: z.string(),
     status: z.string(),
     amount: z.number(),
-    currency: z.string()
+    currency: z.string(),
   }),
-  tags: ['invoices']
+  tags: ['invoices'],
 })
 
+/* ---------------- AUTH ---------------- */
+
 async function getAuthenticatedUser(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
   const claims = await verifyAuthToken(authToken || '')
+
   if (!claims) {
-    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+    return {
+      error: NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      ),
+    }
   }
 
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+  const user = await prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+
   if (!user) {
-    return { error: NextResponse.json({ error: 'User not found' }, { status: 404 }) }
+    return {
+      error: NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      ),
+    }
   }
 
   return { user }
 }
 
+/* ---------------- HELPERS ---------------- */
+
 async function getUniqueInvoiceNumber() {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  for (let i = 0; i < 5; i++) {
     const invoiceNumber = generateInvoiceNumber()
-    const existingInvoice = await prisma.invoice.findUnique({
+
+    const exists = await prisma.invoice.findUnique({
       where: { invoiceNumber },
       select: { id: true },
     })
 
-    if (!existingInvoice) {
-      return invoiceNumber
-    }
+    if (!exists) return invoiceNumber
   }
 
-  throw new Error('Failed to generate a unique invoice number')
+  throw new Error('Failed to generate invoice number')
 }
+
+/* ---------------- GET ---------------- */
 
 async function GETHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
-  if ('error' in auth) {
-    return auth.error
-  }
+
+  if ('error' in auth) return auth.error
 
   const { searchParams } = new URL(request.url)
+
   const status = searchParams.get('status')
-  const limitParam = searchParams.get('limit')
+
+  const includeArchived = parseIncludeArchivedParam(
+    searchParams.get('includeArchived')
+  )
+
+  const limit = Math.min(
+    100,
+    Math.max(
+      1,
+      Number.parseInt(searchParams.get('limit') || '25', 10)
+    )
+  )
+
   const cursorParam = searchParams.get('cursor')
-  const limit = limitParam === null ? 25 : Number.parseInt(limitParam, 10)
 
-  const validStatuses = ['pending', 'paid', 'overdue', 'cancelled']
-  if (status && !validStatuses.includes(status)) {
-    return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
-  }
-  if (!Number.isFinite(limit) || Number.isNaN(limit) || limit <= 0 || limit > 100) {
-    return NextResponse.json({ error: 'limit must be a number between 1 and 100' }, { status: 400 })
-  }
+  const decodedCursor = cursorParam
+    ? decodeCursor(cursorParam)
+    : null
 
-  const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
   if (cursorParam && !decodedCursor) {
-    return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid cursor' },
+      { status: 400 }
+    )
   }
+
+  const validStatuses = [
+    'pending',
+    'paid',
+    'overdue',
+    'cancelled',
+  ]
+
+  if (status && !validStatuses.includes(status)) {
+    return NextResponse.json(
+      { error: 'Invalid status' },
+      { status: 400 }
+    )
+  }
+
+  const searchFilters = buildInvoiceWhereFilters({
+    number: searchParams.get('number'),
+    client: searchParams.get('client'),
+    notes: searchParams.get('notes'),
+    minAmount: searchParams.get('minAmount'),
+    maxAmount: searchParams.get('maxAmount'),
+    currency: searchParams.get('currency'),
+  })
 
   const where = {
     userId: auth.user.id,
     ...(status ? { status } : {}),
+    ...getArchiveFilter(includeArchived),
+    ...searchFilters,
+
     ...(decodedCursor
       ? {
           OR: [
-            { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+            {
+              createdAt: {
+                lt: new Date(decodedCursor.createdAt),
+              },
+            },
             {
               AND: [
-                { createdAt: new Date(decodedCursor.createdAt) },
-                { id: { lt: decodedCursor.id } },
+                {
+                  createdAt: new Date(
+                    decodedCursor.createdAt
+                  ),
+                },
+                {
+                  id: {
+                    lt: decodedCursor.id,
+                  },
+                },
               ],
             },
           ],
@@ -136,93 +230,148 @@ async function GETHandler(request: NextRequest) {
 
   const invoices = await prisma.invoice.findMany({
     where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
     take: limit + 1,
-    select: {
-      id: true,
-      invoiceNumber: true,
-      clientName: true,
-      clientEmail: true,
-      amount: true,
-      currency: true,
-      status: true,
-      dueDate: true,
-      createdAt: true,
-    },
   })
 
-  const hasNextPage = invoices.length > limit
-  const pageData = hasNextPage ? invoices.slice(0, limit) : invoices
-  const lastInvoice = hasNextPage ? pageData[pageData.length - 1] : null
-  const nextCursor = lastInvoice
-    ? encodeCursor({ createdAt: lastInvoice.createdAt.toISOString(), id: lastInvoice.id })
+  const hasNext = invoices.length > limit
+
+  const page = hasNext
+    ? invoices.slice(0, limit)
+    : invoices
+
+  const last = page[page.length - 1]
+
+  const nextCursor = hasNext && last
+    ? encodeCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      })
     : null
 
-  return NextResponse.json({
-    data: pageData.map((invoice) => ({
-      ...invoice,
-      amount: Number(invoice.amount),
+  const response = NextResponse.json({
+    data: page.map((i) => ({
+      ...i,
+      amount: Number(i.amount),
     })),
+
     nextCursor,
   })
+
+  const linkHeader = buildLinkHeader(request.url, nextCursor)
+  if (linkHeader) {
+    response.headers.set('Link', linkHeader)
+  }
+
+  return response
 }
+
+/* ---------------- POST ---------------- */
 
 async function POSTHandler(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
-  if ('error' in auth) {
-    return auth.error
+
+  if ('error' in auth) return auth.error
+
+  const body = await request.json().catch(() => null)
+
+  const idempotencyKey = request.headers.get('idempotency-key')
+  const bodyHash = body ? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex') : ''
+
+  if (idempotencyKey) {
+    const cached = getIdempotentResponse(idempotencyKey)
+
+    if (cached) {
+      if (cached.bodyHash !== bodyHash) {
+        return NextResponse.json(
+          { error: 'Idempotency-Key conflict' },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json(
+        cached.body,
+        { status: cached.status }
+      )
+    }
   }
 
-  const body = await request.json()
-  const { clientEmail, clientName, description, amount, currency = 'USD', dueDate } = body
-
-  if (!clientEmail || !description || amount === undefined || amount === null) {
+  if (!body) {
     return NextResponse.json(
-      { error: 'clientEmail, description, and amount are required' },
-      { status: 400 },
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    )
+  }
+
+  const {
+    clientEmail,
+    clientName,
+    description,
+    amount,
+    currency = 'USD',
+    dueDate,
+  } = body
+
+  if (!clientEmail || !description || amount == null) {
+    return NextResponse.json(
+      { error: 'Missing required fields' },
+      { status: 400 }
     )
   }
 
   const parsedAmount = Number(amount)
+
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    return NextResponse.json({ error: 'amount must be greater than 0' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid amount' },
+      { status: 400 }
+    )
   }
 
-  const { searchParams } = new URL(request.url)
-  const forceCreate = searchParams.get('force') === 'true'
-  const normalizedClientEmail = String(clientEmail).toLowerCase()
+  const normalizedEmail = String(clientEmail).toLowerCase()
+
   const normalizedCurrency = String(currency).toUpperCase()
 
-  if (!forceCreate) {
-    const duplicateInvoiceId = await findRecentDuplicateInvoice({
+  const force =
+    new URL(request.url).searchParams.get('force') ===
+    'true'
+
+  if (!force) {
+    const duplicate = await findRecentDuplicateInvoice({
       userId: auth.user.id,
-      clientEmail: normalizedClientEmail,
+      clientEmail: normalizedEmail,
       amount: parsedAmount,
       currency: normalizedCurrency,
     })
 
-    if (duplicateInvoiceId) {
-      return NextResponse.json({ duplicateOfId: duplicateInvoiceId }, { status: 409 })
+    if (duplicate) {
+      return NextResponse.json(
+        { duplicateOfId: duplicate },
+        { status: 409 }
+      )
     }
   }
 
-  let parsedDueDate: Date | null = null
-  if (dueDate) {
-    parsedDueDate = new Date(dueDate)
-    if (Number.isNaN(parsedDueDate.getTime())) {
-      return NextResponse.json({ error: 'dueDate must be a valid date string' }, { status: 400 })
-    }
-  }
+  const parsedDueDate = dueDate
+    ? new Date(dueDate)
+    : null
 
   const invoiceNumber = await getUniqueInvoiceNumber()
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    `https://${request.headers.get('host')}`
+
   const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
   const invoice = await prisma.invoice.create({
     data: {
       userId: auth.user.id,
       invoiceNumber,
-      clientEmail: normalizedClientEmail,
+      clientEmail: normalizedEmail,
       clientName: clientName || null,
       description,
       amount: parsedAmount,
@@ -232,18 +381,38 @@ async function POSTHandler(request: NextRequest) {
     },
   })
 
+  emitStatsInvalidated({ userId: auth.user.id })
+
+  const responseBody = {
+    id: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    paymentLink: invoice.paymentLink,
+    status: invoice.status,
+    amount: Number(invoice.amount),
+    currency: invoice.currency,
+  }
+
+  if (idempotencyKey) {
+    setIdempotentResponse(
+      idempotencyKey,
+      {
+        bodyHash,
+        status: 201,
+        body: responseBody,
+      },
+      IDEMPOTENCY_TTL_MS
+    )
+  }
+
   return NextResponse.json(
-    {
-      id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      paymentLink: invoice.paymentLink,
-      status: invoice.status,
-      amount: Number(invoice.amount),
-      currency: invoice.currency,
-    },
-    { status: 201 },
+    responseBody,
+    { status: 201 }
   )
 }
 
-export const GET = withRequestId(GETHandler)
-export const POST = withRequestId(POSTHandler)
+/* ---------------- EXPORTS ---------------- */
+
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(POSTHandler),
+})

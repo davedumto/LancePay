@@ -6,6 +6,7 @@ import {
   getCachedUnreadCount,
   setCachedUnreadCount,
 } from '../../_lib/notification-cache'
+import { isNotificationSnoozed } from '../../_lib/notification-snooze'
 
 async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -24,9 +25,12 @@ async function GETHandler(request: NextRequest) {
     return NextResponse.json({ count: cached })
   }
 
-  const count = await prisma.notification.count({
+  const unreadNotifications = await prisma.notification.findMany({
     where: { userId: user.id, isRead: false },
+    select: { id: true },
   })
+
+  const count = unreadNotifications.filter(n => !isNotificationSnoozed(n.id)).length
 
   setCachedUnreadCount(user.id, count)
 

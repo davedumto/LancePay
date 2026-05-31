@@ -2,6 +2,7 @@ import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { bankAccountDisplayName } from '../../_lib/bank-accounts'
 
 async function GETHandler(
   request: NextRequest,
@@ -26,6 +27,17 @@ async function GETHandler(
 
   const bankAccount = await prisma.bankAccount.findUnique({
     where: { id },
+    select: {
+      id: true,
+      userId: true,
+      bankName: true,
+      bankCode: true,
+      accountNumber: true,
+      accountName: true,
+      isDefault: true,
+      nickname: true,
+      createdAt: true,
+    },
   })
 
   if (!bankAccount)
@@ -45,6 +57,12 @@ async function GETHandler(
       accountNumber: bankAccount.accountNumber,
       accountName: bankAccount.accountName,
       isDefault: bankAccount.isDefault,
+      nickname: bankAccount.nickname ?? null,
+      displayName: bankAccountDisplayName({
+        nickname: bankAccount.nickname ?? null,
+        accountNumber: bankAccount.accountNumber,
+        bankName: bankAccount.bankName,
+      }),
       createdAt: bankAccount.createdAt,
     },
   })
@@ -72,14 +90,25 @@ async function PATCHHandler(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => null)
-  if (!body || body.isDefault !== true) {
+
+  const wantsDefault = body?.isDefault === true
+  const hasNickname = body !== null && 'nickname' in body && typeof body.nickname === 'string'
+
+  if (!body || (!wantsDefault && !hasNickname)) {
     return NextResponse.json(
-      { error: 'PATCH body must include { isDefault: true }' },
+      { error: 'PATCH body must include { isDefault: true } and/or { nickname }' },
       { status: 400 },
     )
   }
 
-  const account = await prisma.bankAccount.findUnique({ where: { id } })
+  if (hasNickname && body.nickname !== '' && body.nickname.trim().length > 32) {
+    return NextResponse.json({ error: 'nickname must be at most 32 characters' }, { status: 400 })
+  }
+
+  const account = await prisma.bankAccount.findUnique({
+    where: { id },
+    select: { id: true, userId: true },
+  })
   if (!account)
     return NextResponse.json(
       { error: 'Bank account not found' },
@@ -88,28 +117,51 @@ async function PATCHHandler(
   if (account.userId !== user.id)
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const updated = await prisma.$transaction(async tx => {
-    await tx.bankAccount.updateMany({
-      where: { userId: user.id, isDefault: true },
-      data: { isDefault: false },
+  const bankAccountSelect = {
+    id: true,
+    bankName: true,
+    bankCode: true,
+    accountNumber: true,
+    accountName: true,
+    isDefault: true,
+    nickname: true,
+    createdAt: true,
+  }
+
+  if (wantsDefault) {
+    const updated = await prisma.$transaction(async tx => {
+      await tx.bankAccount.updateMany({
+        where: { userId: user.id, isDefault: true },
+        data: { isDefault: false },
+      })
+
+      return tx.bankAccount.update({
+        where: { id: account.id },
+        data: {
+          isDefault: true,
+          ...(hasNickname
+            ? { nickname: body.nickname === '' ? null : body.nickname.trim() }
+            : {}),
+        },
+        select: bankAccountSelect,
+      })
     })
 
-    return tx.bankAccount.update({
-      where: { id: account.id },
-      data: { isDefault: true },
-      select: {
-        id: true,
-        bankName: true,
-        bankCode: true,
-        accountNumber: true,
-        accountName: true,
-        isDefault: true,
-        createdAt: true,
-      },
+    return NextResponse.json({
+      bankAccount: { ...updated, displayName: bankAccountDisplayName(updated) },
     })
+  }
+
+  const resolvedNickname = body.nickname === '' ? null : body.nickname.trim()
+  const updated = await prisma.bankAccount.update({
+    where: { id: account.id },
+    data: { nickname: resolvedNickname },
+    select: bankAccountSelect,
   })
 
-  return NextResponse.json({ bankAccount: updated })
+  return NextResponse.json({
+    bankAccount: { ...updated, displayName: bankAccountDisplayName(updated) },
+  })
 }
 
 async function DELETEHandler(
@@ -133,7 +185,10 @@ async function DELETEHandler(
   if (!user)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const account = await prisma.bankAccount.findUnique({ where: { id } })
+  const account = await prisma.bankAccount.findUnique({
+    where: { id },
+    select: { id: true, userId: true, isDefault: true },
+  })
   if (!account)
     return NextResponse.json(
       { error: 'Bank account not found' },
