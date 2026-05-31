@@ -27,6 +27,13 @@ async function GETHandler(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const unreadOnly = searchParams.get('unread') === 'true'
+    const cursor = searchParams.get('cursor')
+    const limit = searchParams.get('limit')
+
+    const pagination = getCursorPagination({ cursor, limit }, 20)
+    if (!pagination.isValidCursor) {
+      return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+    }
 
     const limit = Math.min(
       100,
