@@ -1,8 +1,10 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { decodeCursor, encodeCursor } from '../../_lib/cursor'
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
   if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -11,38 +13,65 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
   const { searchParams } = new URL(request.url)
-  const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
-  const limit = Math.min(50, Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10) || 20))
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(searchParams.get('limit') || '25', 10) || 25),
+  )
 
-  const [invoices, total] = await Promise.all([
-    prisma.invoice.findMany({
-      where: {
-        userId: user.id,
-        isConfidential: true,
-      },
-      orderBy: { updatedAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      select: {
-        id: true,
-        invoiceNumber: true,
-        clientName: true,
-        amount: true,
-        currency: true,
-        status: true,
-        createdAt: true,
-      },
-    }),
-    prisma.invoice.count({ where: { userId: user.id, isConfidential: true } }),
-  ])
+  const cursorParam = searchParams.get('cursor')
+  const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
 
-  return NextResponse.json({
-    invoices: invoices.map((invoice) => ({ ...invoice, amount: Number(invoice.amount) })),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
+  if (cursorParam && !decodedCursor) {
+    return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+  }
+
+  const where = {
+    userId: user.id,
+    isConfidential: true,
+    ...(decodedCursor
+      ? {
+          OR: [
+            { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+            {
+              AND: [
+                { createdAt: new Date(decodedCursor.createdAt) },
+                { id: { lt: decodedCursor.id } },
+              ],
+            },
+          ],
+        }
+      : {}),
+  }
+
+  const invoices = await prisma.invoice.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    select: {
+      id: true,
+      invoiceNumber: true,
+      clientName: true,
+      amount: true,
+      currency: true,
+      status: true,
+      createdAt: true,
     },
   })
+
+  const hasNext = invoices.length > limit
+  const page = hasNext ? invoices.slice(0, limit) : invoices
+  const last = page[page.length - 1]
+
+  return NextResponse.json({
+    invoices: page.map((invoice) => ({ ...invoice, amount: Number(invoice.amount) })),
+    nextCursor:
+      hasNext && last
+        ? encodeCursor({
+            createdAt: last.createdAt.toISOString(),
+            id: last.id,
+          })
+        : null,
+  })
 }
+
+export const GET = withRequestId(GETHandler)

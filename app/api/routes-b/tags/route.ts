@@ -1,11 +1,22 @@
+import crypto from 'node:crypto'
+
 import { withRequestId } from '../_lib/with-request-id'
 import { withBodyLimit } from '../_lib/with-body-limit'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { normalizeString } from '../_lib/normalize'
 
 import { registerRoute } from '../_lib/openapi'
 import { z } from 'zod'
+
+import {
+  getIdempotentResponse,
+  setIdempotentResponse,
+} from '../_lib/idempotency'
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000
 
 /* ---------------- OPENAPI ---------------- */
 
@@ -33,7 +44,7 @@ registerRoute({
   method: 'POST',
   path: '/tags',
   summary: 'Create tag',
-  description: 'Create a new tag for organizing invoices.',
+  description: 'Create a tag for organizing invoices.',
   requestSchema: z.object({
     name: z.string().min(1).max(50),
     color: z
@@ -52,16 +63,23 @@ registerRoute({
 
 /* ---------------- AUTH ---------------- */
 
-async function getAuthenticatedUser(request: NextRequest) {
+async function getAuthenticatedUser(
+  request: NextRequest
+) {
   const authToken = request.headers
     .get('authorization')
     ?.replace('Bearer ', '')
 
-  const claims = await verifyAuthToken(authToken || '')
+  const claims = await verifyAuthToken(
+    authToken || ''
+  )
+
   if (!claims) return null
 
   return prisma.user.findUnique({
-    where: { privyId: claims.userId },
+    where: {
+      privyId: claims.userId,
+    },
   })
 }
 
@@ -78,10 +96,20 @@ async function GETHandler(request: NextRequest) {
   }
 
   const tags = await prisma.tag.findMany({
-    where: { userId: user.id },
-    orderBy: { name: 'asc' },
+    where: {
+      userId: user.id,
+    },
+
+    orderBy: {
+      name: 'asc',
+    },
+
     include: {
-      _count: { select: { invoiceTags: true } },
+      _count: {
+        select: {
+          invoiceTags: true,
+        },
+      },
     },
   })
 
@@ -108,7 +136,12 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
-  let body: { name?: unknown; color?: unknown }
+  const idempotencyKey = request.headers.get('idempotency-key')
+
+  let body: {
+    name?: unknown
+    color?: unknown
+  }
 
   try {
     body = await request.json()
@@ -119,13 +152,36 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
-  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const bodyHash = idempotencyKey ? crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex') : ''
+
+  if (idempotencyKey) {
+    const cached = getIdempotentResponse(idempotencyKey)
+
+    if (cached) {
+      if (cached.bodyHash !== bodyHash) {
+        return NextResponse.json(
+          { error: 'Idempotency-Key conflict' },
+          { status: 409 }
+        )
+      }
+
+      return NextResponse.json(
+        cached.body,
+        { status: cached.status }
+      )
+    }
+  }
+
+  const name =
+    typeof body.name === 'string'
+      ? normalizeString(body.name)
+      : ''
+
   const color =
     typeof body.color === 'string'
       ? body.color
       : '#6366f1'
 
-  // validation
   if (!name) {
     return NextResponse.json(
       { error: 'Tag name is required' },
@@ -135,7 +191,10 @@ async function POSTHandler(request: NextRequest) {
 
   if (name.length > 50) {
     return NextResponse.json(
-      { error: 'Tag name must be at most 50 characters' },
+      {
+        error:
+          'Tag name must be at most 50 characters',
+      },
       { status: 400 }
     )
   }
@@ -147,16 +206,18 @@ async function POSTHandler(request: NextRequest) {
     )
   }
 
-  // duplicate check
-  const existingTag = await prisma.tag.findUnique({
+  const existing = await prisma.tag.findUnique({
     where: {
-      userId_name: { userId: user.id, name },
+      userId_name: {
+        userId: user.id,
+        name,
+      },
     },
   })
 
-  if (existingTag) {
+  if (existing) {
     return NextResponse.json(
-      { error: 'Tag with this name already exists' },
+      { error: 'Tag already exists' },
       { status: 409 }
     )
   }
@@ -167,25 +228,48 @@ async function POSTHandler(request: NextRequest) {
       name,
       color,
     },
+
+    include: {
+      _count: {
+        select: {
+          invoiceTags: true,
+        },
+      },
+    },
   })
 
+  const responseBody = {
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    invoiceCount: tag._count.invoiceTags,
+  }
+
+  if (idempotencyKey) {
+    setIdempotentResponse(
+      idempotencyKey,
+      {
+        bodyHash,
+        status: 201,
+        body: responseBody,
+      },
+      IDEMPOTENCY_TTL_MS
+    )
+  }
+
   return NextResponse.json(
-    {
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-      invoiceCount: 0,
-    },
+    responseBody,
     { status: 201 }
   )
 }
 
 /* ---------------- EXPORTS ---------------- */
 
-export const GET = withRequestId(GETHandler)
-
-export const POST = withRequestId(
-  withBodyLimit(POSTHandler, {
-    limitBytes: 1024 * 1024,
-  })
-)
+export const { GET, POST } = withMethods({
+  GET: withRequestId(GETHandler),
+  POST: withRequestId(
+    withBodyLimit(POSTHandler, {
+      limitBytes: 1024 * 1024,
+    })
+  ),
+})

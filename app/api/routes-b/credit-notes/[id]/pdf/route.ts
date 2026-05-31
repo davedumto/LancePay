@@ -1,11 +1,10 @@
 import { withRequestId } from '../../../_lib/with-request-id'
+import { withMethods } from '../../../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { renderToStream } from '@react-pdf/renderer'
 import { getCreditNoteById } from '../../../_lib/credit-notes'
-import { CreditNotePDF } from '../../../_lib/CreditNotePDF'
-import React from 'react'
+import { streamPDF, type PDFSpec } from '../../../_lib/pdf'
 
 export const runtime = 'nodejs'
 
@@ -25,19 +24,39 @@ async function GETHandler(
     const note = await getCreditNoteById(user.id, id)
     if (!note) return NextResponse.json({ error: 'Credit note not found' }, { status: 404 })
 
-    const stream = await renderToStream(
-      React.createElement(CreditNotePDF, { note, user })
-    )
+    const pdfSpec: PDFSpec = {
+      title: `Credit Note ${note.number}`,
+      filename: `credit-note-${note.number}.pdf`,
+      sections: [
+        {
+          title: 'Issued To',
+          content: user.name || user.email || '',
+        },
+        {
+          title: 'Invoice Ref',
+          content: note.invoiceId,
+        },
+        {
+          title: 'Amount',
+          content: `${note.amount} ${note.currency}`,
+        },
+        {
+          title: 'Reason',
+          content: note.reason,
+        },
+        {
+          title: 'Date',
+          content: new Date(note.issuedAt).toLocaleDateString(),
+        },
+      ],
+    }
 
-    return new NextResponse(stream as unknown as ReadableStream, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="credit-note-${note.number}.pdf"`,
-      },
-    })
+    return streamPDF(pdfSpec)
   } catch (error) {
     return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 })
   }
 }
 
-export const GET = withRequestId(GETHandler)
+export const { GET } = withMethods({
+  GET: withRequestId(GETHandler),
+})

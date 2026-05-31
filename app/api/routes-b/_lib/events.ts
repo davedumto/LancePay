@@ -35,3 +35,38 @@ export function emitInvoicePaid(payload: InvoicePaidPayload): void {
     }
   }
 }
+
+type StatsInvalidatedPayload = {
+  userId: string;
+};
+
+type StatsInvalidatedListener = (payload: StatsInvalidatedPayload) => void;
+
+const statsInvalidatedListeners = new Set<StatsInvalidatedListener>();
+
+/**
+ * Subscribes to stats cache invalidation events.
+ * Returns an unsubscribe function.
+ */
+export function onStatsInvalidated(listener: StatsInvalidatedListener): () => void {
+  statsInvalidatedListeners.add(listener);
+
+  return () => {
+    statsInvalidatedListeners.delete(listener);
+  };
+}
+
+/**
+ * Emits a stats cache invalidation event to all listeners.
+ */
+export function emitStatsInvalidated(payload: StatsInvalidatedPayload): void {
+  const listeners = Array.from(statsInvalidatedListeners);
+
+  for (const listener of listeners) {
+    try {
+      listener(payload);
+    } catch (err) {
+      console.error("StatsInvalidated listener error:", err);
+    }
+  }
+}

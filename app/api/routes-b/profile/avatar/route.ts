@@ -3,7 +3,9 @@ import { withBodyLimit } from '../../_lib/with-body-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { getMaxFileSize, isAllowedMimeType } from '../../_lib/file-signature'
+import { logger } from '@/lib/logger'
+import { withCompression } from '../../_lib/with-compression'
+import { errorResponse } from '../../_lib/errors'
 
 function isValidHttpsUrl(url: string): boolean {
   try {
@@ -14,101 +16,89 @@ function isValidHttpsUrl(url: string): boolean {
 }
 
 async function PATCHHandler(request: NextRequest) {
-  const authToken = request.headers
-    .get('authorization')
-    ?.replace('Bearer ', '')
-
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
-  }
-
-  let body: { avatarUrl?: unknown; fileSize?: unknown; mimeType?: unknown }
+  const requestId = request.headers.get('x-request-id')
 
   try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body' },
-      { status: 400 }
+    const authToken = request.headers
+      .get('authorization')
+      ?.replace('Bearer ', '')
+
+    const claims = await verifyAuthToken(authToken || '')
+
+    if (!claims) {
+      return withCompression(
+        request,
+        errorResponse('UNAUTHORIZED', 'Unauthorized', { requestId }, 401),
+      )
+    }
+
+    let body: { avatarUrl?: unknown }
+
+    try {
+      body = await request.json()
+    } catch {
+      return withCompression(
+        request,
+        errorResponse('BAD_REQUEST', 'Invalid JSON body', { requestId }, 400),
+      )
+    }
+
+    const { avatarUrl } = body ?? {}
+
+    if (avatarUrl !== null && typeof avatarUrl !== 'string') {
+      return withCompression(
+        request,
+        errorResponse('BAD_REQUEST', 'avatarUrl must be a string or null', { requestId }, 400),
+      )
+    }
+
+    if (typeof avatarUrl === 'string') {
+      if (avatarUrl.length > 512) {
+        return withCompression(
+          request,
+          errorResponse('BAD_REQUEST', 'avatarUrl must not exceed 512 characters', { requestId }, 400),
+        )
+      }
+
+      if (!isValidHttpsUrl(avatarUrl)) {
+        return withCompression(
+          request,
+          errorResponse('BAD_REQUEST', 'avatarUrl must be a valid HTTPS URL', { requestId }, 400),
+        )
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { privyId: claims.userId },
+      data: { avatarUrl: avatarUrl ?? null },
+      select: { avatarUrl: true },
+    })
+
+    return withCompression(
+      request,
+      NextResponse.json({
+        avatarUrl: updatedUser.avatarUrl,
+      }),
+    )
+  } catch (error) {
+    logger.error({ err: error }, 'Routes B profile/avatar PATCH error')
+
+    return withCompression(
+      request,
+      errorResponse(
+        'INTERNAL',
+        'Failed to update avatar',
+        { requestId },
+        500,
+      ),
     )
   }
-
-  const { avatarUrl, fileSize, mimeType } = body ?? {}
-
-  if (avatarUrl !== null && typeof avatarUrl !== 'string') {
-    return NextResponse.json(
-      { error: 'avatarUrl must be a string or null' },
-      { status: 400 }
-    )
-  }
-
-  if (fileSize !== undefined) {
-    if (typeof fileSize !== 'number' || !Number.isFinite(fileSize) || fileSize < 0) {
-      return NextResponse.json(
-        { error: 'fileSize must be a non-negative number' },
-        { status: 400 }
-      )
-    }
-
-    if (fileSize > getMaxFileSize()) {
-      return NextResponse.json(
-        { error: `Avatar exceeds ${getMaxFileSize()} bytes` },
-        { status: 413 }
-      )
-    }
-  }
-
-  if (mimeType !== undefined) {
-    if (typeof mimeType !== 'string') {
-      return NextResponse.json(
-        { error: 'mimeType must be a string' },
-        { status: 400 }
-      )
-    }
-
-    if (!isAllowedMimeType(mimeType)) {
-      return NextResponse.json(
-        { error: 'Unsupported avatar MIME type' },
-        { status: 415 }
-      )
-    }
-  }
-
-  if (typeof avatarUrl === 'string') {
-    if (avatarUrl.length > 512) {
-      return NextResponse.json(
-        { error: 'avatarUrl must not exceed 512 characters' },
-        { status: 400 }
-      )
-    }
-
-    if (!isValidHttpsUrl(avatarUrl)) {
-      return NextResponse.json(
-        { error: 'avatarUrl must be a valid HTTPS URL' },
-        { status: 400 }
-      )
-    }
-  }
-
-  const updatedUser = await prisma.user.update({
-    where: { privyId: claims.userId },
-    data: { avatarUrl: avatarUrl ?? null },
-    select: { avatarUrl: true },
-  })
-
-  return NextResponse.json({
-    avatarUrl: updatedUser.avatarUrl,
-  })
 }
 
 /**
- * Middleware order matters:
- * - requestId wraps everything
- * - bodyLimit protects payload size
+ * Middleware order:
+ * 1. requestId
+ * 2. bodyLimit
  */
 export const PATCH = withRequestId(
   withBodyLimit(PATCHHandler, {

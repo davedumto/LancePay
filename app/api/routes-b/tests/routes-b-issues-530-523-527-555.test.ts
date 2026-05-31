@@ -78,6 +78,31 @@ describe('routes-b issues 530/523/527/555', () => {
     expect(loggerMock.warn).toHaveBeenCalledTimes(2)
   })
 
+  it('523: withRetry stops retrying when maxTotalMs would be exceeded', async () => {
+    const { withRetry } = await import('../_lib/retry')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    let tries = 0
+    const failing = withRetry(
+      async () => {
+        tries += 1
+        const error = new Error('5xx') as Error & { status?: number }
+        error.status = 503
+        throw error
+      },
+      { baseDelayMs: 1_000, maxAttempts: 5, maxTotalMs: 500 },
+    )
+
+    // If the cap is respected, we should reject immediately (no sleep).
+    await expect(failing).rejects.toThrow('5xx')
+    expect(tries).toBe(1)
+
+    vi.useRealTimers()
+  })
+
   it('527: dashboard summary query count stays constant with large grouped data', async () => {
     const middlewareSpy = vi.fn()
     prismaMock.invoice.groupBy.mockImplementation(async () => {

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { parseAuditFilters } from '../../_lib/audit-filters'
+import { getSeverity, buildSeverityFilter } from '../../_lib/audit-severity'
 
 async function GETHandler(
   request: NextRequest,
@@ -34,6 +35,7 @@ async function GETHandler(
         gte: filters.value.from,
         lte: filters.value.to,
       },
+      ...buildSeverityFilter(new URL(request.url).searchParams.get('severity')),
       ...(filters.value.actor ? { actorId: filters.value.actor } : {}),
       invoice: {
         userId: user.id,
@@ -50,6 +52,7 @@ async function GETHandler(
       resourceId: event.invoiceId,
       ipAddress: null,
       userAgent: null,
+      severity: getSeverity(event.eventType),
       createdAt: event.createdAt,
     })),
   })

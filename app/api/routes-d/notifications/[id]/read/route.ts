@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { checkRateLimit } from '../../../_lib/rate-limit'
 
 /**
  * PATCH /api/routes-d/notifications/[id]/read
@@ -23,6 +24,21 @@ export async function PATCH(
   })
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  }
+
+  const rateLimit = checkRateLimit(`notifications:read:${user.id}`, {
+    limit: 30,
+    windowMs: 60_000,
+  })
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfter) },
+      },
+    )
   }
 
   const { id } = await params

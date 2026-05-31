@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 export type InvoiceListFilters = {
   number: string | null
   client: string | null
+  notes: string | null
   minAmount: string | null
   maxAmount: string | null
   currency: string | null
@@ -28,6 +29,10 @@ export function buildInvoiceWhereFilters(filters: InvoiceListFilters): Prisma.In
 
   if (filters.client) {
     where.clientName = { contains: filters.client, mode: 'insensitive' }
+  }
+
+  if (filters.notes) {
+    where.notes = { contains: filters.notes, mode: 'insensitive' }
   }
 
   const minAmount = parsePositiveAmount(filters.minAmount)
