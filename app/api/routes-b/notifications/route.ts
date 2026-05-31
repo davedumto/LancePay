@@ -1,9 +1,12 @@
 import { withRequestId } from '../_lib/with-request-id'
+import { withMethods } from '../_lib/with-methods'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-import { getCursorPagination, buildPaginationResponse } from '../_lib/pagination'
+import { isNotificationSnoozed } from '../_lib/notification-snooze'
+import { decodeCursor, encodeCursor } from '../_lib/cursor'
+import { buildLinkHeader } from '../_lib/link-header'
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -32,14 +35,53 @@ async function GETHandler(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
     }
 
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(searchParams.get('limit') || '25', 10) || 25),
+    )
+
+    const cursorParam = searchParams.get('cursor')
+    const decodedCursor = cursorParam ? decodeCursor(cursorParam) : null
+
+    if (cursorParam && !decodedCursor) {
+      return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+    }
+
+    const where = {
+      userId: user.id,
+      ...(unreadOnly ? { isRead: false } : {}),
+      ...(decodedCursor
+        ? {
+            OR: [
+              {
+                createdAt: {
+                  lt: new Date(decodedCursor.createdAt),
+                },
+              },
+              {
+                AND: [
+                  {
+                    createdAt: new Date(decodedCursor.createdAt),
+                  },
+                  {
+                    id: {
+                      lt: decodedCursor.id,
+                    },
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
+    }
+
     const notifications = await prisma.notification.findMany({
-      where: {
-        userId: user.id,
-        ...(unreadOnly ? { isRead: false } : {}),
-        ...pagination.where,
-      },
-      orderBy: pagination.orderBy,
-      take: pagination.take,
+      where,
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      take: limit + 1,
       select: {
         id: true,
         type: true,
@@ -50,20 +92,43 @@ async function GETHandler(request: NextRequest) {
       },
     })
 
-    const unreadCount = await prisma.notification.count({
-      where: { userId: user.id, isRead: false },
-    })
+    const hasNext = notifications.length > limit
+    const page = hasNext
+      ? notifications.slice(0, limit)
+      : notifications
 
-    const response = buildPaginationResponse(notifications, pagination.limit)
+    const last = page[page.length - 1]
+    const nextCursor = hasNext && last
+      ? encodeCursor({
+          createdAt: last.createdAt.toISOString(),
+          id: last.id,
+        })
+      : null
 
-    return NextResponse.json({
-      ...response,
+    const visibleNotifications = page.filter(
+      n => !isNotificationSnoozed(n.id),
+    )
+
+    const unreadCount = visibleNotifications.filter(n => !n.isRead).length
+
+    const response = NextResponse.json({
+      notifications: visibleNotifications,
       unreadCount,
+      nextCursor,
     })
+
+    const linkHeader = buildLinkHeader(request.url, nextCursor)
+    if (linkHeader) {
+      response.headers.set('Link', linkHeader)
+    }
+
+    return response
   } catch (error) {
     logger.error({ err: error }, 'Routes B notifications GET error')
     return NextResponse.json({ error: 'Failed to get notifications' }, { status: 500 })
   }
 }
 
-export const GET = withRequestId(GETHandler)
+export const { GET } = withMethods({
+  GET: withRequestId(GETHandler),
+})

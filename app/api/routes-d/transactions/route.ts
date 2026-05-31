@@ -28,9 +28,8 @@ export async function GET(request: NextRequest) {
   }
 
   const url = new URL(request.url)
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1)
+  const cursor = url.searchParams.get('cursor')
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10) || 20))
-  const skip = (page - 1) * limit
   const type = url.searchParams.get('type')
   const status = url.searchParams.get('status')
 
@@ -54,25 +53,40 @@ export async function GET(request: NextRequest) {
     ...(status ? { status } : {}),
   }
 
-  const [transactions, total] = await Promise.all([
-    prisma.transaction.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-      include: {
-        invoice: {
-          select: {
-            invoiceNumber: true,
-          },
+  // If cursor is provided, filter for transactions created before the cursor's timestamp
+  const cursorWhere = cursor
+    ? {
+        ...where,
+        createdAt: {
+          lt: new Date(cursor),
+        },
+      }
+    : where
+
+  const transactions = await prisma.transaction.findMany({
+    where: cursorWhere,
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1, // Fetch one extra to determine if there's a next page
+    include: {
+      invoice: {
+        select: {
+          invoiceNumber: true,
         },
       },
-    }),
-    prisma.transaction.count({ where }),
-  ])
+    },
+  })
+
+  // Determine if there's a next page
+  const hasNextPage = transactions.length > limit
+  const paginatedTransactions = hasNextPage ? transactions.slice(0, limit) : transactions
+
+  // Generate next cursor from the last transaction's createdAt timestamp
+  const nextCursor = hasNextPage && paginatedTransactions.length > 0
+    ? paginatedTransactions[paginatedTransactions.length - 1].createdAt.toISOString()
+    : null
 
   return NextResponse.json({
-    transactions: transactions.map((transaction: (typeof transactions)[number]) => ({
+    transactions: paginatedTransactions.map((transaction: (typeof paginatedTransactions)[number]) => ({
       id: transaction.id,
       type: transaction.type,
       status: transaction.status,
@@ -85,11 +99,6 @@ export async function GET(request: NextRequest) {
           : null,
       createdAt: transaction.createdAt,
     })),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    nextCursor,
   })
 }

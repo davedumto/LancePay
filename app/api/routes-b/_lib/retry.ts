@@ -13,6 +13,8 @@ type RetryContext = {
 type RetryOptions = {
   maxAttempts?: number
   baseDelayMs?: number
+  /** Hard cap on total retry time (including backoff sleeps), in ms. */
+  maxTotalMs?: number
   shouldRetry?: (error: RetryableError, context: RetryContext) => boolean
   onRetry?: (payload: { attempt: number; delay: number; error: string }) => void
 }
@@ -30,12 +32,14 @@ export function isNetworkError(error: RetryableError): boolean {
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const maxAttempts = options.maxAttempts ?? 3
   const baseDelayMs = options.baseDelayMs ?? 200
+  const maxTotalMs = options.maxTotalMs
   const shouldRetry =
     options.shouldRetry ??
     ((error: RetryableError) => isRetryableStatusError(error) || isNetworkError(error))
 
   let attempt = 0
   let lastError: RetryableError | undefined
+  const startedAt = Date.now()
 
   while (attempt < maxAttempts) {
     attempt += 1
@@ -55,6 +59,15 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions =
       const payload = { attempt, delay, error: typedError.message || 'Unknown error' }
       options.onRetry?.(payload)
       logger.warn(payload, 'Retrying operation after transient failure')
+
+      if (typeof maxTotalMs === 'number' && Number.isFinite(maxTotalMs) && maxTotalMs > 0) {
+        const elapsedMs = Date.now() - startedAt
+        const remainingMs = maxTotalMs - elapsedMs
+        if (remainingMs <= 0 || delay > remainingMs) {
+          throw typedError
+        }
+      }
+
       await sleep(delay)
     }
   }

@@ -3,24 +3,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { createCsvStream } from '../../_lib/csv-stream'
+import { errorResponse } from '../../_lib/errors'
 import type { Prisma } from '@prisma/client'
 
 async function GETHandler(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   if (!authToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse('UNAUTHORIZED', 'Unauthorized', {}, 401)
   }
 
   const claims = await verifyAuthToken(authToken)
   if (!claims) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    return errorResponse('UNAUTHORIZED', 'Invalid token', {}, 401)
   }
 
   const user = await prisma.user.findUnique({
     where: { privyId: claims.userId },
   })
   if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    return errorResponse('NOT_FOUND', 'User not found', {}, 404)
   }
 
   const { searchParams } = new URL(request.url)
@@ -34,14 +35,14 @@ async function GETHandler(request: NextRequest) {
     if (from) {
       const fromDate = new Date(from)
       if (isNaN(fromDate.getTime())) {
-        return NextResponse.json({ error: 'Invalid from date' }, { status: 400 })
+        return errorResponse('BAD_REQUEST', 'Invalid from date', { fields: { from: 'Must be a valid ISO date string' } }, 400)
       }
       where.createdAt.gte = fromDate
     }
     if (to) {
       const toDate = new Date(to)
       if (isNaN(toDate.getTime())) {
-        return NextResponse.json({ error: 'Invalid to date' }, { status: 400 })
+        return errorResponse('BAD_REQUEST', 'Invalid to date', { fields: { to: 'Must be a valid ISO date string' } }, 400)
       }
       where.createdAt.lte = toDate
     }

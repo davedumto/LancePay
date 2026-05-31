@@ -4,6 +4,9 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { withRetry } from '../../_lib/retry'
 import { logger } from '@/lib/logger'
+import { checkResourceOwnership } from '../../_lib/access-control'
+import { withCompression } from '../../_lib/with-compression'
+import { errorResponse } from '../../_lib/errors'
 
 type OfframpStatusResponse = { status?: string; description?: string }
 
@@ -27,33 +30,15 @@ async function fetchOfframpStatus(txHash: string): Promise<OfframpStatusResponse
     return (await response.json()) as OfframpStatusResponse
 }
 
-async function GETHandler(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    const claims = await verifyAuthToken(authToken || '')
-    if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-    const { id } = await params
-
-    const transaction = await prisma.transaction.findUnique({
-        where: { id },
-    })
-
-    if (!transaction) return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    if (transaction.type !== 'withdrawal') return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    if (transaction.userId !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-    const providerStatus = transaction.txHash
-        ? await withRetry(
-            async () => fetchOfframpStatus(transaction.txHash!),
+async function fetchProviderStatus(txHash: string): Promise<OfframpStatusResponse> {
+    try {
+        return await withRetry(
+            async () => fetchOfframpStatus(txHash),
             {
                 maxAttempts: 3,
                 baseDelayMs: 200,
+                // Keep this endpoint responsive even if the upstream is flaky.
+                maxTotalMs: 1_500,
                 onRetry: ({ attempt, delay, error }) => {
                     logger.warn({ attempt, delay, error }, 'routes-b withdrawal status retry')
                 },
@@ -64,20 +49,91 @@ async function GETHandler(
                 },
             },
         )
-        : {}
+    } catch (error) {
+        logger.warn({ error }, 'routes-b withdrawal status upstream failed after retries')
+        return {}
+    }
+}
 
-    return NextResponse.json({
-        withdrawal: {
-            id: transaction.id,
-            type: transaction.type,
-            status: providerStatus.status ?? transaction.status,
-            amount: Number(transaction.amount),
-            currency: transaction.currency,
-            description: providerStatus.description ?? (transaction.error || null),
-            stellarTxHash: transaction.txHash,
-            createdAt: transaction.createdAt,
-        },
-    })
+async function GETHandler(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const requestId = request.headers.get('x-request-id')
+
+    try {
+        const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+        const claims = await verifyAuthToken(authToken || '')
+        if (!claims) {
+            return withCompression(
+                request,
+                errorResponse('UNAUTHORIZED', 'Unauthorized', { requestId }, 401),
+            )
+        }
+
+        const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+        if (!user) {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'User not found', { requestId }, 404),
+            )
+        }
+
+        const { id } = await params
+
+        const transaction = await prisma.transaction.findUnique({
+            where: { id },
+        })
+
+        if (!transaction) {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'Withdrawal not found', { requestId }, 404),
+            )
+        }
+
+        if (transaction.type !== 'withdrawal') {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'Withdrawal not found', { requestId }, 404),
+            )
+        }
+
+        const accessCheck = checkResourceOwnership(transaction.userId, user.id)
+        if (accessCheck) return accessCheck
+
+        const providerStatus = transaction.txHash
+            ? await fetchProviderStatus(transaction.txHash!)
+            : {}
+
+        return withCompression(
+            request,
+            NextResponse.json({
+                withdrawal: {
+                    id: transaction.id,
+                    type: transaction.type,
+                    status: providerStatus.status ?? transaction.status,
+                    amount: Number(transaction.amount),
+                    currency: transaction.currency,
+                    description: providerStatus.description ?? (transaction.error || null),
+                    stellarTxHash: transaction.txHash,
+                    createdAt: transaction.createdAt,
+                },
+            }),
+        )
+    } catch (error) {
+        logger.error({ err: error }, 'Routes B withdrawals/[id] GET error')
+
+        return withCompression(
+            request,
+            errorResponse(
+                'INTERNAL',
+                'Failed to fetch withdrawal',
+                { requestId },
+                500,
+            ),
+        )
+    }
 }
 
 export const GET = withRequestId(GETHandler)

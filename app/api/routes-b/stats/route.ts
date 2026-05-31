@@ -3,8 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
 import { registerRoute } from '../_lib/openapi'
-import { getCacheValue, setCacheValue } from '../_lib/cache'
+import {
+  ensureStatsCacheInvalidationHooks,
+  getCachedStats,
+  setCachedStats,
+} from '../_lib/stats-cache'
+import { withCompression } from '../_lib/with-compression'
 import { errorResponse } from '../_lib/errors'
+import { parseUtcDateRange } from '../_lib/date-range'
 import { z } from 'zod'
 
 // Register OpenAPI documentation
@@ -28,56 +34,74 @@ registerRoute({
   tags: ['stats'],
 })
 
-async function GETHandler(request: NextRequest) {
-  try {
-    const auth = await requireScope(request, 'routes-b:read')
-    const cacheKey = `routes-b:stats:${auth.userId}`
-    const cached = getCacheValue<{
-      invoices: {
-        total: number
-        pending: number
-        paid: number
-        cancelled: number
-        overdue: number
-      }
-      totalEarned: number
-      pendingWithdrawals: number
-    }>(cacheKey)
-    if (cached) {
-      return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } })
-    }
+type StatsPayload = {
+  invoices: {
+    total: number
+    pending: number
+    paid: number
+    cancelled: number
+    overdue: number
+  }
+  totalEarned: number
+  pendingWithdrawals: number
+}
 
-    const user = await prisma.user.findUnique({ where: { id: auth.userId } })
-    if (!user) {
-      return errorResponse(
-        'NOT_FOUND',
-        'User not found',
-        undefined,
-        404,
-        request.headers.get('x-request-id'),
+async function GETHandler(request: NextRequest) {
+  const requestId = request.headers.get('x-request-id')
+
+  try {
+    ensureStatsCacheInvalidationHooks()
+    const auth = await requireScope(request, 'routes-b:read')
+
+    const cached = getCachedStats<StatsPayload>(auth.userId)
+
+    if (cached) {
+      return withCompression(
+        request,
+        NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } }),
       )
     }
 
-    const [invoiceStats, totalEarned, pendingWithdrawals] = await Promise.all([
-      prisma.invoice.groupBy({
-        by: ['status'],
-        where: { userId: user.id },
-        _count: { id: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { userId: user.id, type: 'payment', status: 'completed' },
-        _sum: { amount: true },
-      }),
-      prisma.transaction.count({
-        where: { userId: user.id, type: 'withdrawal', status: 'pending' },
-      }),
-    ])
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+    })
+
+    if (!user) {
+      return withCompression(
+        request,
+        errorResponse('NOT_FOUND', 'User not found', undefined, 404, requestId),
+      )
+    }
+
+    const [invoiceStats, totalEarned, pendingWithdrawals] =
+      await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['status'],
+          where: { userId: user.id },
+          _count: { id: true },
+        }),
+        prisma.transaction.aggregate({
+          where: {
+            userId: user.id,
+            type: 'payment',
+            status: 'completed',
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.count({
+          where: {
+            userId: user.id,
+            type: 'withdrawal',
+            status: 'pending',
+          },
+        }),
+      ])
 
     const counts = Object.fromEntries(
       invoiceStats.map(s => [s.status, s._count.id]),
     )
 
-    const payload = {
+    const currentStats: StatsPayload = {
       invoices: {
         total: invoiceStats.reduce((sum, s) => sum + s._count.id, 0),
         pending: counts.pending ?? 0,
@@ -89,24 +113,35 @@ async function GETHandler(request: NextRequest) {
       pendingWithdrawals,
     }
 
-    setCacheValue(cacheKey, payload, 60_000)
-    return NextResponse.json(payload, { headers: { 'X-Cache': 'MISS' } })
+    setCachedStats(auth.userId, currentStats)
+
+    return withCompression(
+      request,
+      NextResponse.json(currentStats, { headers: { 'X-Cache': 'MISS' } }),
+    )
   } catch (error) {
     if (error instanceof RoutesBForbiddenError) {
-      return errorResponse(
-        'FORBIDDEN',
-        'Forbidden',
-        { scope: error.code },
-        403,
-        request.headers.get('x-request-id'),
+      return withCompression(
+        request,
+        errorResponse(
+          'FORBIDDEN',
+          'Forbidden',
+          { scope: error.code },
+          403,
+          requestId,
+        ),
       )
     }
-    return errorResponse(
-      'UNAUTHORIZED',
-      'Unauthorized',
-      undefined,
-      401,
-      request.headers.get('x-request-id'),
+
+    return withCompression(
+      request,
+      errorResponse(
+        'UNAUTHORIZED',
+        'Unauthorized',
+        undefined,
+        401,
+        requestId,
+      ),
     )
   }
 }
