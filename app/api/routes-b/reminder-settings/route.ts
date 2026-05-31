@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { withCompression } from '../_lib/with-compression'
+import { errorResponse } from '../_lib/errors'
 
 import {
   DEFAULT_REMINDER_SETTINGS,
@@ -123,13 +125,15 @@ async function persistReminderChannel(
 /* ---------------- GET ---------------- */
 
 async function GETHandler(request: NextRequest) {
+  const requestId = request.headers.get('x-request-id')
+
   try {
     const user = await getAuthenticatedUser(request)
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+      return withCompression(
+        request,
+        errorResponse('UNAUTHORIZED', 'Unauthorized', { requestId }, 401),
       )
     }
 
@@ -147,29 +151,37 @@ async function GETHandler(request: NextRequest) {
         },
       })
 
-    return NextResponse.json({
-      settings: settings
-        ? {
-            id: settings.id,
-            enabled: settings.enabled,
-            firstReminderDays:
-              settings.beforeDueDays[0] ?? null,
-            secondReminderDays:
-              settings.afterDueDays[0] ?? null,
-            sendOnDueDate:
-              settings.onDueEnabled,
-          }
-        : null,
-    })
+    return withCompression(
+      request,
+      NextResponse.json({
+        settings: settings
+          ? {
+              id: settings.id,
+              enabled: settings.enabled,
+              firstReminderDays:
+                settings.beforeDueDays[0] ?? null,
+              secondReminderDays:
+                settings.afterDueDays[0] ?? null,
+              sendOnDueDate:
+                settings.onDueEnabled,
+            }
+          : null,
+      }),
+    )
   } catch (error) {
     logger.error(
       { err: error },
       'reminder settings GET error'
     )
 
-    return NextResponse.json(
-      { error: 'Failed to get reminder settings' },
-      { status: 500 }
+    return withCompression(
+      request,
+      errorResponse(
+        'INTERNAL',
+        'Failed to get reminder settings',
+        { requestId },
+        500,
+      ),
     )
   }
 }
@@ -177,13 +189,15 @@ async function GETHandler(request: NextRequest) {
 /* ---------------- PATCH ---------------- */
 
 async function PATCHHandler(request: NextRequest) {
+  const requestId = request.headers.get('x-request-id')
+
   try {
     const user = await getAuthenticatedUser(request)
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+      return withCompression(
+        request,
+        errorResponse('UNAUTHORIZED', 'Unauthorized', { requestId }, 401),
       )
     }
 
@@ -192,14 +206,14 @@ async function PATCHHandler(request: NextRequest) {
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json(
-        {
-          error: 'Invalid request body',
-          fields: {
-            body: 'Must be valid JSON',
-          },
-        },
-        { status: 422 }
+      return withCompression(
+        request,
+        errorResponse(
+          'BAD_REQUEST',
+          'Invalid request body',
+          { fields: { body: 'Must be valid JSON' }, requestId },
+          422,
+        ),
       )
     }
 
@@ -209,12 +223,14 @@ async function PATCHHandler(request: NextRequest) {
       )
 
     if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error: 'Invalid payload',
-          fields: formatFieldErrors(parsed.error),
-        },
-        { status: 422 }
+      return withCompression(
+        request,
+        errorResponse(
+          'BAD_REQUEST',
+          'Invalid payload',
+          { fields: formatFieldErrors(parsed.error), requestId },
+          422,
+        ),
       )
     }
 
@@ -244,16 +260,20 @@ async function PATCHHandler(request: NextRequest) {
       DEFAULT_REMINDER_SETTINGS.secondReminderDays
 
     if (second <= first) {
-      return NextResponse.json(
-        {
-          error:
-            'Invalid reminder settings payload',
-          fields: {
-            secondReminderDays:
-              'Must be greater than firstReminderDays',
+      return withCompression(
+        request,
+        errorResponse(
+          'BAD_REQUEST',
+          'Invalid reminder settings payload',
+          {
+            fields: {
+              secondReminderDays:
+                'Must be greater than firstReminderDays',
+            },
+            requestId,
           },
-        },
-        { status: 422 }
+          422,
+        ),
       )
     }
 
@@ -326,34 +346,42 @@ async function PATCHHandler(request: NextRequest) {
         writePayload
       )
 
-    return NextResponse.json({
-      settings: {
-        id: settings.id,
-        enabled: settings.enabled,
+    return withCompression(
+      request,
+      NextResponse.json({
+        settings: {
+          id: settings.id,
+          enabled: settings.enabled,
 
-        firstReminderDays:
-          settings.beforeDueDays[0] ?? null,
+          firstReminderDays:
+            settings.beforeDueDays[0] ?? null,
 
-        secondReminderDays:
-          settings.afterDueDays[0] ?? null,
+          secondReminderDays:
+            settings.afterDueDays[0] ?? null,
 
-        sendOnDueDate:
-          settings.onDueEnabled,
+          sendOnDueDate:
+            settings.onDueEnabled,
 
-        ...(channel !== undefined
-          ? { channel }
-          : {}),
-      },
-    })
+          ...(channel !== undefined
+            ? { channel }
+            : {}),
+        },
+      }),
+    )
   } catch (error) {
     logger.error(
       { err: error },
       'reminder settings PATCH error'
     )
 
-    return NextResponse.json(
-      { error: 'Failed to update reminder settings' },
-      { status: 500 }
+    return withCompression(
+      request,
+      errorResponse(
+        'INTERNAL',
+        'Failed to update reminder settings',
+        { requestId },
+        500,
+      ),
     )
   }
 }

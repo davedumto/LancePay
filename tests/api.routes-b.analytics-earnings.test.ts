@@ -19,7 +19,15 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-const BASE_URL = 'http://localhost/api/routes-d/analytics/earnings'
+vi.mock('../../app/api/routes-b/_lib/with-request-id', () => ({
+  withRequestId: (handler: (req: NextRequest) => Promise<Response>) => handler,
+}))
+
+vi.mock('../../app/api/routes-b/_lib/with-compression', () => ({
+  withCompression: (_req: NextRequest, res: any) => res,
+}))
+
+const URL = 'http://localhost/api/routes-b/analytics/earnings'
 
 function makeRequest(
   params: Record<string, string> = {},

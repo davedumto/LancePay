@@ -50,8 +50,8 @@ describe('swr-cache', () => {
     expect(swrGet('k2')).toBeNull()
   })
 
-  it('swrDelete removes an entry', () => {
-    const { swrDelete } = require('../_lib/swr-cache')
+  it('swrDelete removes an entry', async () => {
+    const { swrDelete } = await import('../_lib/swr-cache')
     swrSet('x', 1, 15_000, 60_000)
     swrDelete('x')
     expect(swrGet('x')).toBeNull()
@@ -61,15 +61,16 @@ describe('swr-cache', () => {
 // ── Wallet route tests ────────────────────────────────────────────────────────
 
 const mockWalletFindUnique = vi.hoisted(() => vi.fn())
+const mockVerifyAuthToken = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/auth', () => ({
-  verifyAuthToken: vi.fn().mockResolvedValue({ userId: 'privy-1' }),
+  verifyAuthToken: mockVerifyAuthToken,
 }))
 
 vi.mock('@/lib/db', () => ({
   prisma: {
     user: {
-      findUnique: vi.fn().mockResolvedValue({ id: 'user-swr-1', privyId: 'privy-1' }),
+      findUnique: vi.fn(),
     },
     wallet: {
       findUnique: mockWalletFindUnique,
@@ -79,6 +80,7 @@ vi.mock('@/lib/db', () => ({
 
 import { GET } from '../wallet/route'
 import { prisma } from '@/lib/db'
+import { verifyAuthToken } from '@/lib/auth'
 
 const WALLET_DB = {
   id: 'w-1',
@@ -87,15 +89,16 @@ const WALLET_DB = {
   userId: 'user-swr-1',
 }
 
-function makeReq() {
+function makeReq(headers: Record<string, string> = {}) {
   return new Request('http://localhost/api/routes-b/wallet', {
-    headers: { authorization: 'Bearer tok' },
+    headers: { authorization: 'Bearer tok', ...headers },
   }) as any
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   swrClear()
+  mockVerifyAuthToken.mockResolvedValue({ userId: 'privy-1' })
   vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-swr-1', privyId: 'privy-1' } as any)
   mockWalletFindUnique.mockResolvedValue(WALLET_DB)
 })
@@ -169,5 +172,84 @@ describe('GET /wallet — SWR caching', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.wallet).toBeNull()
+  })
+})
+
+describe('GET /wallet — happy path', () => {
+  it('returns wallet with stellarAddress and createdAt', async () => {
+    const res = await GET(makeReq())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toMatchObject({
+      id: 'w-1',
+      stellarAddress: 'GADDR123',
+      createdAt: WALLET_DB.createdAt.toISOString(),
+    })
+  })
+
+  it('includes requestId in response headers', async () => {
+    const res = await GET(makeReq({ 'x-request-id': 'req-123' }))
+    expect(res.headers.get('X-Request-Id')).toBe('req-123')
+  })
+
+  it('generates requestId if not provided', async () => {
+    const res = await GET(makeReq())
+    expect(res.headers.get('X-Request-Id')).toBeTruthy()
+  })
+})
+
+describe('GET /wallet — auth and ownership', () => {
+  it('returns 401 when auth token is missing', async () => {
+    const res = await GET(new Request('http://localhost/api/routes-b/wallet') as any)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.error).toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Unauthorized',
+    })
+  })
+
+  it('returns 401 when auth token is invalid', async () => {
+    mockVerifyAuthToken.mockResolvedValueOnce(null)
+    const res = await GET(makeReq())
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.error).toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Unauthorized',
+    })
+  })
+
+  it('returns 404 when user not found', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null)
+    const res = await GET(makeReq())
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'User not found',
+    })
+  })
+})
+
+describe('GET /wallet — error handling', () => {
+  it('returns structured error on unexpected error', async () => {
+    vi.mocked(prisma.user.findUnique).mockRejectedValueOnce(new Error('Database connection failed'))
+    const res = await GET(makeReq())
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toMatchObject({
+      code: 'INTERNAL',
+      message: 'Failed to fetch wallet data',
+    })
+    expect(body.requestId).toBeTruthy()
+  })
+
+  it('includes requestId in error response', async () => {
+    vi.mocked(prisma.user.findUnique).mockRejectedValueOnce(new Error('Database error'))
+    const res = await GET(makeReq({ 'x-request-id': 'error-req-456' }))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.requestId).toBe('error-req-456')
   })
 })

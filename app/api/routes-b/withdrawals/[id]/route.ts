@@ -5,6 +5,8 @@ import { verifyAuthToken } from '@/lib/auth'
 import { withRetry } from '../../_lib/retry'
 import { logger } from '@/lib/logger'
 import { checkResourceOwnership } from '../../_lib/access-control'
+import { withCompression } from '../../_lib/with-compression'
+import { errorResponse } from '../../_lib/errors'
 
 type OfframpStatusResponse = { status?: string; description?: string }
 
@@ -57,41 +59,81 @@ async function GETHandler(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    const claims = await verifyAuthToken(authToken || '')
-    if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const requestId = request.headers.get('x-request-id')
 
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    try {
+        const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+        const claims = await verifyAuthToken(authToken || '')
+        if (!claims) {
+            return withCompression(
+                request,
+                errorResponse('UNAUTHORIZED', 'Unauthorized', { requestId }, 401),
+            )
+        }
 
-    const { id } = await params
+        const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
+        if (!user) {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'User not found', { requestId }, 404),
+            )
+        }
 
-    const transaction = await prisma.transaction.findUnique({
-        where: { id },
-    })
+        const { id } = await params
 
-    if (!transaction) return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    if (transaction.type !== 'withdrawal') return NextResponse.json({ error: 'Withdrawal not found' }, { status: 404 })
-    
-    const accessCheck = checkResourceOwnership(transaction.userId, user.id)
-    if (accessCheck) return accessCheck
+        const transaction = await prisma.transaction.findUnique({
+            where: { id },
+        })
 
-    const providerStatus = transaction.txHash
-        ? await fetchProviderStatus(transaction.txHash!)
-        : {}
+        if (!transaction) {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'Withdrawal not found', { requestId }, 404),
+            )
+        }
 
-    return NextResponse.json({
-        withdrawal: {
-            id: transaction.id,
-            type: transaction.type,
-            status: providerStatus.status ?? transaction.status,
-            amount: Number(transaction.amount),
-            currency: transaction.currency,
-            description: providerStatus.description ?? (transaction.error || null),
-            stellarTxHash: transaction.txHash,
-            createdAt: transaction.createdAt,
-        },
-    })
+        if (transaction.type !== 'withdrawal') {
+            return withCompression(
+                request,
+                errorResponse('NOT_FOUND', 'Withdrawal not found', { requestId }, 404),
+            )
+        }
+
+        const accessCheck = checkResourceOwnership(transaction.userId, user.id)
+        if (accessCheck) return accessCheck
+
+        const providerStatus = transaction.txHash
+            ? await fetchProviderStatus(transaction.txHash!)
+            : {}
+
+        return withCompression(
+            request,
+            NextResponse.json({
+                withdrawal: {
+                    id: transaction.id,
+                    type: transaction.type,
+                    status: providerStatus.status ?? transaction.status,
+                    amount: Number(transaction.amount),
+                    currency: transaction.currency,
+                    description: providerStatus.description ?? (transaction.error || null),
+                    stellarTxHash: transaction.txHash,
+                    createdAt: transaction.createdAt,
+                },
+            }),
+        )
+    } catch (error) {
+        logger.error({ err: error }, 'Routes B withdrawals/[id] GET error')
+
+        return withCompression(
+            request,
+            errorResponse(
+                'INTERNAL',
+                'Failed to fetch withdrawal',
+                { requestId },
+                500,
+            ),
+        )
+    }
 }
 
 export const GET = withRequestId(GETHandler)
