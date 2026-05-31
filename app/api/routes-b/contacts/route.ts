@@ -33,10 +33,27 @@ async function GETHandler(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const q = searchParams.get('q')
+    const tag = searchParams.get('tag')
+    const sortRaw = searchParams.get('sort') ?? 'createdAt'
+    const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc'
+
+    if (!VALID_SORT_FIELDS.includes(sortRaw as SortField)) {
+      return NextResponse.json(
+        { error: `Invalid sort field "${sortRaw}". Allowed: ${VALID_SORT_FIELDS.join(', ')}` },
+        { status: 400 },
+      )
+    }
+
+    const sort = sortRaw as SortField
+
     const contacts = await listContacts({
       userId: user.id,
-      search,
+      search: q ?? search,
       includeDeleted,
+      sort,
+      order,
+      tag,
     })
 
     return NextResponse.json({ contacts })
