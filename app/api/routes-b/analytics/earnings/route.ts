@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { parseTzDateRange } from '../../_lib/date-range'
+import { toIsoDate, BadRequest } from '../../_lib/coerce'
+import { withCompression } from '../../_lib/with-compression'
 
 async function GETHandler(request: NextRequest) {
   try {
@@ -27,12 +29,37 @@ async function GETHandler(request: NextRequest) {
     }
 
     const url = new URL(request.url)
+    // Pre-validate date format with coerce helpers before deeper range parsing
+    const rawFrom = url.searchParams.get('from')
+    const rawTo = url.searchParams.get('to')
+    try {
+      if (rawFrom !== null) toIsoDate(rawFrom, 'from')
+      if (rawTo !== null) toIsoDate(rawTo, 'to')
+    } catch (err) {
+      if (err instanceof BadRequest) {
+        return NextResponse.json(
+          { error: 'Invalid date range', fields: { [err.field]: err.message } },
+          { status: 400 },
+        )
+      }
+    }
     const parsedRange = parseTzDateRange(url.searchParams, user.timezone)
     if (!parsedRange.ok) {
       return NextResponse.json(parsedRange.error, { status: 400 })
     }
 
     const { from, to, toExclusive, days, tz } = parsedRange.value
+
+    const MAX_EARNINGS_RANGE_DAYS = 365
+    if (days > MAX_EARNINGS_RANGE_DAYS) {
+      return NextResponse.json(
+        {
+          error: 'Date range too large',
+          fields: { from: `Earnings date range cannot exceed ${MAX_EARNINGS_RANGE_DAYS} days` },
+        },
+        { status: 400 },
+      )
+    }
     const where = {
       userId: user.id,
       type: 'payment',
@@ -48,7 +75,7 @@ async function GETHandler(request: NextRequest) {
       _sum: { amount: true },
     })
 
-    return NextResponse.json({
+    return withCompression(request, NextResponse.json({
       earnings: {
         totalEarned: Number(total._sum.amount ?? 0),
         currency: 'USDC',
@@ -57,7 +84,7 @@ async function GETHandler(request: NextRequest) {
         days,
         tz,
       },
-    })
+    }))
   } catch (error) {
     logger.error({ err: error }, 'Routes B analytics earnings GET error')
     return NextResponse.json({ error: 'Failed to get earnings' }, { status: 500 })

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { calculateWithdrawalFee } from '../_lib/withdrawal-fees'
+import { emitStatsInvalidated } from '../_lib/events'
 
 /**
  * GET /api/routes-b/withdrawals
@@ -137,6 +138,8 @@ async function POSTHandler(request: NextRequest) {
       createdAt: true,
     },
   })
+
+  emitStatsInvalidated({ userId: user.id })
 
   // Return the created transaction (201 Created)
   return NextResponse.json(

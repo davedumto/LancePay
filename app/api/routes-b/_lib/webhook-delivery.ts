@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db'
 import { signWebhookPayload } from './hmac'
 import { shouldDeadLetter, pushToDeadLetter } from './dead-letter'
 import { recordWebhookDelivery } from './webhook-history'
+import { applyCustomHeaders, getCustomHeaders } from './webhook-custom-headers'
 
 type WebhookForDelivery = {
   id: string
@@ -27,13 +28,18 @@ export async function dispatchWebhookDelivery(
   const startedAt = Date.now()
 
   try {
-    const response = await fetch(webhook.targetUrl, {
-      method: 'POST',
-      headers: {
+    const headers = applyCustomHeaders(
+      {
         'content-type': 'application/json',
         'x-lancepay-timestamp': timestamp,
         'x-lancepay-signature': signature,
       },
+      getCustomHeaders(webhook.id),
+    )
+
+    const response = await fetch(webhook.targetUrl, {
+      method: 'POST',
+      headers,
       body,
       signal: AbortSignal.timeout(10_000),
     })

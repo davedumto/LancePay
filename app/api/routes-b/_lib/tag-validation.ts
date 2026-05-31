@@ -2,8 +2,10 @@
  * tag-validation.ts — Issue #610
  *
  * Reusable tag-name validation helper. Mirrors the rules used elsewhere in
- * the tag router (length 1–32, trimmed, no control characters).
+ * the tag router (length 1–32, trimmed and normalized, no control characters).
  */
+
+import { normalizeString } from './normalize'
 
 export type TagNameValidation =
   | { ok: true; value: string }
@@ -17,15 +19,15 @@ export function validateTagName(input: unknown): TagNameValidation {
   if (typeof input !== 'string') {
     return { ok: false, error: 'newName must be a string' };
   }
-  const trimmed = input.trim();
-  if (trimmed.length < MIN_LENGTH) {
+  const normalized = normalizeString(input);
+  if (normalized.length < MIN_LENGTH) {
     return { ok: false, error: `newName must be at least ${MIN_LENGTH} character(s)` };
   }
-  if (trimmed.length > MAX_LENGTH) {
+  if (normalized.length > MAX_LENGTH) {
     return { ok: false, error: `newName must be at most ${MAX_LENGTH} characters` };
   }
-  if (CONTROL_CHARS.test(trimmed)) {
+  if (CONTROL_CHARS.test(normalized)) {
     return { ok: false, error: 'newName contains control characters' };
   }
-  return { ok: true, value: trimmed };
+  return { ok: true, value: normalized };
 }

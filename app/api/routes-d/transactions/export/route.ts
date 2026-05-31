@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
+import { createCsvStream } from "../../_lib/csv-stream";
 
 function isValidIsoDate(value: string): boolean {
   const d = new Date(value);
   return !isNaN(d.getTime());
 }
+
+type TransactionRow = {
+  id: string;
+  type: string;
+  status: string;
+  amount: unknown;
+  currency: string;
+  createdAt: Date;
+};
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers
@@ -44,37 +54,38 @@ export async function GET(request: NextRequest) {
   const fromDate = new Date(from);
   const toDate = new Date(to);
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      userId: user.id,
-      createdAt: { gte: fromDate, lte: toDate },
-    },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      type: true,
-      status: true,
-      amount: true,
-      currency: true,
-      createdAt: true,
-    },
-  });
+  const where = {
+    userId: user.id,
+    createdAt: { gte: fromDate, lte: toDate },
+  };
 
-  const header = "id,type,status,amount,currency,createdAt";
-  const rows = transactions.map((t) => {
-    return [
-      t.id,
-      t.type,
-      t.status,
-      Number(t.amount).toFixed(2),
-      t.currency,
-      t.createdAt.toISOString(),
-    ].join(",");
-  });
+  const stream = createCsvStream<TransactionRow>(
+    [
+      { header: "id", value: (row) => row.id },
+      { header: "type", value: (row) => row.type },
+      { header: "status", value: (row) => row.status },
+      { header: "amount", value: (row) => Number(row.amount).toFixed(2) },
+      { header: "currency", value: (row) => row.currency },
+      { header: "createdAt", value: (row) => row.createdAt },
+    ],
+    (cursor, batchSize) =>
+      prisma.transaction.findMany({
+        where,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: batchSize,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          amount: true,
+          currency: true,
+          createdAt: true,
+        },
+      }),
+  );
 
-  const csv = [header, ...rows].join("\n");
-
-  return new NextResponse(csv, {
+  return new NextResponse(stream, {
     status: 200,
     headers: {
       "Content-Type": "text/csv",

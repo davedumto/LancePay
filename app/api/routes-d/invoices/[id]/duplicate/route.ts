@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { invalidateDashboardCache } from '../../../_shared/cache'
 
 export async function POST(
   request: NextRequest,
@@ -46,6 +47,8 @@ export async function POST(
       paidAt: null,
     },
   })
+
+  invalidateDashboardCache(user.id)
 
   return NextResponse.json(newInvoice, { status: 201 })
 }
