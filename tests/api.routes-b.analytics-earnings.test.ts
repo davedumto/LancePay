@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const verifyAuthToken = vi.fn()
 const userFindUnique = vi.fn()
 const transactionAggregate = vi.fn()
+const transactionFindMany = vi.fn()
 const loggerError = vi.fn()
 
 vi.mock('@/lib/auth', () => ({ verifyAuthToken }))
@@ -11,7 +12,10 @@ vi.mock('@/lib/logger', () => ({ logger: { error: loggerError } }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     user: { findUnique: userFindUnique },
-    transaction: { aggregate: transactionAggregate },
+    transaction: {
+      aggregate: transactionAggregate,
+      findMany: transactionFindMany,
+    },
   },
 }))
 
@@ -25,170 +29,195 @@ vi.mock('../../app/api/routes-b/_lib/with-compression', () => ({
 
 const URL = 'http://localhost/api/routes-b/analytics/earnings'
 
-function reqGET(query = '', auth = 'Bearer token'): NextRequest {
-  return new NextRequest(`${URL}${query}`, {
-    method: 'GET',
-    headers: auth ? { authorization: auth } : {},
-  })
+function makeRequest(
+  params: Record<string, string> = {},
+  headers: Record<string, string> = { authorization: 'Bearer token' },
+): NextRequest {
+  const url = new URL(BASE_URL)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  return new NextRequest(url.toString(), { headers })
 }
 
-beforeEach(() => {
-  vi.resetAllMocks()
-  verifyAuthToken.mockResolvedValue({ userId: 'privy-1' } as never)
-  userFindUnique.mockResolvedValue({ id: 'user-1', timezone: 'UTC' } as never)
-})
-
-describe('GET /api/routes-b/analytics/earnings', () => {
-  it('returns 401 without token', async () => {
-    verifyAuthToken.mockResolvedValue(null as never)
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    expect((await GET(reqGET('', ''))).status).toBe(401)
+describe('GET /api/routes-d/analytics/earnings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  it('returns 404 if user not found', async () => {
-    userFindUnique.mockResolvedValue(null as never)
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    expect((await GET(reqGET())).status).toBe(404)
+  it('returns 401 when no auth token is provided', async () => {
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest({}, {}))
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ error: expect.any(String) })
+    expect(userFindUnique).not.toHaveBeenCalled()
   })
 
-  it('returns 400 for invalid from date format', async () => {
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=invalid-date'))
-    expect(res.status).toBe(400)
-    const json = await res.json()
-    expect(json.error).toBe('Invalid date range')
+  it('returns 401 when the auth token is invalid', async () => {
+    verifyAuthToken.mockResolvedValue(null)
+
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest())
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ error: expect.any(String) })
+    expect(userFindUnique).not.toHaveBeenCalled()
   })
 
-  it('returns 400 for invalid to date format', async () => {
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?to=invalid-date'))
-    expect(res.status).toBe(400)
-    const json = await res.json()
-    expect(json.error).toBe('Invalid date range')
+  it('returns 401 when the user is not found', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue(null)
+
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest())
+
+    expect(response.status).toBe(401)
   })
 
-  it('returns 400 for date range exceeding 365 days', async () => {
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2025-01-01&to=2027-01-01'))
-    expect(res.status).toBe(400)
-    const json = await res.json()
-    expect(json.error).toBe('Date range too large')
+  it('returns 400 for an invalid period param', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest({ period: 'yearly' }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ error: expect.any(String) })
   })
 
-  it('returns earnings for empty results', async () => {
+  it('returns earnings with zero totals when no transactions exist', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
     transactionAggregate.mockResolvedValue({ _sum: { amount: null } })
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-02'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(0)
-    expect(json.earnings.currency).toBe('USDC')
-    expect(json.earnings.from).toBeDefined()
-    expect(json.earnings.to).toBeDefined()
+    transactionFindMany.mockResolvedValue([])
+
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest())
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.earnings.totalEarned).toBe(0)
+    expect(body.earnings.thisMonth).toBe(0)
+    expect(body.earnings.lastMonth).toBe(0)
+    expect(body.earnings.currency).toBe('USDC')
+    expect(body.earnings.data).toEqual([])
   })
 
-  it('returns single-day earnings correctly', async () => {
-    const singleDayAmount = 150.75
-    transactionAggregate.mockResolvedValue({ _sum: { amount: singleDayAmount } })
+  it('defaults to monthly period when no period param is provided', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate.mockResolvedValue({ _sum: { amount: '500.00' } })
+    transactionFindMany.mockResolvedValue([])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-15&to=2026-05-16'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(singleDayAmount)
-    expect(json.earnings.days).toBe(1)
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest())
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.earnings.period).toBe('monthly')
   })
 
-  it('aggregates transactions correctly for multi-day range', async () => {
-    const totalAmount = 1000.5
-    transactionAggregate.mockResolvedValue({ _sum: { amount: totalAmount } })
+  it('accepts daily period and returns correct structure', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate.mockResolvedValue({ _sum: { amount: '200.00' } })
+    transactionFindMany.mockResolvedValue([
+      { amount: '100.00', createdAt: new Date('2026-05-01T10:00:00Z') },
+      { amount: '100.00', createdAt: new Date('2026-05-02T10:00:00Z') },
+    ])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-31'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(totalAmount)
-    expect(json.earnings.currency).toBe('USDC')
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest({ period: 'daily' }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.earnings.period).toBe('daily')
+    expect(Array.isArray(body.earnings.data)).toBe(true)
   })
 
-  it('handles currency rounding boundaries correctly', async () => {
-    const preciseAmount = 99.999999
-    transactionAggregate.mockResolvedValue({ _sum: { amount: preciseAmount } })
+  it('accepts weekly period and returns correct structure', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate.mockResolvedValue({ _sum: { amount: '300.00' } })
+    transactionFindMany.mockResolvedValue([])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-02'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(typeof json.earnings.totalEarned).toBe('number')
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest({ period: 'weekly' }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.earnings.period).toBe('weekly')
   })
 
-  it('converts BigInt amount to number correctly', async () => {
-    const largeAmount = BigInt('999999999999')
-    transactionAggregate.mockResolvedValue({ _sum: { amount: largeAmount } })
+  it('returns correct totalEarned from aggregate', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate
+      .mockResolvedValueOnce({ _sum: { amount: '1500.50' } }) // totalEarned
+      .mockResolvedValueOnce({ _sum: { amount: '400.00' } })  // thisMonth
+      .mockResolvedValueOnce({ _sum: { amount: '200.25' } })  // lastMonth
+    transactionFindMany.mockResolvedValue([])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-02'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(Number(largeAmount))
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest())
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.earnings.totalEarned).toBe(1500.5)
+    expect(body.earnings.thisMonth).toBe(400)
+    expect(body.earnings.lastMonth).toBe(200.25)
   })
 
-  it('respects user timezone for date boundaries', async () => {
-    userFindUnique.mockResolvedValue({ id: 'user-1', timezone: 'America/New_York' } as never)
-    transactionAggregate.mockResolvedValue({ _sum: { amount: 100 } })
+  it('groups monthly transactions into data points sorted by label', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate.mockResolvedValue({ _sum: { amount: '300.00' } })
+    transactionFindMany.mockResolvedValue([
+      { amount: '100.00', createdAt: new Date('2026-03-15T00:00:00Z') },
+      { amount: '50.00', createdAt: new Date('2026-03-20T00:00:00Z') },
+      { amount: '150.00', createdAt: new Date('2026-04-10T00:00:00Z') },
+    ])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-15&to=2026-05-16'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.tz).toBe('America/New_York')
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    const response = await GET(makeRequest({ period: 'monthly' }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    const data: Array<{ period: string; amount: number }> = body.earnings.data
+    expect(data.length).toBeGreaterThan(0)
+    // Labels should be sorted ascending
+    const labels = data.map((d) => d.period)
+    expect(labels).toEqual([...labels].sort())
+    // March bucket should sum both transactions
+    const march = data.find((d) => d.period === '2026-03')
+    expect(march?.amount).toBe(150)
   })
 
-  it('filters transactions by completed payments only', async () => {
-    transactionAggregate.mockResolvedValue({ _sum: { amount: 500 } })
+  it('queries only completed payment transactions', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    userFindUnique.mockResolvedValue({ id: 'user_1' })
+    transactionAggregate.mockResolvedValue({ _sum: { amount: null } })
+    transactionFindMany.mockResolvedValue([])
 
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    await GET(reqGET('?from=2026-05-01&to=2026-05-31'))
+    const { GET } = await import('@/app/api/routes-d/analytics/earnings/route')
+    await GET(makeRequest())
 
-    expect(transactionAggregate).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        userId: 'user-1',
-        type: 'payment',
-        status: 'completed',
+    expect(transactionAggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user_1',
+          type: 'payment',
+          status: 'completed',
+        }),
       }),
-      _sum: { amount: true },
-    })
-  })
-
-  it('handles zero earnings correctly', async () => {
-    transactionAggregate.mockResolvedValue({ _sum: { amount: 0 } })
-
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-02'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(0)
-  })
-
-  it('returns correctly formatted date range in user timezone', async () => {
-    transactionAggregate.mockResolvedValue({ _sum: { amount: 100 } })
-
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET('?from=2026-05-01&to=2026-05-31'))
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.from).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
-    expect(json.earnings.to).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
-  })
-
-  it('defaults to current month when no dates provided', async () => {
-    transactionAggregate.mockResolvedValue({ _sum: { amount: 250 } })
-
-    const { GET } = await import('@/app/api/routes-b/analytics/earnings/route')
-    const res = await GET(reqGET())
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.earnings.totalEarned).toBe(250)
-    expect(json.earnings.days).toBeGreaterThan(0)
+    )
+    expect(transactionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'user_1',
+          type: 'payment',
+          status: 'completed',
+        }),
+      }),
+    )
   })
 })

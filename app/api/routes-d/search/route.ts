@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { badRequest, unauthorized, notFound } from '../_shared/error'
+
+function unauthorized(message = 'Unauthorized') {
+  return NextResponse.json({ error: message }, { status: 401 })
+}
+function notFound(message = 'Not found') {
+  return NextResponse.json({ error: message }, { status: 404 })
+}
+function badRequest(message: string) {
+  return NextResponse.json({ error: message }, { status: 400 })
+}
 
 /**
  * GET /api/routes-d/search?q=term&type=invoices|contacts&typeahead=true
