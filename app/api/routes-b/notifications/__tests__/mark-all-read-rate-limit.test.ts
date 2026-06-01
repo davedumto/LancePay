@@ -62,6 +62,11 @@ describe('POST /api/routes-b/notifications/mark-all-read rate limit', () => {
 
     expect(res.status).toBe(429)
     expect(res.headers.get('Retry-After')).toBe('60')
+    const json = await res.json()
+    expect(json.error).toMatchObject({
+      code: 'RATE_LIMITED',
+      message: 'Too many requests',
+    })
     expect(mockedUpdateMany).toHaveBeenCalledTimes(5)
   })
 
