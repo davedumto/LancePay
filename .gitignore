@@ -2,6 +2,8 @@
 # DEPENDENCIES
 # ═══════════════════════════════════════════════════════════════
 node_modules/
+.npm-cache/
+.npm-cache-*/
 .pnp
 .pnp.js
 

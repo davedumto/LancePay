@@ -94,6 +94,7 @@ model BankAccount {
   accountName   String
   isVerified    Boolean  @default(false)
   isDefault     Boolean  @default(false)
+  nickname      String?  @db.VarChar(32)
   createdAt     DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id])
@@ -102,14 +103,16 @@ model BankAccount {
 }
 
 model Contact {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   name      String
   email     String
+  phone     String?
   company   String?
   notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

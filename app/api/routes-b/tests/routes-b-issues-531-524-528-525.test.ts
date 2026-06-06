@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { clearCache } from '../_lib/cache'
+import { emitStatsInvalidated } from '../_lib/events'
 
 vi.mock('@/lib/auth', () => ({ verifyAuthToken: vi.fn() }))
 vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn() } }))
@@ -74,6 +75,29 @@ describe('routes-b issues 531/524/528/525', () => {
     expect(first.headers.get('X-Cache')).toBe('MISS')
     expect(second.headers.get('X-Cache')).toBe('HIT')
     expect(third.headers.get('X-Cache')).toBe('MISS')
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(2)
+  })
+
+  it('528: stats cache invalidates on relevant write events', async () => {
+    vi.mocked(requireScope).mockResolvedValue({
+      userId: 'user-1',
+      role: 'freelancer',
+      scopes: ['routes-b:read'],
+    } as never)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-1' } as never)
+    vi.mocked(prisma.invoice.groupBy).mockResolvedValue([{ status: 'paid', _count: { id: 1 } }] as never)
+    vi.mocked(prisma.transaction.aggregate).mockResolvedValue({ _sum: { amount: 200 } } as never)
+    vi.mocked(prisma.transaction.count).mockResolvedValue(0 as never)
+
+    const { GET } = await import('../stats/route')
+    const req = new NextRequest('http://localhost/api/routes-b/stats')
+
+    await GET(req)
+    await GET(req)
+    expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(1)
+
+    emitStatsInvalidated({ userId: 'user-1' })
+    await GET(req)
     expect(prisma.invoice.groupBy).toHaveBeenCalledTimes(2)
   })
 

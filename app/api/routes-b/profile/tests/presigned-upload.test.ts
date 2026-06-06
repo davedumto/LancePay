@@ -30,7 +30,7 @@ describe('Presigned Upload', () => {
         api_key: 'test-key',
         folder: 'avatars',
         resource_type: 'auto',
-        allowed_formats: 'jpg,jpeg,png,gif,webp'
+        allowed_formats: 'jpg,jpeg,png,webp'
       }),
       key: expect.stringContaining(`avatars/${userId}/`),
       expiresAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
@@ -57,7 +57,7 @@ describe('Presigned Upload', () => {
 
     expect(result.valid).toBe(true)
     expect(result.mimeType).toBe('image/jpeg')
-    expect(result.size).toBe(10)
+    expect(result.size).toBe(2)
   })
 
   it('should reject oversized file', async () => {
@@ -66,7 +66,7 @@ describe('Presigned Upload', () => {
     const result = await validateUploadedFile('test-key', oversizedBuffer)
 
     expect(result.valid).toBe(false)
-    expect(result.error).toBe('File size exceeds 5MB limit')
+    expect(result.error).toBe('File size exceeds 2MiB limit')
     expect(result.size).toBe(getMaxFileSize() + 1)
   })
 
@@ -78,7 +78,7 @@ describe('Presigned Upload', () => {
     const result = await validateUploadedFile('test-key', invalidBuffer)
 
     expect(result.valid).toBe(false)
-    expect(result.error).toBe('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed')
+    expect(result.error).toBe('Invalid file type. Only JPEG, PNG, and WebP are allowed')
   })
 
   it('should generate Cloudinary URL', () => {
@@ -108,14 +108,14 @@ describe('Presigned Upload', () => {
     expect(pngResult.valid).toBe(true)
     expect(pngResult.mimeType).toBe('image/png')
 
-    // GIF signature
-    const gifBuffer = new ArrayBuffer(10)
-    const gifView = new Uint8Array(gifBuffer)
-    gifView.set([0x47, 0x49, 0x46, 0x38])
+    // WebP signature
+    const webpBuffer = new ArrayBuffer(12)
+    const webpView = new Uint8Array(webpBuffer)
+    webpView.set([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
 
-    const gifResult = await validateUploadedFile('test-key', gifBuffer)
-    expect(gifResult.valid).toBe(true)
-    expect(gifResult.mimeType).toBe('image/gif')
+    const webpResult = await validateUploadedFile('test-key', webpBuffer)
+    expect(webpResult.valid).toBe(true)
+    expect(webpResult.mimeType).toBe('image/webp')
   })
 
   it('should throw error for missing Cloudinary config', () => {

@@ -13,23 +13,35 @@ export const ROUTES_B_ERROR_CODES = [
 export type RoutesBErrorCode = (typeof ROUTES_B_ERROR_CODES)[number];
 
 type ErrorFields = Record<string, string | string[]>;
+type ErrorDetails = Record<string, unknown>;
 
 export function errorResponse(
   code: RoutesBErrorCode,
   message: string,
-  fields?: ErrorFields,
+  options?: {
+    fields?: ErrorFields;
+    details?: ErrorDetails;
+    requestId?: string | null;
+  },
   status = 400,
-  requestId?: string | null,
 ) {
+  const requestId = options?.requestId ?? crypto.randomUUID();
+
   return NextResponse.json(
     {
       error: {
         code,
         message,
-        ...(fields ? { fields } : {}),
+        ...(options?.fields ? { fields: options.fields } : {}),
+        ...(options?.details ? { details: options.details } : {}),
       },
-      requestId: requestId ?? crypto.randomUUID(),
+      requestId,
     },
-    { status },
+    {
+      status,
+      headers: {
+        "X-Request-Id": requestId, // preserve traceability like the first version
+      },
+    },
   );
 }

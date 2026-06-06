@@ -5,8 +5,8 @@ import { createEntityEtag } from '@/app/api/routes-b/_lib/etag'
 const verifyAuthToken = vi.fn()
 const userFindUnique = vi.fn()
 const invoiceFindUnique = vi.fn()
-const invoiceFindFirst = vi.fn()
 const invoiceUpdate = vi.fn()
+const loggerError = vi.fn()
 
 vi.mock('@/lib/auth', () => ({ verifyAuthToken }))
 vi.mock('@/lib/db', () => ({
@@ -14,10 +14,12 @@ vi.mock('@/lib/db', () => ({
     user: { findUnique: userFindUnique },
     invoice: {
       findUnique: invoiceFindUnique,
-      findFirst: invoiceFindFirst,
       update: invoiceUpdate,
     },
   },
+}))
+vi.mock('@/lib/logger', () => ({
+  logger: { error: loggerError },
 }))
 
 describe('routes-b invoice ETag + If-Match', () => {
@@ -67,8 +69,9 @@ describe('routes-b invoice ETag + If-Match', () => {
   })
 
   it('PATCH returns 412 for stale If-Match', async () => {
-    invoiceFindFirst.mockResolvedValue({
+    invoiceFindUnique.mockResolvedValue({
       id: 'inv_1',
+      userId: 'user_1',
       status: 'pending',
       updatedAt: new Date('2026-02-01T10:00:00.000Z'),
     })
@@ -84,12 +87,16 @@ describe('routes-b invoice ETag + If-Match', () => {
     })
     const response = await PATCH(request, { params: Promise.resolve({ id: 'inv_1' }) })
     expect(response.status).toBe(412)
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'CONFLICT', message: 'ETag mismatch' },
+    })
   })
 
   it('PATCH succeeds with matching If-Match', async () => {
     const updatedAt = new Date('2026-02-01T10:00:00.000Z')
-    invoiceFindFirst.mockResolvedValue({
+    invoiceFindUnique.mockResolvedValue({
       id: 'inv_1',
+      userId: 'user_1',
       status: 'pending',
       updatedAt,
     })
@@ -120,14 +127,18 @@ describe('routes-b invoice ETag + If-Match', () => {
       body: JSON.stringify({ description: 'updated' }),
     })
     const response = await PATCH(request, { params: Promise.resolve({ id: 'inv_1' }) })
+    const json = await response.json()
+
     expect(response.status).toBe(200)
+    expect(json.invoice).toMatchObject({ id: 'inv_1', description: 'updated', amount: 120 })
     expect(invoiceUpdate).toHaveBeenCalledOnce()
   })
 
   it('PATCH allows If-Match:* for admin users', async () => {
     userFindUnique.mockResolvedValue({ id: 'user_1', role: 'admin' })
-    invoiceFindFirst.mockResolvedValue({
+    invoiceFindUnique.mockResolvedValue({
       id: 'inv_1',
+      userId: 'user_1',
       status: 'pending',
       updatedAt: new Date('2026-02-01T10:00:00.000Z'),
     })
@@ -160,5 +171,64 @@ describe('routes-b invoice ETag + If-Match', () => {
     const response = await PATCH(request, { params: Promise.resolve({ id: 'inv_1' }) })
     expect(response.status).toBe(200)
   })
-})
 
+  it('GET hides invoices owned by another user', async () => {
+    invoiceFindUnique.mockResolvedValue({
+      id: 'inv_1',
+      userId: 'user_2',
+      invoiceNumber: 'INV-1',
+      clientEmail: 'c@example.com',
+      clientName: 'Client',
+      description: 'Work',
+      amount: 120,
+      currency: 'USD',
+      status: 'pending',
+      paymentLink: 'https://pay',
+      dueDate: null,
+      paidAt: null,
+      createdAt: new Date('2026-02-01T09:00:00.000Z'),
+      updatedAt: new Date('2026-02-01T10:00:00.000Z'),
+    })
+
+    const { GET } = await import('@/app/api/routes-b/invoices/[id]/route')
+    const request = new NextRequest('http://localhost/api/routes-b/invoices/inv_1', {
+      headers: { authorization: 'Bearer token' },
+    })
+    const response = await GET(request, { params: Promise.resolve({ id: 'inv_1' }) })
+
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'NOT_FOUND', message: 'Invoice not found' },
+    })
+  })
+
+  it('PATCH rejects invalid fields with structured errors', async () => {
+    invoiceFindUnique.mockResolvedValue({
+      id: 'inv_1',
+      userId: 'user_1',
+      status: 'pending',
+      updatedAt: new Date('2026-02-01T10:00:00.000Z'),
+    })
+
+    const { PATCH } = await import('@/app/api/routes-b/invoices/[id]/route')
+    const request = new NextRequest('http://localhost/api/routes-b/invoices/inv_1', {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer token',
+        'if-match': createEntityEtag('inv_1', new Date('2026-02-01T10:00:00.000Z')),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ amount: -1 }),
+    })
+    const response = await PATCH(request, { params: Promise.resolve({ id: 'inv_1' }) })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'BAD_REQUEST',
+        fields: { amount: 'Must be a positive number' },
+      },
+    })
+    expect(invoiceUpdate).not.toHaveBeenCalled()
+  })
+})
