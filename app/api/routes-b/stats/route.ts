@@ -1,45 +1,218 @@
+import { withRequestId } from '../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { requireScope, RoutesBForbiddenError } from '../_lib/authz'
+import { registerRoute } from '../_lib/openapi'
+import {
+  ensureStatsCacheInvalidationHooks,
+  getCachedStats,
+  setCachedStats,
+} from '../_lib/stats-cache'
+import { withCompression } from '../_lib/with-compression'
+import { errorResponse } from '../_lib/errors'
+import { parseUtcDateRange } from '../_lib/date-range'
+import { z } from 'zod'
+import { getUtcPeriodBoundaries, calculateDelta, PeriodType } from '../_lib/period'
 
-export async function GET(request: NextRequest) {
-  const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-  const claims = await verifyAuthToken(authToken || '')
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+const MetricDeltaSchema = z.object({
+  current: z.number(),
+  previous: z.number(),
+  deltaPct: z.number(),
+})
+
+const InvoicesDeltaSchema = z.object({
+  total: MetricDeltaSchema,
+  pending: MetricDeltaSchema,
+  paid: MetricDeltaSchema,
+  cancelled: MetricDeltaSchema,
+  overdue: MetricDeltaSchema,
+})
+
+// Register OpenAPI documentation
+registerRoute({
+  method: 'GET',
+  path: '/stats',
+  summary: 'Get user statistics',
+  description:
+    'Returns invoice statistics, total earnings, and pending withdrawals for the authenticated user.',
+  responseSchema: z.union([
+    z.object({
+      invoices: z.object({
+        total: z.number(),
+        pending: z.number(),
+        paid: z.number(),
+        cancelled: z.number(),
+        overdue: z.number(),
+      }),
+      totalEarned: z.number(),
+      pendingWithdrawals: z.number(),
+    }),
+    z.object({
+      period: z.enum(['day', 'week', 'month', 'year']),
+      invoices: InvoicesDeltaSchema,
+      totalEarned: MetricDeltaSchema,
+      pendingWithdrawals: MetricDeltaSchema,
+      _note: z.string().optional(),
+    }),
+  ]),
+  tags: ['stats'],
+})
+
+type StatsPayload = {
+  invoices: {
+    total: number
+    pending: number
+    paid: number
+    cancelled: number
+    overdue: number
   }
-
-  const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  }
-
-  const [invoiceStats, totalEarned, pendingWithdrawals] = await Promise.all([
-    prisma.invoice.groupBy({
-      by: ['status'],
-      where: { userId: user.id },
-      _count: { id: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { userId: user.id, type: 'payment', status: 'completed' },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.count({
-      where: { userId: user.id, type: 'withdrawal', status: 'pending' },
-    }),
-  ])
-
-  const counts = Object.fromEntries(invoiceStats.map((s) => [s.status, s._count.id]))
-
-  return NextResponse.json({
-    invoices: {
-      total: invoiceStats.reduce((sum, s) => sum + s._count.id, 0),
-      pending: counts.pending ?? 0,
-      paid: counts.paid ?? 0,
-      cancelled: counts.cancelled ?? 0,
-      overdue: counts.overdue ?? 0,
-    },
-    totalEarned: Number(totalEarned._sum.amount ?? 0),
-    pendingWithdrawals,
-  })
+  totalEarned: number
+  pendingWithdrawals: number
 }
+
+async function GETHandler(request: NextRequest) {
+  const requestId = request.headers.get('x-request-id')
+
+  try {
+    ensureStatsCacheInvalidationHooks()
+    const auth = await requireScope(request, 'routes-b:read')
+
+    const cached = getCachedStats<StatsPayload>(auth.userId)
+
+    if (cached) {
+      return withCompression(
+        request,
+        NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } }),
+      )
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+    })
+
+    if (!user) {
+      return withCompression(
+        request,
+        errorResponse('NOT_FOUND', 'User not found', undefined, 404, requestId),
+      )
+    }
+
+    const [invoiceStats, totalEarned, pendingWithdrawals] =
+      await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['status'],
+          where: { userId: user.id },
+          _count: { id: true },
+        }),
+        prisma.transaction.aggregate({
+          where: {
+            userId: user.id,
+            type: 'payment',
+            status: 'completed',
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.count({
+          where: {
+            userId: user.id,
+            type: 'withdrawal',
+            status: 'pending',
+          },
+        }),
+      ])
+
+    if (!usePeriod) {
+      const [invoiceStats, totalEarned, pendingWithdrawals] = await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['status'],
+          where: { userId: user.id },
+          _count: { id: true },
+        }),
+        prisma.transaction.aggregate({
+          where: { userId: user.id, type: 'payment', status: 'completed' },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.count({
+          where: { userId: user.id, type: 'withdrawal', status: 'pending' },
+        }),
+      ])
+
+      const counts = Object.fromEntries(invoiceStats.map((s) => [s.status, s._count.id]))
+
+      payload = {
+        invoices: {
+          total: invoiceStats.reduce((sum, s) => sum + s._count.id, 0),
+          pending: counts.pending ?? 0,
+          paid: counts.paid ?? 0,
+          cancelled: counts.cancelled ?? 0,
+          overdue: counts.overdue ?? 0,
+        },
+        totalEarned: Number(totalEarned._sum.amount ?? 0),
+        pendingWithdrawals,
+      }
+    } else {
+      const boundaries = getUtcPeriodBoundaries(period)
+
+      const fetchStats = async (start: Date, end: Date) => {
+        const where = { userId: user.id, createdAt: { gte: start, lt: end } }
+        const [invoiceStats, totalEarned, pendingWithdrawals] = await Promise.all([
+          prisma.invoice.groupBy({
+            by: ['status'],
+            where,
+            _count: { id: true },
+          }),
+          prisma.transaction.aggregate({
+            where: { ...where, type: 'payment', status: 'completed' },
+            _sum: { amount: true },
+          }),
+          prisma.transaction.count({
+            where: { ...where, type: 'withdrawal', status: 'pending' },
+          }),
+        ])
+
+    const currentStats: StatsPayload = {
+      invoices: {
+        total: invoiceStats.reduce((sum, s) => sum + s._count.id, 0),
+        pending: counts.pending ?? 0,
+        paid: counts.paid ?? 0,
+        cancelled: counts.cancelled ?? 0,
+        overdue: counts.overdue ?? 0,
+      },
+      totalEarned: aggregateGroups(totalEarned),
+      pendingWithdrawals,
+    }
+
+    setCachedStats(auth.userId, currentStats)
+
+    return withCompression(
+      request,
+      NextResponse.json(currentStats, { headers: { 'X-Cache': 'MISS' } }),
+    )
+  } catch (error) {
+    if (error instanceof RoutesBForbiddenError) {
+      return withCompression(
+        request,
+        errorResponse(
+          'FORBIDDEN',
+          'Forbidden',
+          { scope: error.code },
+          403,
+          requestId,
+        ),
+      )
+    }
+
+    return withCompression(
+      request,
+      errorResponse(
+        'UNAUTHORIZED',
+        'Unauthorized',
+        undefined,
+        401,
+        requestId,
+      ),
+    )
+  }
+}
+
+export const GET = withRequestId(GETHandler)

@@ -1,11 +1,42 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendPaymentReceivedEmail } from '@/lib/email'
 import { logger } from '@/lib/logger'
 
+function verifyMoonPaySignature(rawBody: string, signature: string, secret: string): boolean {
+  if (!signature || !secret) return false
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('base64')
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  } catch {
+    return false // handles length mismatch
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const event = await request.json()
+    // Step 1: Read raw body and verify webhook signature
+    const rawBody = await request.text()
+    const signature = request.headers.get('moonpay-signature') ?? ''
+    const secret = process.env.MOONPAY_WEBHOOK_KEY ?? ''
+
+    if (!verifyMoonPaySignature(rawBody, signature, secret)) {
+      console.warn('MoonPay webhook: invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    // Step 2: Parse the verified body
+    let event: any
+    try {
+      event = JSON.parse(rawBody)
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
     logger.info({ eventType: event.type }, 'MoonPay webhook')
 
     if (
