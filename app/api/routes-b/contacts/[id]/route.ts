@@ -1,175 +1,212 @@
+import { withRequestId } from '../../_lib/with-request-id'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import {
+  findContactById,
+  softDeleteContact,
+  supportsContactSoftDelete,
+} from '../../_lib/contacts'
+import { normalizeString } from '../../_lib/normalize'
 
 /**
- * DELETE /api/routes-b/contacts/[id]
- * Permanently removes a contact from the user's list.
+ * AUTH HELPER
  */
-export async function DELETE(
+async function getAuthenticatedUser(request: NextRequest) {
+  const authToken = request.headers
+    .get('authorization')
+    ?.replace('Bearer ', '')
+
+  if (!authToken) return null
+
+  const claims = await verifyAuthToken(authToken)
+  if (!claims) return null
+
+  return prisma.user.findUnique({
+    where: { privyId: claims.userId },
+  })
+}
+
+/**
+ * GET CONTACT
+ */
+async function GETHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
+  let contactId: string | undefined
+
   try {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const user = await getAuthenticatedUser(request)
 
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = params
+    contactId = id
 
-    // Find contact by id
-    const contact = await prisma.contact.findUnique({
-      where: { id },
+    const includeDeleted =
+      new URL(request.url).searchParams.get('includeDeleted') === 'true'
+
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted,
     })
 
     if (!contact) {
-      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Contact not found' },
+        { status: 404 }
+      )
     }
 
-    // Authorization check: verify ownership
-    if (contact.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    // Delete the contact
-    await prisma.contact.delete({
-      where: { id },
-    })
-
-    // Return 204 No Content
-    return new NextResponse(null, { status: 204 })
+    return NextResponse.json({ contact }, { status: 200 })
   } catch (error) {
-    const { id } = await params
-    logger.error({ err: error, contactId: id }, 'Routes B contact DELETE error')
-    return NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 })
+    logger.error({ err: error, contactId }, 'Routes B contact GET error')
+
+    return NextResponse.json(
+      { error: 'Failed to fetch contact' },
+      { status: 500 }
+    )
   }
 }
 
-export async function PATCH(
+/**
+ * PATCH CONTACT
+ */
+async function PATCHHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
+  let contactId: string | undefined
+
   try {
-    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const user = await getAuthenticatedUser(request)
 
-    const claims = await verifyAuthToken(authToken)
-    if (!claims) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = params
+    contactId = id
 
-    const contact = await prisma.contact.findUnique({
-      where: { id },
+    const contact = await findContactById({
+      id,
+      userId: user.id,
+      includeDeleted: false,
     })
 
     if (!contact) {
-      return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Contact not found' },
+        { status: 404 }
+      )
     }
 
-    if (contact.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    let body: {
-      name?: unknown
-      email?: unknown
-      company?: unknown
-      notes?: unknown
-    }
+    let body: any
 
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 }
+      )
     }
 
-    const updateData: {
-      name?: string
-      email?: string
-      company?: string | null
-      notes?: string | null
-    } = {}
+    const updateData: Record<string, any> = {}
 
     if (body.name !== undefined) {
-      if (typeof body.name !== 'string' || body.name.trim() === '') {
-        return NextResponse.json({ error: 'name must be a non-empty string' }, { status: 400 })
+      if (typeof body.name !== 'string' || !body.name.trim()) {
+        return NextResponse.json(
+          { error: 'name must be a non-empty string' },
+          { status: 400 }
+        )
       }
-      if (body.name.trim().length > 100) {
-        return NextResponse.json({ error: 'name must be 100 characters or fewer' }, { status: 400 })
-      }
-      updateData.name = body.name.trim()
+
+      updateData.name = normalizeString(body.name)
     }
 
     if (body.email !== undefined) {
-      if (typeof body.email !== 'string') {
-        return NextResponse.json({ error: 'email must be a valid email address' }, { status: 400 })
-      }
-
-      const normalizedEmail = body.email.trim().toLowerCase()
+      const email = normalizeString(body.email?.trim() || '').toLowerCase()
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailPattern.test(normalizedEmail)) {
-        return NextResponse.json({ error: 'email must be a valid email address' }, { status: 400 })
+
+      if (!email || !emailPattern.test(email)) {
+        return NextResponse.json(
+          { error: 'invalid email' },
+          { status: 400 }
+        )
       }
 
-      const existingContact = await prisma.contact.findUnique({
+      const existing = await prisma.contact.findUnique({
         where: {
           userId_email: {
             userId: user.id,
-            email: normalizedEmail,
+            email,
           },
         },
         select: { id: true },
       })
 
-      if (existingContact && existingContact.id !== id) {
-        return NextResponse.json({ error: 'A contact with this email already exists' }, { status: 409 })
+      if (existing && existing.id !== id) {
+        return NextResponse.json(
+          { error: 'Email already exists' },
+          { status: 409 }
+        )
       }
 
-      updateData.email = normalizedEmail
+      updateData.email = email
     }
 
     if (body.company !== undefined) {
       if (body.company !== null && typeof body.company !== 'string') {
-        return NextResponse.json({ error: 'company must be a string' }, { status: 400 })
+        return NextResponse.json(
+          { error: 'company must be a string' },
+          { status: 400 }
+        )
       }
-      if (typeof body.company === 'string' && body.company.trim().length > 100) {
+
+      if (
+        typeof body.company === 'string' &&
+        normalizeString(body.company).length > 100
+      ) {
         return NextResponse.json(
           { error: 'company must be 100 characters or fewer' },
           { status: 400 }
         )
       }
-      updateData.company = typeof body.company === 'string' ? body.company.trim() : null
+
+      updateData.company =
+        typeof body.company === 'string'
+          ? normalizeString(body.company) || null
+          : null
     }
 
     if (body.notes !== undefined) {
       if (body.notes !== null && typeof body.notes !== 'string') {
-        return NextResponse.json({ error: 'notes must be a string' }, { status: 400 })
+        return NextResponse.json(
+          { error: 'notes must be a string' },
+          { status: 400 }
+        )
       }
-      if (typeof body.notes === 'string' && body.notes.trim().length > 500) {
-        return NextResponse.json({ error: 'notes must be 500 characters or fewer' }, { status: 400 })
+
+      if (
+        typeof body.notes === 'string' &&
+        normalizeString(body.notes).length > 500
+      ) {
+        return NextResponse.json(
+          { error: 'notes must be 500 characters or fewer' },
+          { status: 400 }
+        )
       }
-      updateData.notes = typeof body.notes === 'string' ? body.notes.trim() : null
+
+      updateData.notes =
+        typeof body.notes === 'string'
+          ? normalizeString(body.notes) || null
+          : null
     }
 
     const updatedContact =
@@ -194,10 +231,74 @@ export async function PATCH(
             },
           })
 
-    return NextResponse.json({ contact: updatedContact }, { status: 200 })
+    return NextResponse.json(
+      { contact: updatedContact },
+      { status: 200 }
+    )
   } catch (error) {
-    const { id } = await params
-    logger.error({ err: error, contactId: id }, 'Routes B contact PATCH error')
-    return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 })
+    logger.error({ err: error, contactId }, 'Routes B contact PATCH error')
+
+    return NextResponse.json(
+      { error: 'Failed to update contact' },
+      { status: 500 }
+    )
   }
 }
+
+/**
+ * DELETE CONTACT
+ */
+async function DELETEHandler(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  let contactId: string | undefined
+
+  try {
+    const user = await getAuthenticatedUser(request)
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = params
+    contactId = id
+
+    const supported = await supportsContactSoftDelete()
+
+    if (!supported) {
+      return NextResponse.json(
+        { error: 'Soft delete not supported' },
+        { status: 409 }
+      )
+    }
+
+    const deleted = await softDeleteContact({
+      id,
+      userId: user.id,
+    })
+
+    if (!deleted) {
+      return NextResponse.json(
+        { error: 'Contact not found' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ contact: deleted }, { status: 200 })
+  } catch (error) {
+    logger.error({ err: error, contactId }, 'Routes B contact DELETE error')
+
+    return NextResponse.json(
+      { error: 'Failed to delete contact' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * EXPORT ROUTES
+ */
+export const GET = withRequestId(GETHandler)
+export const PATCH = withRequestId(PATCHHandler)
+export const DELETE = withRequestId(DELETEHandler)

@@ -5,12 +5,17 @@ const verifyAuthToken = vi.fn()
 const findUnique = vi.fn()
 const brandingFindUnique = vi.fn()
 const brandingUpsert = vi.fn()
+const brandingDelete = vi.fn()
 
 vi.mock('@/lib/auth', () => ({ verifyAuthToken }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     user: { findUnique },
-    brandingSettings: { findUnique: brandingFindUnique, upsert: brandingUpsert },
+    brandingSettings: {
+      findUnique: brandingFindUnique,
+      upsert: brandingUpsert,
+      delete: brandingDelete,
+    },
   },
 }))
 
@@ -129,5 +134,46 @@ describe('PATCH /api/routes-d/branding', () => {
     const { PATCH } = await import('@/app/api/routes-d/branding/route')
     const res = await PATCH(makeRequest('PATCH', { signatureUrl: null }))
     expect(res.status).toBe(200)
+  })
+})
+
+describe('DELETE /api/routes-d/branding', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns 401 for unauthenticated requests', async () => {
+    verifyAuthToken.mockResolvedValue(null)
+
+    const { DELETE } = await import('@/app/api/routes-d/branding/route')
+    const res = await DELETE(makeRequest('DELETE'))
+
+    expect(res.status).toBe(401)
+    expect(brandingDelete).not.toHaveBeenCalled()
+  })
+
+  it('returns 204 when no branding exists', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    findUnique.mockResolvedValue({ id: 'user_1' })
+    brandingFindUnique.mockResolvedValue(null)
+
+    const { DELETE } = await import('@/app/api/routes-d/branding/route')
+    const res = await DELETE(makeRequest('DELETE'))
+
+    expect(res.status).toBe(204)
+    expect(brandingDelete).not.toHaveBeenCalled()
+  })
+
+  it('deletes existing branding settings for the authenticated user', async () => {
+    verifyAuthToken.mockResolvedValue({ userId: 'privy_1' })
+    findUnique.mockResolvedValue({ id: 'user_1' })
+    brandingFindUnique.mockResolvedValue({ id: 'b1', userId: 'user_1' })
+    brandingDelete.mockResolvedValue({ id: 'b1', userId: 'user_1' })
+
+    const { DELETE } = await import('@/app/api/routes-d/branding/route')
+    const res = await DELETE(makeRequest('DELETE'))
+
+    expect(res.status).toBe(204)
+    expect(brandingDelete).toHaveBeenCalledWith({
+      where: { userId: 'user_1' },
+    })
   })
 })

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { withRequestId } from '../../../_shared/with-request-id'
 
-export async function PATCH(
+async function PATCHHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -72,3 +73,5 @@ export async function PATCH(
 
   return NextResponse.json(updatedBankAccount, { status: 200 })
 }
+
+export const PATCH = withRequestId(PATCHHandler)
