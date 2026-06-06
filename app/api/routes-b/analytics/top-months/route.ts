@@ -75,7 +75,7 @@ async function GETHandler(request: NextRequest) {
     const cacheKey = `routes-b:analytics:top-months:${user.id}:${rawTz}`
 
     const cached = getCacheValue<{
-      topMonths: { month: string; earned: number }[]
+      topMonths: { month: string; earned: number | Record<string, number> }[]
       tz: string
     }>(cacheKey)
 
@@ -88,7 +88,7 @@ async function GETHandler(request: NextRequest) {
 
     const paid = await prisma.invoice.findMany({
       where: { userId: user.id, status: 'paid' },
-      select: { amount: true, paidAt: true },
+      select: { amount: true, paidAt: true, currency: true },
     })
 
     const monthly: Record<string, number> = {}
@@ -104,7 +104,23 @@ async function GETHandler(request: NextRequest) {
     }
 
     const topMonths = Object.entries(monthly)
-      .sort(([, a], [, b]) => b - a)
+      .map(([month, data]) => {
+        let earned: number | Record<string, number>
+        if (data.normalized) {
+          earned = Number(data.total.toFixed(2))
+        } else {
+          earned = data.perCurrency
+          if (data.total > 0) {
+            earned['USDC'] = (earned['USDC'] ?? 0) + Number(data.total.toFixed(2))
+          }
+        }
+        return { month, earned }
+      })
+      .sort((a, b) => {
+        const valA = typeof a.earned === 'number' ? a.earned : (a.earned['USDC'] ?? 0)
+        const valB = typeof b.earned === 'number' ? b.earned : (b.earned['USDC'] ?? 0)
+        return valB - valA
+      })
       .slice(0, 3)
       .map(([month, earned]) => ({
         month,

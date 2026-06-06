@@ -178,7 +178,7 @@ async function GETHandler(request: NextRequest) {
         cancelled: counts.cancelled ?? 0,
         overdue: counts.overdue ?? 0,
       },
-      totalEarned: Number(totalEarned._sum.amount ?? 0),
+      totalEarned: aggregateGroups(totalEarned),
       pendingWithdrawals,
     }
 

@@ -1,31 +1,37 @@
 import { prisma } from '@/lib/db'
+import { aggregateGroups } from './currency'
 
 export const KNOWN_INVOICE_STATUSES = ['pending', 'paid', 'cancelled', 'overdue'] as const
 
 export type InvoiceStatusSummary = {
   status: string
   count: number
-  total: number
+  total: number | Record<string, number>
 }
 
 export async function getInvoiceStatusSummary(userId: string): Promise<InvoiceStatusSummary[]> {
   const grouped = await prisma.invoice.groupBy({
-    by: ['status'],
+    by: ['status', 'currency'],
     where: { userId },
     _count: { id: true },
     _sum: { amount: true },
   })
 
-  const byStatus = new Map(
-    grouped.map((row) => [row.status, { count: row._count.id, total: Number(row._sum.amount ?? 0) }]),
-  )
+  const byStatus = new Map<string, { count: number; groups: any[] }>()
+
+  for (const row of grouped) {
+    const existing = byStatus.get(row.status) || { count: 0, groups: [] }
+    existing.count += row._count.id
+    existing.groups.push(row)
+    byStatus.set(row.status, existing)
+  }
 
   return KNOWN_INVOICE_STATUSES.map((status) => {
-    const row = byStatus.get(status)
+    const data = byStatus.get(status)
     return {
       status,
-      count: row?.count ?? 0,
-      total: row?.total ?? 0,
+      count: data?.count ?? 0,
+      total: data ? aggregateGroups(data.groups) : 0,
     }
   })
 }
@@ -40,8 +46,8 @@ type DashboardSummary = {
       cancelled: number
     }
     earnings: {
-      totalEarned: number
-      thisMonth: number
+      totalEarned: number | Record<string, number>
+      thisMonth: number | Record<string, number>
       currency: string
     }
     recentTransactions: Array<{
@@ -66,13 +72,15 @@ export async function buildDashboardSummary(userId: string, now = new Date()): P
   const [invoiceStats, totalEarned, thisMonthEarned, recentTxns] = await Promise.all([
     countQuery(prisma.invoice.groupBy({ by: ['status'], where: { userId }, _count: { id: true } })),
     countQuery(
-      prisma.transaction.aggregate({
+      prisma.transaction.groupBy({
+        by: ['currency'],
         where: { userId, type: 'payment', status: 'completed' },
         _sum: { amount: true },
       }),
     ),
     countQuery(
-      prisma.transaction.aggregate({
+      prisma.transaction.groupBy({
+        by: ['currency'],
         where: { userId, type: 'payment', status: 'completed', createdAt: { gte: startOfMonth } },
         _sum: { amount: true },
       }),
@@ -112,8 +120,8 @@ export async function buildDashboardSummary(userId: string, now = new Date()): P
         cancelled: counts.cancelled,
       },
       earnings: {
-        totalEarned: Number(totalEarned._sum.amount ?? 0),
-        thisMonth: Number(thisMonthEarned._sum.amount ?? 0),
+        totalEarned: aggregateGroups(totalEarned),
+        thisMonth: aggregateGroups(thisMonthEarned),
         currency: 'USDC',
       },
       recentTransactions: recentTxns.map((txn) => ({

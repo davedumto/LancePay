@@ -70,15 +70,16 @@ async function GETHandler(request: NextRequest) {
       },
     }
 
-    const total = await prisma.transaction.aggregate({
+    const total = await prisma.transaction.groupBy({
+      by: ['currency'],
       where,
       _sum: { amount: true },
     })
 
     return withCompression(request, NextResponse.json({
       earnings: {
-        totalEarned: Number(total._sum.amount ?? 0),
-        currency: 'USDC',
+        totalEarned,
+        currency: typeof totalEarned === 'number' ? 'USDC' : 'MIXED',
         from: from.toLocaleDateString('en-CA', { timeZone: tz }),
         to: to.toLocaleDateString('en-CA', { timeZone: tz }),
         days,
