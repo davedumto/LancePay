@@ -59,6 +59,7 @@ model User {
   subscriptions         Subscription[]
   notifications         Notification[]
   tags                  Tag[]
+  timeEntries           TimeEntry[]
   kycApplication        KycApplication?
   kycDocuments          KycDocument[]
 }
@@ -218,6 +219,7 @@ model Invoice {
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
   invoiceTags             InvoiceTag[]
+  timeEntries             TimeEntry[]
   lienActive              Boolean               @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
@@ -911,6 +913,36 @@ model InvoiceTag {
   @@unique([invoiceId, tagId])
   @@index([invoiceId])
   @@index([tagId])
+}
+
+/// A logged unit of billable time for a freelancer / contractor.
+///
+/// Time entries are billed against an invoice via `invoiceId`. When the
+/// entry is created before an invoice exists, `invoiceId` stays null and
+/// the entry sits in a "draft" bucket until the user attaches it to a
+/// new or existing invoice. The amount the entry contributes to the
+/// invoice is `hours * rateUsdc` — keeping `rateUsdc` denormalised on
+/// the row so a later change to the freelancer's default rate does not
+/// retroactively rewrite historical invoices.
+model TimeEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  invoiceId   String?
+  description String   @db.VarChar(500)
+  hours       Decimal  @db.Decimal(10, 2)
+  rateUsdc    Decimal  @db.Decimal(18, 6)
+  occurredOn  DateTime @db.Date
+  status      String   @default("draft") @db.VarChar(20) // "draft" | "billed" | "void"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([invoiceId])
+  @@index([userId, occurredOn])
+  @@index([status])
 }
 
 /// Latest sanctions / PEP screening result for a user. One row per user;
