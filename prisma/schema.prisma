@@ -65,6 +65,8 @@ model User {
   deletionRequests        AccountDeletionRequest[]
   kycApplication          KycApplication?
   kycDocuments            KycDocument[]
+  teamMemberships         TeamMember[]
+  ownedTeamMembers        TeamMember[] @relation("TeamOwner")
   whitelistAddresses      WhitelistAddress[]
 }
 
@@ -1087,6 +1089,28 @@ model TaxRate {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// A member that the owning user has invited to collaborate on their account.
+model TeamMember {
+  id          String    @id @default(uuid())
+  ownerId     String
+  memberId    String?
+  email       String    @db.VarChar(255)
+  role        String    @default("viewer") @db.VarChar(30) // "admin" | "editor" | "viewer"
+  status      String    @default("pending") @db.VarChar(20) // "pending" | "active" | "removed"
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  removedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner  User  @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  member User? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([ownerId, email])
+  @@index([ownerId])
+  @@index([memberId])
 }
 
 /// A whitelisted Stellar/bank withdrawal address for a user.
