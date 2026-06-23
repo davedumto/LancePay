@@ -59,8 +59,12 @@ model User {
   subscriptions         Subscription[]
   notifications         Notification[]
   tags                  Tag[]
-  kycApplication        KycApplication?
-  kycDocuments          KycDocument[]
+  timeEntries             TimeEntry[]
+  sessions                UserSession[]
+  sanctionsScreening      SanctionsScreening?
+  deletionRequests        AccountDeletionRequest[]
+  kycApplication          KycApplication?
+  kycDocuments            KycDocument[]
 }
 
 model KycApplication {
@@ -218,6 +222,7 @@ model Invoice {
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
   invoiceTags             InvoiceTag[]
+  timeEntries             TimeEntry[]
   lienActive              Boolean               @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
@@ -911,6 +916,49 @@ model InvoiceTag {
   @@unique([invoiceId, tagId])
   @@index([invoiceId])
   @@index([tagId])
+}
+
+/// A logged unit of billable time for a freelancer / contractor.
+model TimeEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  invoiceId   String?
+  description String   @db.VarChar(500)
+  hours       Decimal  @db.Decimal(10, 2)
+  rateUsdc    Decimal  @db.Decimal(18, 6)
+  occurredOn  DateTime @db.Date
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([invoiceId])
+  @@index([userId, occurredOn])
+  @@index([status])
+}
+
+/// Active authentication sessions surfaced to the user.
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  deviceLabel  String?   @db.VarChar(100)
+  userAgent    String?   @db.VarChar(500)
+  ipAddress    String?   @db.VarChar(45)
+  tokenHint    String?   @db.VarChar(12)
+  issuedAt     DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+  @@index([lastSeenAt])
 }
 
 /// Latest sanctions / PEP screening result for a user. One row per user;
