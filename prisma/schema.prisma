@@ -977,8 +977,42 @@ model SanctionsScreening {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@index([status])
   @@index([screenedAt])
+}
+
+model ClientNote {
+  id        String   @id @default(uuid())
+  userId    String
+  clientId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client User @relation("ClientNotes", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model SavedFilter {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String   @db.VarChar(100)
+  entityType  String   @db.VarChar(50) // 'invoice', 'transaction', 'client', etc.
+  filters     Json     // JSON object representing the filter criteria
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([entityType])
 }
 
 /// Pending account-deletion request raised by the user. We keep the row for
@@ -998,7 +1032,7 @@ model AccountDeletionRequest {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@unique([userId])
   @@index([status])
   @@index([scheduledAt])
 }
