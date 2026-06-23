@@ -11,7 +11,6 @@ vi.mock('@/lib/logger', () => ({ logger: { error: loggerError } }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     user: { findUnique: userFindUnique },
-    // @ts-ignore - TimeEntry model not yet in schema
     timeEntry: { findFirst: timeEntryFindFirst },
   },
 }))

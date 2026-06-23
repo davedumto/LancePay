@@ -23,8 +23,7 @@ export async function GET(
 
     // Note: TimeEntry model would need to be added to the Prisma schema
     // This is a placeholder implementation assuming the model exists
-    // @ts-ignore - TimeEntry model not yet in schema
-    const timeEntry = await prisma.timeEntry.findFirst({
+    const timeEntry = await (prisma as any).timeEntry.findFirst({
       where: { id, userId: user.id },
     })
 
