@@ -60,6 +60,7 @@ model User {
   notifications         Notification[]
   tags                  Tag[]
   timeEntries           TimeEntry[]
+  sessions              UserSession[]
   kycApplication        KycApplication?
   kycDocuments          KycDocument[]
 }
@@ -943,6 +944,34 @@ model TimeEntry {
   @@index([invoiceId])
   @@index([userId, occurredOn])
   @@index([status])
+}
+
+/// Active and revoked authentication sessions surfaced to the user.
+///
+/// Privy owns the actual token lifecycle; this table mirrors what we
+/// need for the in-app "Active sessions" list — device label, last seen,
+/// IP, user agent — so the user can revoke a stale device without
+/// leaving LancePay. The `tokenHint` is the last six characters of the
+/// token (or session id) so the user can recognise the row without us
+/// ever storing the raw token in plain text.
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  deviceLabel  String?   @db.VarChar(100)
+  userAgent    String?   @db.VarChar(500)
+  ipAddress    String?   @db.VarChar(45)
+  tokenHint    String?   @db.VarChar(12)
+  issuedAt     DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+  @@index([lastSeenAt])
 }
 
 /// Latest sanctions / PEP screening result for a user. One row per user;
