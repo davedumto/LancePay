@@ -65,6 +65,8 @@ model User {
   clientNotesReceived   ClientNote[]            @relation("ClientNotes")
   kycApplication        KycApplication?
   kycDocuments          KycDocument[]
+  sanctionsScreening    SanctionsScreening?
+  accountDeletionRequest AccountDeletionRequest?
 }
 
 model KycApplication {
@@ -929,6 +931,16 @@ model ReminderSchedule {
   nextRunAt   DateTime?
   lastRunAt   DateTime?
   metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([enabled])
+  @@index([nextRunAt])
+}
+
 /// Latest sanctions / PEP screening result for a user. One row per user;
 /// rescreens overwrite the row in place. Detailed history lives off-platform
 /// at the screening provider so the API can stay slim.
@@ -946,8 +958,8 @@ model SanctionsScreening {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([enabled])
-  @@index([nextRunAt])
+  @@index([status])
+  @@index([screenedAt])
 }
 
 model ClientNote {
@@ -973,8 +985,14 @@ model SavedFilter {
   entityType  String   @db.VarChar(50) // 'invoice', 'transaction', 'client', etc.
   filters     Json     // JSON object representing the filter criteria
   isDefault   Boolean  @default(false)
-  @@index([status])
-  @@index([screenedAt])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([entityType])
 }
 
 /// Pending account-deletion request raised by the user. We keep the row for
@@ -994,10 +1012,7 @@ model AccountDeletionRequest {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, name])
-  @@index([userId])
-  @@index([entityType])
-  @@index([userId])
+  @@unique([userId])
   @@index([status])
   @@index([scheduledAt])
 }
