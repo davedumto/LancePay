@@ -59,6 +59,53 @@ model User {
   subscriptions         Subscription[]
   notifications         Notification[]
   tags                  Tag[]
+  kycApplication        KycApplication?
+  kycDocuments          KycDocument[]
+}
+
+model KycApplication {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  status          String   @default("pending") @db.VarChar(20)
+  level           String   @default("basic") @db.VarChar(20)
+  fullName        String?  @db.VarChar(200)
+  dateOfBirth     DateTime?
+  countryCode     String?  @db.VarChar(2)
+  addressLine1    String?  @db.VarChar(200)
+  addressLine2    String?  @db.VarChar(200)
+  city            String?  @db.VarChar(100)
+  region          String?  @db.VarChar(100)
+  postalCode      String?  @db.VarChar(20)
+  rejectionReason String?  @db.Text
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model KycDocument {
+  id           String   @id @default(uuid())
+  userId       String
+  documentType String   @db.VarChar(40)
+  status       String   @default("uploaded") @db.VarChar(20)
+  fileUrl      String   @db.VarChar(512)
+  fileName     String?  @db.VarChar(200)
+  fileSize     Int?
+  mimeType     String?  @db.VarChar(80)
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([documentType])
 }
 
 model Notification {
