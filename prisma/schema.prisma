@@ -65,6 +65,7 @@ model User {
   deletionRequests        AccountDeletionRequest[]
   kycApplication          KycApplication?
   kycDocuments            KycDocument[]
+  whitelistAddresses      WhitelistAddress[]
 }
 
 model KycApplication {
@@ -1085,5 +1086,21 @@ model TaxRate {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+/// A whitelisted Stellar/bank withdrawal address for a user.
+model WhitelistAddress {
+  id        String   @id @default(uuid())
+  userId    String
+  label     String   @db.VarChar(100)
+  address   String   @db.VarChar(70)
+  network   String   @default("stellar") @db.VarChar(20) // "stellar" | "bank"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, address])
   @@index([userId])
 }
