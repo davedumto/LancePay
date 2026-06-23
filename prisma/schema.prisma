@@ -59,10 +59,12 @@ model User {
   subscriptions         Subscription[]
   notifications         Notification[]
   tags                  Tag[]
-  timeEntries           TimeEntry[]
-  sessions              UserSession[]
-  kycApplication        KycApplication?
-  kycDocuments          KycDocument[]
+  timeEntries             TimeEntry[]
+  sessions                UserSession[]
+  sanctionsScreening      SanctionsScreening?
+  deletionRequests        AccountDeletionRequest[]
+  kycApplication          KycApplication?
+  kycDocuments            KycDocument[]
 }
 
 model KycApplication {
@@ -917,14 +919,6 @@ model InvoiceTag {
 }
 
 /// A logged unit of billable time for a freelancer / contractor.
-///
-/// Time entries are billed against an invoice via `invoiceId`. When the
-/// entry is created before an invoice exists, `invoiceId` stays null and
-/// the entry sits in a "draft" bucket until the user attaches it to a
-/// new or existing invoice. The amount the entry contributes to the
-/// invoice is `hours * rateUsdc` — keeping `rateUsdc` denormalised on
-/// the row so a later change to the freelancer's default rate does not
-/// retroactively rewrite historical invoices.
 model TimeEntry {
   id          String   @id @default(uuid())
   userId      String
@@ -933,7 +927,7 @@ model TimeEntry {
   hours       Decimal  @db.Decimal(10, 2)
   rateUsdc    Decimal  @db.Decimal(18, 6)
   occurredOn  DateTime @db.Date
-  status      String   @default("draft") @db.VarChar(20) // "draft" | "billed" | "void"
+  status      String   @default("draft") @db.VarChar(20)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -946,14 +940,7 @@ model TimeEntry {
   @@index([status])
 }
 
-/// Active and revoked authentication sessions surfaced to the user.
-///
-/// Privy owns the actual token lifecycle; this table mirrors what we
-/// need for the in-app "Active sessions" list — device label, last seen,
-/// IP, user agent — so the user can revoke a stale device without
-/// leaving LancePay. The `tokenHint` is the last six characters of the
-/// token (or session id) so the user can recognise the row without us
-/// ever storing the raw token in plain text.
+/// Active authentication sessions surfaced to the user.
 model UserSession {
   id           String    @id @default(uuid())
   userId       String
