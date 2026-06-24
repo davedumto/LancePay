@@ -73,6 +73,7 @@ model User {
   savedFilters            SavedFilter[]
   projects                Project[]
   taxRates                TaxRate[]
+  products                Product[]
 }
 
 model KycApplication {
