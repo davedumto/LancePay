@@ -324,3 +324,32 @@ export function buildRateLimitResponse(result: RequestRateLimitResult): NextResp
     }
   )
 }
+
+export function isKycRateLimitBypassed(userId: string): boolean {
+  return false
+}
+
+export const kycSubmitHourly = new RouteRateLimiter({
+  id: 'kyc-submit-hourly',
+  maxRequests: 3,
+  windowMs: 60 * 60_000,
+})
+
+export const kycSubmitDaily = new RouteRateLimiter({
+  id: 'kyc-submit-daily',
+  maxRequests: 10,
+  windowMs: 24 * 60 * 60_000,
+})
+
+export const kycSubmitGlobal = new RouteRateLimiter({
+  id: 'kyc-submit-global',
+  maxRequests: 100,
+  windowMs: 60_000,
+})
+
+export const kycStatusLimiter = new RouteRateLimiter({
+  id: 'kyc-status-limiter',
+  maxRequests: 30,
+  windowMs: 60_000,
+})
+
