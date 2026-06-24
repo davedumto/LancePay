@@ -9,7 +9,7 @@ vi.mock('@/lib/db', () => ({
 }))
 vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn() } }))
 vi.mock('crypto', () => ({
-  default: { randomBytes: vi.fn(() => ({ toString: () => 'abc123def456abc123de' })) },
+  default: { randomBytes: vi.fn(() => Buffer.from('0102030405060708090a0b0c0d0e0f1011121314', 'hex')) },
 }))
 
 import { verifyAuthToken } from '@/lib/auth'
@@ -86,7 +86,8 @@ describe('POST /api/routes-d/auth/2fa/enable', () => {
     userDelegate.update.mockResolvedValue({ id: 'user-1', twoFactorEnabled: true })
     const res = await POST(makePost())
     const body = await res.json()
-    expect(body.twoFactor.secret).toBeTruthy()
+    expect(body.twoFactor.secret).toMatch(/^[A-Z2-7]+$/)
+    expect(body.twoFactor.secret.length).toBeGreaterThan(0)
     expect(body.twoFactor.enabled).toBe(true)
     expect(body.twoFactor.enabledAt).toBeTruthy()
   })

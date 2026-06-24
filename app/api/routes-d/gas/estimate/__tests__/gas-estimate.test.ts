@@ -112,6 +112,6 @@ describe('POST /api/routes-d/gas/estimate', () => {
     const json = await res.json()
     expect(json.estimate.baseFee).toBe(0.001)
     expect(json.estimate.priorityFee).toBe(0.0005)
-    expect(json.estimate.totalGasFee).toBe(json.estimate.baseFee + json.estimate.priorityFee)
+    expect(json.estimate.totalGasFee).toBe(0.0015)
   })
 })
