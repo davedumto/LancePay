@@ -66,6 +66,15 @@ describe('GET /api/routes-d/transactions/[id]/receipt', () => {
     expect(body.error).toBe('User not found')
   })
 
+  it('returns 400 when transaction ID is empty', async () => {
+    mockedVerify.mockResolvedValue({ userId: 'privy-1' } as never)
+    userDelegate.findUnique.mockResolvedValue({ id: 'user-1' })
+    const res = await GET(makeGet(''), { params: { id: '' } })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Transaction ID is required')
+  })
+
   it('returns 404 when transaction not found', async () => {
     mockedVerify.mockResolvedValue({ userId: 'privy-1' } as never)
     userDelegate.findUnique.mockResolvedValue(mockUser)
