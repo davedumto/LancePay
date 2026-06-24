@@ -143,10 +143,68 @@ export class RouteRateLimiter {
   reset(identifier: string): void {
     STORE.delete(`${this.policyId}:${identifier}`)
   }
+
+  /**
+   * Read the current state for an identifier without incrementing the counter.
+   * Returns null when no entry exists (i.e. no requests have been made yet).
+   */
+  peek(identifier: string): RequestRateLimitResult | null {
+    const now = Date.now()
+    const key = `${this.policyId}:${identifier}`
+    const existing = STORE.get(key)
+
+    if (!existing || now >= existing.resetAt) return null
+
+    const remaining = Math.max(this.maxRequests - existing.count, 0)
+    return {
+      policyId: this.policyId,
+      allowed: existing.count < this.maxRequests,
+      limit: this.maxRequests,
+      remaining,
+      resetAt: existing.resetAt,
+    }
+  }
 }
 
 export function getClientIp(request: NextRequest): string {
   return getClientIdentifier(request)
+}
+
+/**
+ * Returns the current rate-limit state for every middleware policy that
+ * matches the given IP, without consuming any quota. Entries that have
+ * never been hit or whose window has expired are omitted.
+ */
+export function peekRateLimitStatus(ip: string): Array<{
+  policyId: string
+  limit: number
+  remaining: number
+  resetAt: number
+  allowed: boolean
+}> {
+  const now = Date.now()
+  return POLICIES.flatMap((policy) => {
+    const key = `${policy.id}:${ip}`
+    const entry = STORE.get(key)
+    if (!entry || now >= entry.resetAt) {
+      // Window not started or already expired — report as fully available
+      return [{
+        policyId: policy.id,
+        limit: policy.maxRequests,
+        remaining: policy.maxRequests,
+        resetAt: 0,
+        allowed: true,
+      }]
+    }
+    const remaining = Math.max(policy.maxRequests - entry.count, 0)
+    return [{
+      policyId: policy.id,
+      limit: policy.maxRequests,
+      remaining,
+      resetAt: entry.resetAt,
+      allowed: entry.count < policy.maxRequests,
+    }]
+  })
 }
 
 export function checkRequestRateLimit(request: NextRequest): RequestRateLimitResult | null {
@@ -199,6 +257,52 @@ export const twoFactorLimiter = new RouteRateLimiter({
   maxRequests: 5,
   windowMs: 15 * 60_000,
 })
+
+// ── KYC-specific limiters ────────────────────────────────────────────────────
+
+/** Per-user: max 3 KYC submissions per hour (prevents rapid-fire resubmits). */
+export const kycSubmitHourly = new RouteRateLimiter({
+  id: 'kyc-submit-hourly',
+  maxRequests: 3,
+  windowMs: 60 * 60_000,
+})
+
+/** Per-user: max 10 KYC submissions per day. */
+export const kycSubmitDaily = new RouteRateLimiter({
+  id: 'kyc-submit-daily',
+  maxRequests: 10,
+  windowMs: 24 * 60 * 60_000,
+})
+
+/** Global (all users): max 100 KYC submissions per minute. */
+export const kycSubmitGlobal = new RouteRateLimiter({
+  id: 'kyc-submit-global',
+  maxRequests: 100,
+  windowMs: 60_000,
+})
+
+/** Per-user: max 30 KYC status checks per minute. */
+export const kycStatusLimiter = new RouteRateLimiter({
+  id: 'kyc-status',
+  maxRequests: 30,
+  windowMs: 60_000,
+})
+
+/**
+ * Allowlist of user IDs that bypass KYC rate limits (e.g. internal test
+ * accounts or support tooling). Loaded from the KYC_RATE_LIMIT_BYPASS_IDS
+ * environment variable as a comma-separated list.
+ */
+const KYC_BYPASS_IDS: Set<string> = new Set(
+  (process.env.KYC_RATE_LIMIT_BYPASS_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
+)
+
+export function isKycRateLimitBypassed(userId: string): boolean {
+  return KYC_BYPASS_IDS.has(userId)
+}
 
 export function buildRateLimitResponse(result: RequestRateLimitResult): NextResponse {
   const retryAfterSeconds = Math.ceil((result.resetAt - Date.now()) / 1000)
