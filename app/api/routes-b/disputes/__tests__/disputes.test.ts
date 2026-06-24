@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-vi.mock('../../../_lib/authz', () => ({
+vi.mock('../../_lib/authz', () => ({
   requireScope: vi.fn(),
   RoutesBForbiddenError: class RoutesBForbiddenError extends Error {
     code = 'FORBIDDEN'
@@ -16,7 +16,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-import { requireScope, RoutesBForbiddenError } from '../../../_lib/authz'
+import { requireScope, RoutesBForbiddenError } from '../../_lib/authz'
 import { prisma } from '@/lib/db'
 import { GET, POST } from '../route'
 
