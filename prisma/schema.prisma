@@ -65,6 +65,7 @@ model User {
   deletionRequests        AccountDeletionRequest[]
   kycApplication          KycApplication?
   kycDocuments            KycDocument[]
+  kycSourceOfFunds        KycSourceOfFunds?
   teamMemberships         TeamMember[]
   ownedTeamMembers        TeamMember[] @relation("TeamOwner")
   whitelistAddresses      WhitelistAddress[]
@@ -99,6 +100,21 @@ model KycApplication {
 
   @@index([status])
   @@index([createdAt])
+}
+
+model KycSourceOfFunds {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  sourceType       String   @db.VarChar(50)
+  annualIncome     Decimal  @db.Decimal(18, 2)
+  currency         String   @db.VarChar(3)
+  occupation       String   @db.VarChar(100)
+  companyName      String?  @db.VarChar(100)
+  supportingDocUrl String?  @db.VarChar(512)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model KycDocument {
