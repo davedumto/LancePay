@@ -1128,3 +1128,21 @@ model WhitelistAddress {
   @@unique([userId, address])
   @@index([userId])
 }
+
+/// A catalog item (product/service) that can be added to invoices.
+model Product {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  priceUsdc   Decimal  @db.Decimal(18, 6)
+  unit        String   @default("item") @db.VarChar(50) // "item", "hour", "day", "month", etc.
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+}
