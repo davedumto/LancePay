@@ -1,4 +1,4 @@
-const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
+const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
 
 export function getMaxFileSize(): number {
   return 2 * 1024 * 1024
@@ -37,6 +37,16 @@ export function sniffMimeType(buffer: ArrayBuffer): (typeof ALLOWED_MIME_TYPES)[
     return 'image/webp'
   }
 
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38
+  ) {
+    return 'image/gif'
+  }
+
   return null
 }
 
@@ -52,6 +62,7 @@ export function stripExifMetadata(buffer: ArrayBuffer, mimeType: string): ArrayB
 
   const out: number[] = [0xff, 0xd8]
   let i = 2
+  let success = false
 
   while (i < src.length) {
     if (src[i] !== 0xff) {
@@ -65,6 +76,7 @@ export function stripExifMetadata(buffer: ArrayBuffer, mimeType: string): ArrayB
 
     if (marker === 0xd9 || marker === 0xda) {
       for (let j = i; j < src.length; j += 1) out.push(src[j])
+      success = true
       break
     }
 
@@ -80,5 +92,5 @@ export function stripExifMetadata(buffer: ArrayBuffer, mimeType: string): ArrayB
     i += 2 + length
   }
 
-  return new Uint8Array(out).buffer
+  return success ? new Uint8Array(out).buffer : buffer
 }

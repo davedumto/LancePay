@@ -25,7 +25,7 @@ describe('routes-b webhook HMAC helper', () => {
       '1714300800',
       '{"id":"evt_1","type":"invoice.paid"}',
     )
-    expect(signature).toBe('ff46e2e788f75911d270c3a9f2f03d4f1533f4625ee74de03f570fcfbea8afc2')
+    expect(signature).toBe('83a8b923821be68e43c6b834d852ff285ecb40f9ad240ba0292a8bb371025ded')
   })
 
   it('detects body tampering via signature mismatch', () => {

@@ -166,6 +166,7 @@ vi.mock('@/lib/db', () => ({
     invoice: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
   },
 }))
 

@@ -66,7 +66,7 @@ export function redactProfile(data: any, options: RedactionOptions = {}): any {
     name: 'full',
     email: isAdmin ? 'full' : 'masked',
     phone: isAdmin ? 'full' : 'masked',
-    address: isAdmin ? 'full' : 'hidden',
+    address: isAdmin ? 'full' : 'masked',
     governmentId: 'hidden', // Always hide government ID
     avatarUrl: 'full',
     taxPercentage: 'full',

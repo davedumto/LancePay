@@ -9,8 +9,10 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/db', () => ({
   prisma: {
     user: { findUnique: vi.fn() },
-    invoice: { findMany: vi.fn() },
-    bankAccount: { findMany: vi.fn() },
+    invoice: { findMany: vi.fn(), count: vi.fn().mockResolvedValue(0), groupBy: vi.fn().mockResolvedValue([]) },
+    bankAccount: { findMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+    contact: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+    tag: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
   },
 }))
 
@@ -39,6 +41,13 @@ describe('GET /api/routes-b/search validation', () => {
     mockedUserFindUnique.mockResolvedValue({ id: 'user-1' } as never)
     mockedInvoiceFindMany.mockResolvedValue([] as never)
     mockedBankFindMany.mockResolvedValue([] as never)
+    vi.mocked(prisma.contact.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.tag.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.invoice.count).mockResolvedValue(0 as never)
+    vi.mocked(prisma.bankAccount.count).mockResolvedValue(0 as never)
+    vi.mocked(prisma.contact.count).mockResolvedValue(0 as never)
+    vi.mocked(prisma.tag.count).mockResolvedValue(0 as never)
+    vi.mocked(prisma.invoice.groupBy).mockResolvedValue([] as never)
   })
 
   it('rejects an empty query without calling search tables', async () => {

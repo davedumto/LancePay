@@ -4,6 +4,65 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+
+const mockUsers = new Map<string, any>();
+const mockInvoices = new Map<string, any>();
+const mockCollaborators = new Map<string, any>();
+
+vi.mock("@/lib/db", () => {
+  return {
+    prisma: {
+      user: {
+        create: vi.fn(async ({ data }) => {
+          const id = `user_${Math.random()}`;
+          const user = { id, ...data };
+          mockUsers.set(id, user);
+          return user;
+        }),
+        deleteMany: vi.fn(async () => {
+          mockUsers.clear();
+          return { count: 0 };
+        }),
+      },
+      invoice: {
+        create: vi.fn(async ({ data }) => {
+          const id = `invoice_${Math.random()}`;
+          const invoice = { id, ...data };
+          mockInvoices.set(id, invoice);
+          return invoice;
+        }),
+        findUnique: vi.fn(async ({ where }) => {
+          return mockInvoices.get(where.id) || null;
+        }),
+        delete: vi.fn(async ({ where }) => {
+          mockInvoices.delete(where.id);
+          return { id: where.id };
+        }),
+      },
+      invoiceCollaborator: {
+        create: vi.fn(async ({ data }) => {
+          const id = `collab_${Math.random()}`;
+          const collab = { id, ...data };
+          mockCollaborators.set(id, collab);
+          return collab;
+        }),
+        findFirst: vi.fn(async ({ where }) => {
+          for (const collab of mockCollaborators.values()) {
+            if (collab.invoiceId === where.invoiceId && collab.subContractorId === where.subContractorId) {
+              return collab;
+            }
+          }
+          return null;
+        }),
+        deleteMany: vi.fn(async () => {
+          mockCollaborators.clear();
+          return { count: 0 };
+        }),
+      },
+    },
+  };
+});
+
 import { prisma } from "@/lib/db";
 import {
   checkAuditLogAccess,

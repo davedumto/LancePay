@@ -75,15 +75,22 @@ export async function GET(request: NextRequest) {
       toExclusive,
     );
 
+    const mappedBuckets = rows.map((row) => ({
+      bucket: row.bucket.toISOString(),
+      count: Number(row.count),
+      totalAmount: Number(row.total_amount ?? 0),
+      avgAmount: Number(row.avg_amount ?? 0),
+    }));
+
     return NextResponse.json({
       groupBy,
       tz,
-      buckets: rows.map((row) => ({
-        bucket: row.bucket.toISOString(),
-        count: Number(row.count),
-        totalAmount: Number(row.total_amount ?? 0),
-        avgAmount: Number(row.avg_amount ?? 0),
-      })),
+      buckets: mappedBuckets,
+      withdrawals: {
+        groupBy,
+        tz,
+        buckets: mappedBuckets,
+      }
     });
   } catch (error) {
     logger.error({ err: error }, "Routes B analytics withdrawals GET error");

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { swrGet, swrSet, swrClear, swrIsFresh, swrIsStale, type SwrEntry } from '../_lib/swr-cache'
+import { swrGet, swrSet, swrClear, swrIsFresh, swrIsStale, swrDelete, type SwrEntry } from '../_lib/swr-cache'
 
 // ── swr-cache unit tests ──────────────────────────────────────────────────────
 
@@ -51,7 +51,6 @@ describe('swr-cache', () => {
   })
 
   it('swrDelete removes an entry', () => {
-    const { swrDelete } = require('../_lib/swr-cache')
     swrSet('x', 1, 15_000, 60_000)
     swrDelete('x')
     expect(swrGet('x')).toBeNull()
@@ -161,6 +160,7 @@ describe('GET /wallet — SWR caching', () => {
     // Still returns the stale cached wallet
     const body = await res.json()
     expect(body.wallet).toHaveProperty('stellarAddress', 'GADDR123')
+    await new Promise((r) => setImmediate(r))
   })
 
   it('returns null wallet gracefully when DB returns null', async () => {

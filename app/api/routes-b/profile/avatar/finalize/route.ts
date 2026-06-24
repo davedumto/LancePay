@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateCloudinaryUrl, isExpiredKey } from '../../_lib/presigned-upload'
+import { generateCloudinaryUrl, isExpiredKey } from '../../../_lib/presigned-upload'
 import { getMaxFileSize, isAllowedMimeType, sniffMimeType, stripExifMetadata } from '../../../_lib/file-signature'
 import { registerRoute } from '../../../_lib/openapi'
 import { z } from 'zod'

@@ -23,7 +23,8 @@ export interface AuditLogAccessContext {
  * @returns true if user is an admin
  */
 export function isAdminEmail(email: string): boolean {
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
+  const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map((email) => email.toLowerCase().trim()).filter(Boolean);
+  return adminEmails.includes(email.toLowerCase().trim());
 }
 
 /**

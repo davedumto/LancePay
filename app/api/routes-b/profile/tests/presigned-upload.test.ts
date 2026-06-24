@@ -66,7 +66,7 @@ describe('Presigned Upload', () => {
     const result = await validateUploadedFile('test-key', oversizedBuffer)
 
     expect(result.valid).toBe(false)
-    expect(result.error).toBe('File size exceeds 5MB limit')
+    expect(result.error).toBe('File size exceeds 2MiB limit')
     expect(result.size).toBe(getMaxFileSize() + 1)
   })
 

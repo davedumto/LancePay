@@ -5,6 +5,7 @@ import {
   getCacheValue,
   setCacheValue,
   deleteCacheValue,
+  deleteCachePrefix,
 } from "../../_lib/cache";
 import { onInvoicePaid } from "../../_lib/events";
 import { isValidTimezone } from "../../_lib/date-range";
@@ -16,7 +17,7 @@ function ensureTopMonthsCacheInvalidationHook() {
   if (topMonthsEventHooked) return;
   topMonthsEventHooked = true;
   onInvoicePaid(({ userId }) => {
-    deleteCacheValue(`routes-b:analytics:top-months:${userId}`);
+    deleteCachePrefix(`routes-b:analytics:top-months:${userId}`);
   });
 }
 

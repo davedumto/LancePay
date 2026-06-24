@@ -81,7 +81,7 @@ describe('POST /api/routes-b/tags', () => {
 
   it('creates a tag when payload is valid', async () => {
     mockedTagFindUnique.mockResolvedValue(null as never)
-    mockedTagCreate.mockResolvedValue(makeTag({ id: 'tag-new', name: 'Urgent' }) as never)
+    mockedTagCreate.mockResolvedValue(makeTag({ id: 'tag-new', name: 'Urgent', color: '#123456' }) as never)
     const request = buildRequest('POST', 'http://localhost/api/routes-b/tags', {
       token: 'token',
       body: { name: 'Urgent', color: '#123456' },
