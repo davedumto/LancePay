@@ -68,6 +68,11 @@ model User {
   teamMemberships         TeamMember[]
   ownedTeamMembers        TeamMember[] @relation("TeamOwner")
   whitelistAddresses      WhitelistAddress[]
+  clientNotes             ClientNote[]
+  clientNoteClients       ClientNote[]    @relation("ClientNotes")
+  savedFilters            SavedFilter[]
+  projects                Project[]
+  taxRates                TaxRate[]
 }
 
 model KycApplication {
