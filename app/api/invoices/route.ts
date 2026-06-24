@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
+import { sendInvoiceToClient } from '@/lib/email'
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -88,6 +89,18 @@ export async function POST(request: NextRequest) {
       clientId: clientUser?.id || null,
     },
   })
+
+  // Fire-and-forget — email failure must not block the API response
+  sendInvoiceToClient({
+    clientEmail: invoice.clientEmail,
+    clientName: invoice.clientName,
+    freelancerName: user.name || user.email || 'Your freelancer',
+    invoiceNumber: invoice.invoiceNumber,
+    amount: Number(invoice.amount),
+    currency: invoice.currency,
+    dueDate: invoice.dueDate ? invoice.dueDate.toLocaleDateString() : null,
+    paymentLink: invoice.paymentLink,
+  }).catch((err) => console.error('sendInvoiceToClient failed', err))
 
   return NextResponse.json(
     {

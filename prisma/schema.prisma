@@ -59,6 +59,60 @@ model User {
   subscriptions         Subscription[]
   notifications         Notification[]
   tags                  Tag[]
+  timeEntries             TimeEntry[]
+  sessions                UserSession[]
+  sanctionsScreening      SanctionsScreening?
+  deletionRequests        AccountDeletionRequest[]
+  kycApplication          KycApplication?
+  kycDocuments            KycDocument[]
+  teamMemberships         TeamMember[]
+  ownedTeamMembers        TeamMember[] @relation("TeamOwner")
+  whitelistAddresses      WhitelistAddress[]
+}
+
+model KycApplication {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  status          String   @default("pending") @db.VarChar(20)
+  level           String   @default("basic") @db.VarChar(20)
+  fullName        String?  @db.VarChar(200)
+  dateOfBirth     DateTime?
+  countryCode     String?  @db.VarChar(2)
+  addressLine1    String?  @db.VarChar(200)
+  addressLine2    String?  @db.VarChar(200)
+  city            String?  @db.VarChar(100)
+  region          String?  @db.VarChar(100)
+  postalCode      String?  @db.VarChar(20)
+  rejectionReason String?  @db.Text
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model KycDocument {
+  id           String   @id @default(uuid())
+  userId       String
+  documentType String   @db.VarChar(40)
+  status       String   @default("uploaded") @db.VarChar(20)
+  fileUrl      String   @db.VarChar(512)
+  fileName     String?  @db.VarChar(200)
+  fileSize     Int?
+  mimeType     String?  @db.VarChar(80)
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([documentType])
 }
 
 model Notification {
@@ -103,14 +157,16 @@ model BankAccount {
 }
 
 model Contact {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   name      String
   email     String
+  phone     String?
   company   String?
   notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -169,6 +225,7 @@ model Invoice {
   escrowDisputedAt        DateTime?
   escrowEvents            EscrowEvent[]
   invoiceTags             InvoiceTag[]
+  timeEntries             TimeEntry[]
   lienActive              Boolean               @default(false)
   advances                PaymentAdvance[]
   auditEvents             AuditEvent[]
@@ -862,4 +919,212 @@ model InvoiceTag {
   @@unique([invoiceId, tagId])
   @@index([invoiceId])
   @@index([tagId])
+}
+
+/// A logged unit of billable time for a freelancer / contractor.
+model TimeEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  invoiceId   String?
+  description String   @db.VarChar(500)
+  hours       Decimal  @db.Decimal(10, 2)
+  rateUsdc    Decimal  @db.Decimal(18, 6)
+  occurredOn  DateTime @db.Date
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([invoiceId])
+  @@index([userId, occurredOn])
+  @@index([status])
+}
+
+/// Active authentication sessions surfaced to the user.
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  deviceLabel  String?   @db.VarChar(100)
+  userAgent    String?   @db.VarChar(500)
+  ipAddress    String?   @db.VarChar(45)
+  tokenHint    String?   @db.VarChar(12)
+  issuedAt     DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+  @@index([lastSeenAt])
+}
+
+/// Latest sanctions / PEP screening result for a user. One row per user;
+/// rescreens overwrite the row in place. Detailed history lives off-platform
+/// at the screening provider so the API can stay slim.
+model SanctionsScreening {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  status      String   @db.VarChar(20) // "clear" | "flagged" | "under_review"
+  provider    String   @db.VarChar(50) // e.g. "ComplyAdvantage", "manual"
+  matchScore  Float?   // 0..1, null when status is "clear" with no match
+  screenedAt  DateTime @default(now())
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([screenedAt])
+}
+
+model ClientNote {
+  id        String   @id @default(uuid())
+  userId    String
+  clientId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client User @relation("ClientNotes", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model SavedFilter {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String   @db.VarChar(100)
+  entityType  String   @db.VarChar(50) // 'invoice', 'transaction', 'client', etc.
+  filters     Json     // JSON object representing the filter criteria
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([entityType])
+}
+
+/// Pending account-deletion request raised by the user. We keep the row for
+/// the duration of the grace window so support can cancel the deletion if
+/// the user changes their mind. Status moves "pending" → "cancelled" |
+/// "completed" depending on the outcome.
+model AccountDeletionRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  reason      String?  @db.VarChar(500)
+  status      String   @default("pending") @db.VarChar(20)
+  scheduledAt DateTime // when the soft-delete is eligible to execute
+  cancelledAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+/// Snapshot of an FX pair's mid rate at a point in time. Rates are written
+/// by the scheduled exchange-rate poller; the historical endpoint reads
+/// from this table so on-chain settlement, FX hedging audits, and admin
+/// dashboards all see the same numbers.
+model FxRateSnapshot {
+  id           String   @id @default(uuid())
+  fromCurrency String   @db.VarChar(8)
+  toCurrency   String   @db.VarChar(8)
+  rate         Decimal  @db.Decimal(18, 8)
+  source       String   @db.VarChar(50) // e.g. "exchangerate-api", "manual"
+  capturedAt   DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([fromCurrency, toCurrency, capturedAt])
+  @@index([capturedAt])
+}
+
+/// A client project grouping invoices and time entries.
+model Project {
+  id          String    @id @default(uuid())
+  userId      String
+  title       String    @db.VarChar(200)
+  description String?   @db.Text
+  clientName  String?   @db.VarChar(200)
+  status      String    @default("active") @db.VarChar(20) // "active" | "archived"
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+/// A tax rate definition that can be applied to invoices.
+model TaxRate {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(300)
+  rate        Decimal  @db.Decimal(6, 4) // e.g. 0.1000 for 10%
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A member that the owning user has invited to collaborate on their account.
+model TeamMember {
+  id          String    @id @default(uuid())
+  ownerId     String
+  memberId    String?
+  email       String    @db.VarChar(255)
+  role        String    @default("viewer") @db.VarChar(30) // "admin" | "editor" | "viewer"
+  status      String    @default("pending") @db.VarChar(20) // "pending" | "active" | "removed"
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  removedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner  User  @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  member User? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([ownerId, email])
+  @@index([ownerId])
+  @@index([memberId])
+}
+
+/// A whitelisted Stellar/bank withdrawal address for a user.
+model WhitelistAddress {
+  id        String   @id @default(uuid())
+  userId    String
+  label     String   @db.VarChar(100)
+  address   String   @db.VarChar(70)
+  network   String   @default("stellar") @db.VarChar(20) // "stellar" | "bank"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, address])
+  @@index([userId])
 }
