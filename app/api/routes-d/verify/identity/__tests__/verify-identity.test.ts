@@ -98,12 +98,9 @@ describe('POST /api/routes-d/verify/identity', () => {
     kycDelegate.upsert.mockResolvedValue(mockVerification)
     const res = await POST(makePost({ idType: 'passport' }))
     expect(res.status).toBe(201)
-    const body = await res.json()
-    expect(body.verification).toMatchObject({
-      id: 'kyc-uuid-1',
-      status: 'pending',
-      level: 'national_id',
-    })
+    const upsertCall = kycDelegate.upsert.mock.calls[0][0]
+    expect(upsertCall.create.level).toBe('passport')
+    expect(upsertCall.update.level).toBe('passport')
   })
 
   it('returns 201 with default idType when not provided', async () => {

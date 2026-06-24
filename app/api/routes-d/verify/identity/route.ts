@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
     const idType: IdType = (rawIdType as IdType) ?? 'national_id'
 
-    const kyc = await getKycDelegate()
+    const kyc = getKycDelegate()
     const existing = await kyc.findUnique({ where: { userId: user.id } })
 
     if (existing) {
