@@ -75,6 +75,9 @@ model User {
   projects                Project[]
   taxRates                TaxRate[]
   products                Product[]
+  clientFeedback          ClientFeedback[]
+  clientFeedbackClients   ClientFeedback[] @relation("ClientFeedbackClients")
+  journalEntries          JournalEntry[]
 }
 
 model KycApplication {
@@ -1167,4 +1170,50 @@ model Product {
 
   @@index([userId])
   @@index([isActive])
+}
+
+model ClientFeedback {
+  id        String   @id @default(uuid())
+  userId    String
+  clientId  String
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client User @relation("ClientFeedbackClients", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model JournalEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  entryDate DateTime @default(now())
+  memo      String?  @db.Text
+  status    String   @default("posted") @db.VarChar(20)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lines JournalLine[]
+
+  @@index([userId])
+  @@index([entryDate])
+}
+
+model JournalLine {
+  id      String  @id @default(uuid())
+  entryId String
+  account String  @db.VarChar(100)
+  debit   Decimal @default(0) @db.Decimal(18, 2)
+  credit  Decimal @default(0) @db.Decimal(18, 2)
+
+  entry JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@index([account])
 }
