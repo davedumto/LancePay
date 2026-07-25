@@ -24,6 +24,7 @@ model User {
   twoFactorSecret  String?
   taxPercentage    Float    @default(0)
   timezone         String?
+  passwordHash     String?  @db.VarChar(255)
   virtualAccount         VirtualAccount?
   wallet                 Wallet?
   bankAccounts           BankAccount[]
@@ -75,6 +76,9 @@ model User {
   projects                Project[]
   taxRates                TaxRate[]
   products                Product[]
+  trustedDevices          TrustedDevice[]
+  passwordResetTokens     PasswordResetToken[]
+  recoveryEmail           RecoveryEmail?
 }
 
 model KycApplication {
@@ -388,7 +392,8 @@ model ApiKey {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAllowlist ApiKeyIpAllowlist[]
 
   @@index([userId])
   @@index([hashedKey])
@@ -1167,4 +1172,61 @@ model Product {
 
   @@index([userId])
   @@index([isActive])
+}
+
+model TrustedDevice {
+  id         String    @id @default(uuid())
+  userId     String
+  label      String    @db.VarChar(100)
+  userAgent  String?   @db.VarChar(500)
+  ipAddress  String?   @db.VarChar(45)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RecoveryEmail {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  email          String    @db.VarChar(255)
+  tokenHash      String?
+  tokenExpiresAt DateTime?
+  verifiedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ApiKeyIpAllowlist {
+  id        String   @id @default(uuid())
+  apiKeyId  String
+  cidr      String   @db.VarChar(50)
+  label     String?  @db.VarChar(100)
+  createdAt DateTime @default(now())
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, cidr])
+  @@index([apiKeyId])
 }
