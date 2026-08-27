@@ -93,6 +93,8 @@ model User {
   paymentPlans            PaymentPlan[]
   discounts               Discount[]
   refunds                 Refund[]
+  quotes                  Quote[]
+  invoiceTemplates        InvoiceTemplate[]
   portalSessionsIssued    ClientPortalSession[] @relation("PortalSessionOwner")
   portalSessionsAsClient  ClientPortalSession[] @relation("PortalSessionClient")
 }
@@ -326,6 +328,9 @@ model Invoice {
   creditNotes             CreditNote[]
   paymentPlan             PaymentPlan?
   taxLines                InvoiceTaxLine[]
+  quote                   Quote?
+  refunds                 Refund[]
+  publicLinks             InvoicePublicLink[]
 }
 
 model Subscription {
@@ -1522,6 +1527,8 @@ model Refund {
   @@index([userId])
   @@index([invoiceId])
   @@index([status])
+}
+
 /// A revocable, hashed-token session that lets a freelancer's client access
 /// their self-serve portal. Only the SHA-256 hash of the token is persisted
 /// (mirrors ApiKey.hashedKey); the plaintext token is returned once, at
@@ -1566,4 +1573,43 @@ model InvoicePublicLink {
   @@index([invoiceId])
   @@index([invoiceId, revokedAt])
   @@index([hashedToken])
+}
+
+model Quote {
+  id          String    @id @default(uuid())
+  userId      String
+  clientEmail String
+  clientName  String?
+  description String
+  amount      Decimal   @db.Decimal(10, 2)
+  currency    String    @default("USD")
+  status      String    @default("pending")
+  expiresAt   DateTime?
+  invoiceId   String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model InvoiceTemplate {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  clientEmail String?
+  clientName  String?
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, name])
+  @@index([userId])
 }
