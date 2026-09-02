@@ -1,0 +1,15 @@
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@reown/appkit': true
+  '@scarf/scarf': true
+  '@tree-sitter-grammars/tree-sitter-yaml': true
+  bufferutil: true
+  core-js-pure: true
+  esbuild: true
+  keccak: true
+  prisma: true
+  tree-sitter: true
+  tree-sitter-json: true
+  unrs-resolver: true
+  utf-8-validate: true
