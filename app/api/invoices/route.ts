@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { generateInvoiceNumber } from '@/lib/utils'
 import { sendInvoiceToClient } from '@/lib/email'
+import { createInvoiceSchema } from '@/lib/validations'
 
 export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -55,15 +56,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const body = await request.json()
-  const { clientEmail, clientName, description, amount, currency = 'USD', dueDate } = body
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
-  if (!clientEmail || !description || !amount || amount <= 0) {
+  const parsed = createInvoiceSchema.safeParse(body)
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: 'clientEmail, description, and a positive amount are required' },
+      { error: 'Invalid request body', details: parsed.error.flatten().fieldErrors },
       { status: 400 },
     )
   }
+  const { clientEmail, clientName, description, amount, currency, dueDate } = parsed.data
 
   const invoiceNumber = generateInvoiceNumber()
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`

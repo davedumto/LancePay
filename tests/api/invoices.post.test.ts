@@ -124,4 +124,63 @@ describe('POST /api/invoices', () => {
       expect.objectContaining({ freelancerName: 'freelancer@example.com' }),
     )
   })
+
+  describe('createInvoiceSchema validation', () => {
+    const validBody = {
+      clientEmail: 'client@example.com',
+      description: 'Web development',
+      amount: 500,
+    }
+
+    it('rejects a missing required field with the schema-derived error', async () => {
+      const res = await POST(makeRequest({
+        clientEmail: validBody.clientEmail,
+        amount: validBody.amount,
+      }))
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json.error).toBe('Invalid request body')
+      expect(json.details.description).toEqual(['Required'])
+      expect(prisma.invoice.create).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['clientEmail', { clientEmail: 'not-an-email' }],
+      ['amount', { amount: 'abc' }],
+      ['amount', { amount: 100001 }],
+      ['currency', { currency: 'dollars' }],
+      ['dueDate', { dueDate: 'not-a-date' }],
+    ])('rejects an invalid %s', async (field, override) => {
+      const res = await POST(makeRequest({ ...validBody, ...override }))
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json.details[field]).toBeDefined()
+      expect(prisma.invoice.create).not.toHaveBeenCalled()
+      expect(sendInvoiceToClient).not.toHaveBeenCalled()
+    })
+
+    it('defaults currency to USD and accepts the empty optional fields the form sends', async () => {
+      const res = await POST(makeRequest({ ...validBody, clientName: '', dueDate: '' }))
+
+      expect(res.status).toBe(201)
+      expect(prisma.invoice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ currency: 'USD', clientName: null, dueDate: null }),
+      })
+    })
+
+    it('returns 400 for a malformed JSON body', async () => {
+      const req = new Request('http://localhost/api/invoices', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer valid-token' },
+        body: '{not json',
+      }) as unknown as import('next/server').NextRequest
+
+      const res = await POST(req)
+
+      expect(res.status).toBe(400)
+      expect(prisma.invoice.create).not.toHaveBeenCalled()
+    })
+  })
 })
