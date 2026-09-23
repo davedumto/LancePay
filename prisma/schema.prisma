@@ -591,6 +591,11 @@ model UserWebhook {
   userId           String
   targetUrl        String    @db.VarChar(512)
   signingSecret    String    @db.VarChar(255)
+  // Grace window for signing-secret rotation: the immediately previous secret
+  // stays valid until `signingSecretExpiresAt` so in-flight deliveries signed
+  // with the old secret still verify during the overlap period.
+  previousSigningSecret  String?   @db.VarChar(255)
+  signingSecretExpiresAt DateTime?
   description      String?   @db.VarChar(100)
   isActive         Boolean   @default(true)
   subscribedEvents String[]  @default(["invoice.paid"])
