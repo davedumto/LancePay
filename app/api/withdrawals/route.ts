@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
   const { amount, bankAccountId, code } = await request.json()
 
-  if (!amount || amount <= 0) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
   }
 

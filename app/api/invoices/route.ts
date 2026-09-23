@@ -58,7 +58,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { clientEmail, clientName, description, amount, currency = 'USD', dueDate } = body
 
-  if (!clientEmail || !description || !amount || amount <= 0) {
+  if (
+    !clientEmail ||
+    !description ||
+    typeof amount !== 'number' ||
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
     return NextResponse.json(
       { error: 'clientEmail, description, and a positive amount are required' },
       { status: 400 },

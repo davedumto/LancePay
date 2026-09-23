@@ -124,4 +124,21 @@ describe('POST /api/invoices', () => {
       expect.objectContaining({ freelancerName: 'freelancer@example.com' }),
     )
   })
+
+  it.each([
+    ['a non-numeric string', 'abc'],
+    ['a numeric string', '500'],
+    ['zero', 0],
+    ['a negative number', -5],
+  ])('returns a clean 400 for %s amount without writing to the database', async (_label, amount) => {
+    const res = await POST(makeRequest({
+      clientEmail: 'client@example.com',
+      description: 'Web development',
+      amount,
+    }))
+
+    expect(res.status).toBe(400)
+    expect(prisma.invoice.create).not.toHaveBeenCalled()
+    expect(sendInvoiceToClient).not.toHaveBeenCalled()
+  })
 })

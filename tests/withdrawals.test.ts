@@ -144,4 +144,26 @@ describe('Withdrawal API', () => {
     expect(res.status).toBe(500)
     expect(json.error).toBe('API Down')
   })
+
+  it.each([
+    ['a non-numeric string', 'abc'],
+    ['a numeric string', '50'],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['zero', 0],
+    ['a negative number', -10],
+  ])('returns a clean 400 for %s amount before touching the database', async (_label, amount) => {
+    const mockUser = { id: 'user-1', privyId: 'privy-1', wallet: { address: 'G123' }, twoFactorEnabled: false }
+    vi.mocked(verifyAuthToken).mockResolvedValue({ userId: 'privy-1' } as any)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
+
+    const res = await POST(makeRequest({ amount, bankAccountId: 'bank-1' }))
+    const json = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(json.error).toBe('Invalid amount')
+    expect(prisma.bankAccount.findFirst).not.toHaveBeenCalled()
+    expect(initiateOfframp).not.toHaveBeenCalled()
+    expect(prisma.transaction.create).not.toHaveBeenCalled()
+  })
 })
