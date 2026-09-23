@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
   });
 
   // 8. If failed → send admin alert email
-  if (payloadStatus === 'failed' || payloadStatus === 'reversed') {
+  if (newStatus === 'failed' || newStatus === 'reversed') {
     try {
       await resend.emails.send({
         from: 'LancePay Alerts <no-reply@lancepay.com>',
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
         html: `
           <h1>Off-ramp Failure Alert</h1>
           <p><strong>Withdrawal ID:</strong> ${reference || transactionId}</p>
-          <p><strong>Status:</strong> ${payloadStatus}</p>
+          <p><strong>Status:</strong> ${newStatus}</p>
           <p><strong>Reason:</strong> ${reason || 'No reason provided'}</p>
           <p>Please review and handle manually in the dashboard.</p>
         `,
