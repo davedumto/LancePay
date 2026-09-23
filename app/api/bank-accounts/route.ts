@@ -4,6 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 import { verifyNigerianBankAccount } from '@/lib/bank-verification'
 import speakeasy from 'speakeasy'
 import { decrypt } from '@/lib/crypto'
+import { addBankAccountSchema } from '@/lib/validations'
 
 const BANKS: Record<string, string> = {
   '044': 'Access Bank',
@@ -53,7 +54,14 @@ export async function POST(request: NextRequest) {
   const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const { bankCode, accountNumber, code } = await request.json()
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const rawCode = (body as { code?: unknown } | null)?.code
+  const code = typeof rawCode === 'string' || typeof rawCode === 'number' ? String(rawCode) : undefined
 
   // 2FA Check
   if (user.twoFactorEnabled) {
@@ -74,12 +82,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!bankCode || !accountNumber || accountNumber.length !== 10) {
+  const parsed = addBankAccountSchema.safeParse(body)
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Invalid input - account number must be 10 digits' },
+      { error: 'Invalid request body', details: parsed.error.flatten().fieldErrors },
       { status: 400 }
     )
   }
+  const { bankCode, accountNumber } = parsed.data
 
   const bankName = BANKS[bankCode]
   if (!bankName) {

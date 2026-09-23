@@ -10,8 +10,8 @@ export const createInvoiceSchema = z.object({
 })
 
 export const addBankAccountSchema = z.object({
-  bankCode: z.string().length(3),
-  accountNumber: z.string().length(10),
+  bankCode: z.string().regex(/^\d{3}$/, 'Bank code must be 3 digits'),
+  accountNumber: z.string().regex(/^\d{10}$/, 'Account number must be 10 digits'),
 })
 
 export const createApiKeySchema = z.object({
