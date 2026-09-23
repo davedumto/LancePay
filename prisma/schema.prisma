@@ -438,6 +438,8 @@ model ReferralEarning {
   amountUsdc     Decimal  @db.Decimal(18, 6)
   platformFee    Decimal  @db.Decimal(18, 6)
   status         String   @default("earned")
+  clawbackReason String?
+  clawbackAt     DateTime?
   createdAt      DateTime @default(now())
 
   referrer     User @relation("ReferrerEarnings", fields: [referrerId], references: [id], onDelete: Cascade)
@@ -793,6 +795,7 @@ model InvoiceCollaborator {
   id              String    @id @default(uuid())
   invoiceId       String
   subContractorId String
+  role            String    @default("viewer") @db.VarChar(20)
   sharePercentage Decimal   @db.Decimal(5, 2)
   payoutStatus    String    @default("pending") @db.VarChar(20)
   internalTxId    String?   @db.VarChar(255)
