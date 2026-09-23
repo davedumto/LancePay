@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "InvoiceCollaborator" ADD COLUMN "role" VARCHAR(20) NOT NULL DEFAULT 'viewer';
+ALTER TABLE "InvoiceCollaborator" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
