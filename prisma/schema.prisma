@@ -799,6 +799,8 @@ model InvoiceCollaborator {
   paidAt          DateTime?
   paymentSource   String?   // 'payment' | 'escrow' | 'advance'
   createdAt       DateTime  @default(now())
+  role            String    @default("viewer") @db.VarChar(20)
+  updatedAt       DateTime  @default(now()) @updatedAt
 
   invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   subContractor User    @relation("SubContractorCollaborations", fields: [subContractorId], references: [id], onDelete: Cascade)
