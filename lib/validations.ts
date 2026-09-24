@@ -53,8 +53,41 @@ export const createSubscriptionSchema = z.object({
   startDate: z.string().optional(),
 })
 
+const dateString = z
+  .string()
+  .refine((val) => !isNaN(new Date(val).getTime()), 'Invalid date format')
+
+export const createTaxRateSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    description: z.string().max(300).nullish(),
+    jurisdiction: z.string().min(1).max(100),
+    // Fraction, e.g. 0.1 for 10%. Must be non-negative.
+    rate: z.number().finite().nonnegative().max(1),
+    effectiveFrom: dateString,
+    effectiveTo: dateString.nullish(),
+    parentRateId: z.string().uuid().nullish(),
+    isDefault: z.boolean().optional().default(false),
+  })
+  .refine(
+    (data) =>
+      !data.effectiveTo ||
+      new Date(data.effectiveTo).getTime() > new Date(data.effectiveFrom).getTime(),
+    { message: 'effectiveTo must be after effectiveFrom', path: ['effectiveTo'] }
+  )
+
+export const convertTimeEntriesSchema = z.object({
+  timeEntryIds: z.array(z.string().uuid()).min(1, 'At least one time entry is required'),
+  clientEmail: z.string().email(),
+  clientName: z.string().max(255).nullish(),
+  currency: z.string().regex(/^[A-Z]{3,5}$/, 'Invalid currency code').optional().default('USD'),
+  dueDate: dateString.nullish(),
+})
+
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>
 export type AddBankAccountInput = z.infer<typeof addBankAccountSchema>
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>
 export type ExternalInvoiceInput = z.infer<typeof externalInvoiceSchema>
 export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>
+export type CreateTaxRateInput = z.infer<typeof createTaxRateSchema>
+export type ConvertTimeEntriesInput = z.infer<typeof convertTimeEntriesSchema>
