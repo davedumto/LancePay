@@ -1370,9 +1370,30 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  priceVersions ProductPriceVersion[]
 
   @@index([userId])
+  @@index([isActive])
+}
+
+/// An immutable, effective-dated price for a Product. New prices are appended as
+/// new versions rather than mutating the product, so invoices issued in the past
+/// keep referencing the price that was active on their issue date.
+model ProductPriceVersion {
+  id            String   @id @default(uuid())
+  productId     String
+  priceUsdc     Decimal  @db.Decimal(18, 6)
+  /// The moment this price takes effect. A version scheduled in the future is
+  /// stored with isActive=false until its effective date arrives.
+  effectiveDate DateTime @default(now())
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productId, effectiveDate])
   @@index([isActive])
 }
 
