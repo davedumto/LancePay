@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { Resend } from 'resend';
+import { timingSafeEqual } from '@/lib/crypto';
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     .update(rawBody)
     .digest('base64');
 
-  if (computedSignature !== signature) {
+  if (!timingSafeEqual(computedSignature, signature)) {
     console.warn('⚠️ Invalid webhook signature — possible tampering');
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }

@@ -7,6 +7,7 @@ vi.mock('@/lib/db', () => ({
     user: { findUnique: vi.fn() },
     bankAccount: { findFirst: vi.fn() },
     transaction: { create: vi.fn(), findMany: vi.fn() },
+    withdrawalTransaction: { create: vi.fn() },
   },
 }))
 vi.mock('@/lib/auth', () => ({ verifyAuthToken: vi.fn() }))
@@ -57,6 +58,10 @@ beforeEach(() => {
   vi.mocked(initiateOfframp).mockResolvedValue({ transactionId: 'offramp-1' } as any)
   vi.mocked(prisma.transaction.create).mockResolvedValue({
     id: 'txn-1',
+    status: 'pending',
+  } as any)
+  vi.mocked(prisma.withdrawalTransaction.create).mockResolvedValue({
+    id: 'wd-1',
     status: 'pending',
   } as any)
 })

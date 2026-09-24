@@ -23,6 +23,11 @@ vi.mock('@/lib/crypto', () => ({
   decrypt: vi.fn().mockReturnValue('decrypted_secret'),
 }))
 
+vi.mock('@/lib/rate-limit', () => ({
+  twoFactorLimiter: { check: vi.fn().mockReturnValue({ allowed: true }) },
+  buildRateLimitResponse: vi.fn(),
+}))
+
 const mockUser = { id: 'user-1', privyId: 'privy-1', twoFactorEnabled: false }
 
 function makeRequest(body: string | object) {
@@ -92,5 +97,33 @@ describe('POST /api/bank-accounts', () => {
     expect(res.status).toBe(400)
     expect(json.error).toBe('Invalid bank code')
     expect(prisma.bankAccount.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 when 2FA code is missing but required', async () => {
+    const userWith2FA = { ...mockUser, twoFactorEnabled: true, twoFactorSecret: 'encrypted_secret' }
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(userWith2FA as never)
+
+    const res = await POST(makeRequest({ bankCode: '058', accountNumber: '0123456789' }))
+    const json = await res.json()
+
+    expect(res.status).toBe(401)
+    expect(json.error).toBe('2FA code required')
+  })
+
+  it('returns 429 when 2FA rate limit is exceeded', async () => {
+    const { twoFactorLimiter } = await import('@/lib/rate-limit')
+    vi.mocked(twoFactorLimiter.check).mockReturnValue({ allowed: false, limit: 5, remaining: 0, resetAt: Date.now() + 15 * 60 * 1000, policyId: '2fa-verify' })
+    
+    const { buildRateLimitResponse } = await import('@/lib/rate-limit')
+    vi.mocked(buildRateLimitResponse).mockImplementation((result) => 
+      new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429 })
+    )
+
+    const userWith2FA = { ...mockUser, twoFactorEnabled: true, twoFactorSecret: 'encrypted_secret' }
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(userWith2FA as never)
+
+    const res = await POST(makeRequest({ bankCode: '058', accountNumber: '0123456789', code: '123456' }))
+    
+    expect(res.status).toBe(429)
   })
 })

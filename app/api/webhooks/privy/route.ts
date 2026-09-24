@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { fundNewWallet } from '@/lib/stellar-funding'
 import { sendAdminAlertEmail } from '@/lib/email'
 import { logger } from '@/lib/logger'
+import { verifyPrivyWebhookSignature } from '@/lib/privy-webhook-verify'
 
 type PrivyLinkedAccount = {
   type?: string
@@ -341,6 +342,18 @@ async function handleUserWalletCreated(event: PrivyEvent): Promise<void> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
+    const secret = process.env.PRIVY_WEBHOOK_SECRET ?? ''
+    const verified = verifyPrivyWebhookSignature(body, {
+      id: request.headers.get('svix-id'),
+      timestamp: request.headers.get('svix-timestamp'),
+      signature: request.headers.get('svix-signature'),
+    }, secret)
+
+    if (!verified) {
+      logger.warn('Privy webhook: invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
     const parsed = parseJsonSafely(body)
 
     if (!parsed.ok) {

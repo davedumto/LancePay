@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import speakeasy from 'speakeasy'
-import { decrypt } from '@/lib/crypto'
+import { verifyTwoFactorForRequest } from '@/lib/two-factor'
 import { nanoid } from 'nanoid'
+import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
 
 import { initiateOfframp } from '@/lib/offramp'
 import { debitDelegatedUSDC } from '@/lib/stellar'
@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (user.twoFactorEnabled) {
+    const rateLimitResult = twoFactorLimiter.check(user.id)
+    if (!rateLimitResult.allowed) {
+      return buildRateLimitResponse(rateLimitResult)
+    }
     if (!code) {
       return NextResponse.json({ error: '2FA code required' }, { status: 401 })
     }
@@ -108,7 +112,32 @@ export async function POST(request: NextRequest) {
   const usdcBalanceObj = (balances as any[]).find((b: any) => b.asset_code === 'USDC')
   const currentBalance = usdcBalanceObj ? parseFloat(usdcBalanceObj.balance) : 0
 
-  if (currentBalance < amount) {
+  const reference = `wd_${nanoid(10)}`
+
+  const transaction = await prisma.$transaction(async (tx) => {
+    const reserved = await reserveWithdrawalInTransaction(
+      tx,
+      user.id,
+      amount,
+      currentBalance,
+    )
+    if (!reserved) {
+      return null
+    }
+
+    return tx.transaction.create({
+      data: {
+        userId: user.id,
+        type: 'withdrawal',
+        status: 'pending',
+        amount,
+        currency: 'USDC',
+        bankAccountId,
+      },
+    })
+  })
+
+  if (!transaction) {
     return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 })
   }
 
@@ -142,7 +171,6 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error: any) {
-    // If offramp fails, we should ideally refund the Stellar deduction or log for resolution
     console.error('Off-ramp initiation failed:', error)
     return NextResponse.json(
       { error: error.message || 'Withdrawal provider error' },
@@ -160,6 +188,19 @@ export async function POST(request: NextRequest) {
       bankAccountId,
       externalId: offrampResponse.transactionId,
       txHash: deductionTxHash,
+    },
+  })
+
+  // Create WithdrawalTransaction record for webhook tracking
+  await prisma.withdrawalTransaction.create({
+    data: {
+      userId: user.id,
+      anchorId: 'yellowcard',
+      stellarTxId: offrampResponse.transactionId,
+      amount,
+      asset: 'USDC',
+      status: 'pending',
+      withdrawType: 'bank_transfer',
     },
   })
 

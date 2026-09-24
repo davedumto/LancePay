@@ -51,6 +51,8 @@ model User {
   auditEvents            AuditEvent[]
   savingsGoals           SavingsGoal[]
   incomeVerifications    IncomeVerification[]
+  sanctionsAppeals       SanctionsAppeal[]
+  watchlistRemovals      SecurityWatchlistRemovalAudit[]
   payoutBatches          PayoutBatch[]
   manualPayments         ManualPayment[]       @relation("ManualPaymentVerifier")
   collaborations         InvoiceCollaborator[] @relation("SubContractorCollaborations")
@@ -58,6 +60,11 @@ model User {
   walletSigners          WalletSigner[]
   multisigProposals      MultisigProposal[]    @relation("MultisigProposer")
   proposalSignatures     ProposalSignature[]
+  emergencyRecoveriesInitiated EmergencyRecovery[]          @relation("EmergencyRecoveryInitiator")
+  emergencyRecoveryApprovals   EmergencyRecoveryApproval[]  @relation("EmergencyRecoveryApprover")
+  structuringFlags             StructuringFlag[]            @relation("StructuringFlagSubject")
+  structuringFlagsDismissed    StructuringFlag[]            @relation("StructuringFlagDismisser")
+  structuringFlagsEscalated    StructuringFlag[]            @relation("StructuringFlagEscalator")
   withdrawalTransactions WithdrawalTransaction[]
   anchorSessions         AnchorSession[]
   expenses              Expense[]
@@ -789,6 +796,24 @@ model SecurityWatchlist {
   @@index([value])
 }
 
+model SecurityWatchlistRemovalAudit {
+  id             String   @id @default(uuid())
+  watchlistId    String
+  type           String   @db.VarChar(20)
+  value          String   @db.VarChar(255)
+  additionReason String   @db.Text
+  removalReason  String   @db.Text
+  removedById    String
+  removedAt      DateTime @default(now())
+
+  removedBy User @relation(fields: [removedById], references: [id], onDelete: Restrict)
+
+  @@index([watchlistId])
+  @@index([value])
+  @@index([removedById])
+  @@index([removedAt])
+}
+
 model InvoiceCollaborator {
   id              String    @id @default(uuid())
   invoiceId       String
@@ -962,14 +987,35 @@ model MultisigProposal {
   lastError           String?   @db.Text
   createdAt           DateTime  @default(now())
 
-  wallet   CollectiveWallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  proposer User                @relation("MultisigProposer", fields: [proposerId], references: [id], onDelete: Cascade)
+  wallet    CollectiveWallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  proposer  User                @relation("MultisigProposer", fields: [proposerId], references: [id], onDelete: Cascade)
   signatures ProposalSignature[]
+  broadcast  MultisigBroadcast?
 
   @@index([walletId])
   @@index([proposerId])
   @@index([status])
   @@index([expiresAt])
+}
+
+model MultisigBroadcast {
+  id          String    @id @default(uuid())
+  proposalId  String    @unique
+  txHash      String?   @db.VarChar(255)
+  network     String    @default("stellar") @db.VarChar(50)
+  // pending   = submitted to network, waiting for inclusion
+  // confirmed = finality reached (≥ REQUIRED_CONFIRMATIONS ledger closes)
+  // failed    = network rejected or transaction dropped
+  status      String    @default("pending") @db.VarChar(20)
+  broadcastAt DateTime  @default(now())
+  confirmedAt DateTime?
+  failureReason String? @db.Text
+
+  proposal MultisigProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@index([status])
+  @@index([txHash])
 }
 
 model ProposalSignature {
@@ -984,6 +1030,118 @@ model ProposalSignature {
   @@unique([proposalId, signerId])
   @@index([proposalId])
   @@index([signerId])
+}
+
+// ── Emergency signer recovery ─────────────────────────────────────────────────
+// Represents an admin-initiated recovery flow for a CollectiveWallet that has
+// lost quorum.  A minimum of MIN_APPROVALS admin approvals are required before
+// the request can be acted on; a single admin cannot unilaterally execute it.
+
+model EmergencyRecovery {
+  id            String    @id @default(uuid())
+  walletId      String
+  // User who initiated the recovery request (must be admin)
+  initiatorId   String
+  justification String    @db.Text
+  // pending   = waiting for required admin approvals
+  // approved  = min approvals reached, ready to execute
+  // executed  = new signer configuration applied
+  // rejected  = denied by admins or cancelled
+  status        String    @default("pending") @db.VarChar(20)
+  // Snapshot of the broken quorum state at initiation time
+  signerCountAtRequest   Int
+  thresholdAtRequest     Int
+  activeSignerCount      Int
+  // Timeline
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+  expiresAt     DateTime
+
+  wallet    CollectiveWallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  initiator User                      @relation("EmergencyRecoveryInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  approvals EmergencyRecoveryApproval[]
+
+  @@index([walletId])
+  @@index([initiatorId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model EmergencyRecoveryApproval {
+  id         String   @id @default(uuid())
+  recoveryId String
+  approverId String
+  // approve | reject
+  decision   String   @db.VarChar(10)
+  note       String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  recovery EmergencyRecovery @relation(fields: [recoveryId], references: [id], onDelete: Cascade)
+  approver User              @relation("EmergencyRecoveryApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@unique([recoveryId, approverId])
+  @@index([recoveryId])
+  @@index([approverId])
+}
+
+// ── Compliance: structuring detection ────────────────────────────────────────
+// A StructuringFlag is raised automatically (or manually) when a user's
+// transaction pattern matches structuring heuristics.  A compliance reviewer
+// can dismiss it as a false positive (with a documented reason) or escalate it
+// to a formal case.  Dismissal is blocked once the flag has been escalated.
+
+model StructuringFlag {
+  id          String    @id @default(uuid())
+  userId      String
+  // open      = awaiting review
+  // dismissed = reviewed and closed as false positive
+  // escalated = promoted to a formal compliance case
+  status      String    @default("open") @db.VarChar(20)
+  // Human-readable summary of why the flag was raised
+  reason      String    @db.Text
+  // Amount window that triggered the flag (informational)
+  periodStart DateTime?
+  periodEnd   DateTime?
+  totalAmount Decimal?  @db.Decimal(18, 6)
+  // Dismissal fields — populated when status = 'dismissed'
+  dismissedById   String?
+  dismissalReason String?  @db.Text
+  dismissedAt     DateTime?
+  // Escalation fields — populated when status = 'escalated'
+  escalatedById   String?
+  escalatedAt     DateTime?
+  caseReference   String?  @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User  @relation("StructuringFlagSubject",  fields: [userId],        references: [id], onDelete: Cascade)
+  dismissedBy User? @relation("StructuringFlagDismisser", fields: [dismissedById], references: [id])
+  escalatedBy User? @relation("StructuringFlagEscalator", fields: [escalatedById], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ── Distributed job lock ──────────────────────────────────────────────────────
+// One row per named lock key.  Acquisition uses an atomic conditional upsert so
+// two concurrent callers cannot both believe they hold the lock.  A crashed
+// holder is automatically evicted once expiresAt passes.
+
+model DistributedLock {
+  // The logical lock name, e.g. "cancel-overdue-invoices"
+  key         String   @id @db.VarChar(255)
+  // Opaque token the holder must supply to release the lock
+  token       String   @db.VarChar(255)
+  // Identity of the instance that holds the lock (hostname / pod name)
+  holder      String?  @db.VarChar(255)
+  acquiredAt  DateTime @default(now())
+  expiresAt   DateTime
+  // Monotonically increasing counter for optimistic checks
+  version     Int      @default(1)
+
+  @@index([expiresAt])
 }
 
 model PayoutItem {
@@ -1105,10 +1263,28 @@ model SanctionsScreening {
   updatedAt   DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appeals SanctionsAppeal[]
 
   @@index([userId])
   @@index([status])
   @@index([screenedAt])
+}
+
+model SanctionsAppeal {
+  id          String   @id @default(uuid())
+  screeningId String
+  userId      String
+  reason      String   @db.Text
+  status      String   @default("pending") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  screening SanctionsScreening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([screeningId])
+  @@index([userId])
+  @@index([status])
 }
 
 model ClientNote {

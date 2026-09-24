@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { SUPPORTED_INVOICE_CURRENCIES } from '@/lib/invoice-currency'
 
 export const createInvoiceSchema = z.object({
   clientEmail: z.string().email(),
   clientName: z.string().nullish(),
   description: z.string().min(1).max(500),
   amount: z.number().finite().positive().max(100000),
-  currency: z.string().regex(/^[A-Z]{3,5}$/, 'Invalid currency code').optional().default('USD'),
+  currency: z.enum(SUPPORTED_INVOICE_CURRENCIES).optional().default('USD'),
   dueDate: z
     .string()
     .optional()

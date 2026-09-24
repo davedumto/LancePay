@@ -82,11 +82,13 @@ export async function GET(request: NextRequest) {
     const { rate: exchangeRate } = await getUsdToNgnRate();
     const ngnAmount = usdAmount * exchangeRate;
 
-    // Get pending invoices
-    const pendingInvoices = await prisma.invoice.aggregate({
+    const pendingByCurrency = await prisma.invoice.groupBy({
+      by: ['currency'],
       where: { userId: user.id, status: 'pending' },
-      _sum: { amount: true }
-    });
+      _sum: { amount: true },
+    })
+
+    const pendingInvoicesUsd = pendingByCurrency.find((row) => row.currency === 'USD')
 
     // XLM reserve (Stellar base reserve is 1 XLM + 0.5 XLM per trustline/entry)
     // Default is ~1.5 XLM for a typical account with USDC trustline
@@ -96,7 +98,14 @@ export async function GET(request: NextRequest) {
 
       available: { amount: usdAmount, currency: 'USD', display: `$${usdAmount.toFixed(2)}` },
       localEquivalent: { amount: ngnAmount, currency: 'NGN', display: `₦${ngnAmount.toLocaleString()}`, rate: exchangeRate },
-      pending: { amount: Number(pendingInvoices._sum.amount || 0), currency: 'USD' },
+      pending: {
+        amount: Number(pendingInvoicesUsd?._sum.amount || 0),
+        currency: 'USD',
+      },
+      pendingByCurrency: pendingByCurrency.map((row) => ({
+        currency: row.currency,
+        amount: Number(row._sum.amount || 0),
+      })),
       xlmReserve,
       usd: usdcAsset?.balance || '0',
       xlm: xlmAsset?.balance || '0',

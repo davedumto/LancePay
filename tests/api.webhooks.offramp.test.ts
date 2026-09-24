@@ -21,12 +21,12 @@ vi.mock('resend', () => ({
 const SECRET = 'test-webhook-secret'
 const URL = 'http://localhost/api/webhooks/offramp'
 
-function makeRequest(payload: object) {
+function makeRequest(payload: object, signature?: string) {
   const rawBody = JSON.stringify(payload)
-  const signature = crypto.createHmac('sha256', SECRET).update(rawBody).digest('base64')
+  const sig = signature ?? crypto.createHmac('sha256', SECRET).update(rawBody).digest('base64')
   return new NextRequest(URL, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-yc-signature': signature },
+    headers: { 'content-type': 'application/json', 'x-yc-signature': sig },
     body: rawBody,
   })
 }
@@ -73,6 +73,44 @@ describe('POST /api/webhooks/offramp', () => {
       method: 'POST',
       headers: { 'x-yc-signature': 'bogus' },
       body: JSON.stringify({ reference: 'wd_1', status: 'FAILED' }),
+    })
+    const res = await POST(req)
+
+    expect(res.status).toBe(401)
+    expect(update).not.toHaveBeenCalled()
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('rejects a signature of different length without throwing', async () => {
+    const { POST } = await import('@/app/api/webhooks/offramp/route')
+    const payload = { reference: 'wd_1', status: 'COMPLETED' }
+    const rawBody = JSON.stringify(payload)
+    const correctSignature = crypto.createHmac('sha256', SECRET).update(rawBody).digest('base64')
+    // Create a signature of different length (too short)
+    const shortSignature = correctSignature.slice(0, -5)
+    const req = new NextRequest(URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yc-signature': shortSignature },
+      body: rawBody,
+    })
+    const res = await POST(req)
+
+    expect(res.status).toBe(401)
+    expect(update).not.toHaveBeenCalled()
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('rejects a signature of different length (too long) without throwing', async () => {
+    const { POST } = await import('@/app/api/webhooks/offramp/route')
+    const payload = { reference: 'wd_1', status: 'COMPLETED' }
+    const rawBody = JSON.stringify(payload)
+    const correctSignature = crypto.createHmac('sha256', SECRET).update(rawBody).digest('base64')
+    // Create a signature of different length (too long)
+    const longSignature = correctSignature + 'extra'
+    const req = new NextRequest(URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yc-signature': longSignature },
+      body: rawBody,
     })
     const res = await POST(req)
 

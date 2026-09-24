@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import speakeasy from 'speakeasy'
-import { decrypt } from '@/lib/crypto'
+import { verifyTwoFactorForRequest } from '@/lib/two-factor'
 import { logger } from '@/lib/logger'
+import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
   try {
@@ -51,6 +51,10 @@ export async function PUT(request: NextRequest) {
 
     // 2FA Check for updates
     if (user?.twoFactorEnabled) {
+      const rateLimitResult = twoFactorLimiter.check(user.id)
+      if (!rateLimitResult.allowed) {
+        return buildRateLimitResponse(rateLimitResult)
+      }
       if (!code) {
         return NextResponse.json({ error: '2FA code required' }, { status: 401 })
       }

@@ -167,6 +167,7 @@ describe('POST /api/invoices', () => {
       ['amount', { amount: 'abc' }],
       ['amount', { amount: 100001 }],
       ['currency', { currency: 'dollars' }],
+      ['currency', { currency: 'NGN' }],
       ['dueDate', { dueDate: 'not-a-date' }],
     ])('rejects an invalid %s', async (field, override) => {
       const res = await POST(makeRequest({ ...validBody, ...override }))
