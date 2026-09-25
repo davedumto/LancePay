@@ -387,6 +387,8 @@ model Invoice {
   quote                   Quote?
   refunds                 Refund[]
   publicLinks             InvoicePublicLink[]
+  creditNoteApplications  CreditNoteApplication[]
+  discountRedemptions     DiscountRedemption[]
 }
 
 model Subscription {
@@ -1712,23 +1714,42 @@ model InvoiceLineItem {
 }
 
 model CreditNote {
-  id           String   @id @default(uuid())
-  userId       String
-  invoiceId    String
-  creditNumber String   @unique
-  amount       Decimal  @db.Decimal(10, 2)
-  currency     String   @default("USD")
-  reason       String
-  status       String   @default("issued")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(uuid())
+  userId        String
+  invoiceId     String
+  creditNumber  String   @unique
+  amount        Decimal  @db.Decimal(10, 2)
+  /// Running total already allocated to invoices. The remaining balance is
+  /// amount - appliedAmount; a CHECK constraint keeps it within [0, amount].
+  appliedAmount Decimal  @default(0) @db.Decimal(10, 2)
+  currency      String   @default("USD")
+  reason        String
+  status        String   @default("issued")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id])
-  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  user         User                    @relation(fields: [userId], references: [id])
+  invoice      Invoice                 @relation(fields: [invoiceId], references: [id])
+  applications CreditNoteApplication[]
 
   @@index([userId])
   @@index([invoiceId])
   @@index([status])
+}
+
+/// One allocation of a credit note's balance against an invoice.
+model CreditNoteApplication {
+  id           String   @id @default(uuid())
+  creditNoteId String
+  invoiceId    String
+  amount       Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
+  invoice    Invoice    @relation(fields: [invoiceId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([invoiceId])
 }
 
 model PaymentPlan {
@@ -1796,11 +1817,31 @@ model Discount {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user              User                 @relation(fields: [userId], references: [id])
+  redemptionRecords DiscountRedemption[]
 
   @@unique([userId, code])
   @@index([userId])
   @@index([active])
+}
+
+/// A single application of a discount code to an invoice. Only rows with
+/// status "succeeded" count as redemptions; "pending", "failed" and
+/// "rejected" record attempts that never consumed the code.
+model DiscountRedemption {
+  id         String   @id @default(uuid())
+  discountId String
+  invoiceId  String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  discount Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([discountId, invoiceId])
+  @@index([discountId, status])
+  @@index([invoiceId])
 }
 
 model Refund {
@@ -1882,11 +1923,33 @@ model Quote {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user    User     @relation(fields: [userId], references: [id])
-  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
+  invoice   Invoice?        @relation(fields: [invoiceId], references: [id])
+  lineItems QuoteLineItem[]
 
   @@index([userId])
   @@index([status])
+}
+
+/// A priced line on a quote. productId is a plain reference (no foreign key,
+/// like InvoiceTaxLine.taxRateId) so a product deleted after the quote was
+/// issued is still detectable instead of being nulled out or blocking the
+/// product's deletion.
+model QuoteLineItem {
+  id          String   @id @default(uuid())
+  quoteId     String
+  productId   String?
+  description String   @db.VarChar(500)
+  quantity    Decimal  @db.Decimal(10, 2)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@index([productId])
 }
 
 model InvoiceTemplate {
