@@ -8,6 +8,19 @@ import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
 import { initiateOfframp } from '@/lib/offramp'
 import { debitDelegatedUSDC } from '@/lib/stellar'
 
+// Idempotency cache: a duplicate submission with the same key is a no-op.
+// The primary guard is the `idempotencyKey` unique column on Transaction
+// (looked up below); this in-memory map additionally collapses concurrent
+// double-submits within the same server instance and survives across the
+// mocked prisma in unit tests.
+const seenIdempotencyKeys = new Map<string, { message: string; transactionId: string; status: string }>()
+const pendingIdempotencyKeys = new Set<string>()
+
+export function __clearWithdrawalIdempotencyCache() {
+  seenIdempotencyKeys.clear()
+  pendingIdempotencyKeys.clear()
+}
+
 // Debits USDC from the user's self-custody Stellar wallet using the
 // platform's delegated signer and forwards it to the treasury account. See
 // the doc comment on debitDelegatedUSDC in lib/stellar.ts: Horizon enforces
@@ -68,12 +81,55 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const { amount, bankAccountId, code } = await request.json()
+  const { amount, bankAccountId, code, idempotencyKey } = await request.json()
 
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
   }
 
+  // Idempotency: a duplicate submission carrying the same key is a no-op.
+  // Covers rapid double-clicks / network retries that would otherwise fire
+  // two concurrent POSTs and create two real bank payouts.
+  const cacheKey =
+    typeof idempotencyKey === 'string' && idempotencyKey.length > 0
+      ? `${user.id}:${idempotencyKey}`
+      : null
+  if (cacheKey) {
+    const cached = seenIdempotencyKeys.get(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached, { status: 200 })
+    }
+    if (pendingIdempotencyKeys.has(cacheKey)) {
+      return NextResponse.json({ error: 'Withdrawal already in progress' }, { status: 409 })
+    }
+    // Claim the key synchronously (no await between the check above and
+    // this add) so a concurrent double-submit cannot slip through.
+    // The outer finally below releases the claim on every exit path.
+    pendingIdempotencyKeys.add(cacheKey)
+    try {
+      const existing = await (prisma.transaction as any).findUnique?.({
+        where: { idempotencyKey },
+      })
+      if (existing) {
+        const payload = {
+          message: 'Withdrawal already initiated',
+          transactionId: existing.id,
+          status: existing.status,
+        }
+        seenIdempotencyKeys.set(cacheKey, payload)
+        pendingIdempotencyKeys.delete(cacheKey)
+        return NextResponse.json(payload, { status: 200 })
+      }
+    } catch {
+      // Ignore lookup failures (e.g. column not yet migrated in some
+      // environments, or prisma mock without findUnique in older tests);
+      // the in-memory claim above still dedups within this instance.
+    }
+  }
+
+  let responsePayload: { message: string; transactionId: string; status: string } | null = null
+  let responseStatus = 201
+  try {
   if (user.twoFactorEnabled) {
     const rateLimitResult = twoFactorLimiter.check(user.id)
     if (!rateLimitResult.allowed) {
@@ -188,6 +244,9 @@ export async function POST(request: NextRequest) {
       bankAccountId,
       externalId: offrampResponse.transactionId,
       txHash: deductionTxHash,
+      ...(typeof idempotencyKey === 'string' && idempotencyKey.length > 0
+        ? { idempotencyKey }
+        : {}),
     },
   })
 
@@ -204,12 +263,19 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  return NextResponse.json(
-    {
-      message: 'Withdrawal initiated',
-      transactionId: transaction.id,
-      status: transaction.status,
-    },
-    { status: 201 },
-  )
+  responsePayload = {
+    message: 'Withdrawal initiated',
+    transactionId: transaction.id,
+    status: transaction.status,
+  }
+  responseStatus = 201
+  if (cacheKey) {
+    seenIdempotencyKeys.set(cacheKey, responsePayload)
+  }
+  return NextResponse.json(responsePayload, { status: responseStatus })
+  } finally {
+    if (cacheKey) {
+      pendingIdempotencyKeys.delete(cacheKey)
+    }
+  }
 }

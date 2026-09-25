@@ -34,7 +34,7 @@ interface Asset {
 interface Portfolio {
   available?: { display: string }
   localEquivalent?: { display: string; rate: number }
-  xlm?: number
+  xlm?: number | string
   usdc?: string | number
   usd?: string | number
   totalValue?: number

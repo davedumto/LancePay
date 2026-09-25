@@ -7,19 +7,21 @@ interface BalanceCardProps {
   balance: {
     available?: { display: string }
     localEquivalent?: { display: string; rate: number }
-    xlm?: number
+    xlm?: number | string
     usdc?: string | number
     usd?: string | number
     totalValue?: number
     assets?: any[]
   } | null
   isLoading: boolean
-  xlmBalance?: number
+  xlmBalance?: number | string
 }
 
 export function BalanceCard({ balance, isLoading, xlmBalance }: BalanceCardProps) {
   const [showTooltip, setShowTooltip] = useState(false)
-  const displayXlm = xlmBalance ?? balance?.xlm ?? 0
+  const rawXlm = xlmBalance ?? balance?.xlm ?? 0
+  const numericXlm = Number(rawXlm)
+  const displayXlm = Number.isFinite(numericXlm) ? numericXlm : 0
 
   if (isLoading) {
     return (

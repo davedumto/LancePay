@@ -472,6 +472,7 @@ model Transaction {
   autoSwapTriggered Boolean   @default(false)
   error             String?
   externalId        String?   @unique
+  idempotencyKey  String?   @unique
   virtualAccountId  String?
   reconciliationStatus      String    @default("pending") @db.VarChar(20)
   reconciliationReason      String?   @db.VarChar(30)

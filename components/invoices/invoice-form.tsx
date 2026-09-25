@@ -53,6 +53,10 @@ export function InvoiceForm() {
       return
     }
 
+    // Snapshot the description at request time. If the user keeps typing
+    // while the multi-second AI request is in flight, the response must not
+    // silently overwrite their newer edits.
+    const snapshot = form.description
     setIsGenerating(true)
     setError('')
 
@@ -60,12 +64,12 @@ export function InvoiceForm() {
       const res = await fetch('/api/ai/generate-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keywords: form.description }),
+        body: JSON.stringify({ keywords: snapshot }),
       })
 
       if (!res.ok) throw new Error('Failed to generate description')
       const data = await res.json()
-      setForm(prev => ({ ...prev, description: data.description }))
+      setForm(prev => (prev.description === snapshot ? { ...prev, description: data.description } : prev))
     } catch (err) {
       logger.error({ err }, 'Magic Write failed')
       setError('Failed to generate professional description')
@@ -141,8 +145,10 @@ export function InvoiceForm() {
           onChange={handleChange}
           required
           rows={3}
-          className="w-full px-4 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none resize-none"
-          placeholder="Logo design, website development, etc."
+          readOnly={isGenerating}
+          aria-busy={isGenerating}
+          className="w-full px-4 py-3 rounded-lg border border-brand-border focus:border-brand-black outline-none resize-none disabled:opacity-70"
+          placeholder={isGenerating ? 'Generating professional description...' : 'Logo design, website development, etc.'}
         />
         <p className="mt-1 text-xs text-gray-500 italic">
           Enter keywords and click &apos;Magic Write&apos; for a professional touch.

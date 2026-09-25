@@ -49,7 +49,7 @@ export const createSubscriptionSchema = z.object({
   description: z.string().min(1).max(500),
   amount: z.number().positive().max(100000),
   currency: z.string().optional().default('USD'),
-  frequency: z.enum(['monthly', 'weekly']).optional().default('monthly'),
+  frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']).optional().default('monthly'),
   interval: z.number().int().positive().optional().default(1),
   startDate: z.string().optional(),
 })
