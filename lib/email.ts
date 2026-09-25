@@ -610,3 +610,33 @@ export async function sendInvoiceCancelledEmail(params: {
     return { success: false }
   }
 }
+
+export async function sendAccountDeletionScheduledEmail(params: {
+  to: string
+  name: string
+  scheduledAt: Date
+}) {
+  const { to, name, scheduledAt } = params
+
+  try {
+    const { error } = await resend.emails.send({
+      from: RESEND_FROM,
+      to: [to],
+      subject: 'Your LancePay account deletion is scheduled',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #111;">Hey ${escapeHtml(name)},</h2>
+          <p>We received a request to delete your LancePay account. It will be deleted on <strong>${scheduledAt.toUTCString()}</strong>.</p>
+          <p>Until then you can sign in to export your invoices, transactions and other records, or cancel the deletion if you change your mind.</p>
+          <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
+        </div>
+      `,
+    })
+
+    if (error) console.error('Email error:', error)
+    return { success: !error }
+  } catch (error) {
+    console.error('Email send failed:', error)
+    return { success: false }
+  }
+}
