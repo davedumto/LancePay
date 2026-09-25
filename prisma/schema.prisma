@@ -48,6 +48,8 @@ model User {
   plaidAccounts          PlaidAccount[]
   webhooks               UserWebhook[]
   userBadges             UserBadge[]
+  badgeRevocations       UserBadgeRevocation[] @relation("BadgeRevocationSubject")
+  badgeRevocationsIssued UserBadgeRevocation[] @relation("BadgeRevocationActor")
   auditEvents            AuditEvent[]
   savingsGoals           SavingsGoal[]
   incomeVerifications    IncomeVerification[]
@@ -387,6 +389,9 @@ model Invoice {
   quote                   Quote?
   refunds                 Refund[]
   publicLinks             InvoicePublicLink[]
+
+  @@index([userId])
+  @@index([clientEmail])
 }
 
 model Subscription {
@@ -811,14 +816,15 @@ model BadgeDefinition {
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
 
-  userBadges UserBadge[]
+  userBadges  UserBadge[]
+  revocations UserBadgeRevocation[]
 }
 
 model UserBadge {
   id            String   @id @default(uuid())
   userId        String
   badgeId       String
-  stellarTxHash String   @db.VarChar(255)
+  stellarTxHash String?  @db.VarChar(255)
   issuedAt      DateTime @default(now())
 
   user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -827,6 +833,27 @@ model UserBadge {
   @@unique([userId, badgeId])
   @@index([userId])
   @@index([badgeId])
+}
+
+model UserBadgeRevocation {
+  id            String   @id @default(uuid())
+  userBadgeId   String
+  userId        String
+  badgeId       String
+  stellarTxHash String?  @db.VarChar(255)
+  issuedAt      DateTime
+  trigger       String   @db.VarChar(50)
+  reason        String   @db.VarChar(500)
+  revokedById   String?
+  revokedAt     DateTime @default(now())
+
+  user      User            @relation("BadgeRevocationSubject", fields: [userId], references: [id], onDelete: Cascade)
+  badge     BadgeDefinition @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  revokedBy User?           @relation("BadgeRevocationActor", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, badgeId])
+  @@index([revokedById])
+  @@index([revokedAt])
 }
 
 model IncomeVerification {
