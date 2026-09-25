@@ -235,4 +235,39 @@ describe('POST /api/routes-b/subscriptions', () => {
       }),
     )
   })
+
+  it('rejects a malformed payload via createSubscriptionSchema with validation details', async () => {
+    const req = makeRequest('POST', 'http://localhost/api/routes-b/subscriptions', {
+      clientEmail: 'bob@example.com',
+      description: 'Retainer',
+      // malformed billing values: amount must be a positive number (not a string),
+      // interval must be a positive integer (not a fractional value)
+      amount: 'not-a-number',
+      interval: 1.5,
+    })
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.error).toBe('Invalid request body')
+    expect(body.details).toBeDefined()
+    expect(body.details.amount).toBeDefined()
+    expect(body.details.interval).toBeDefined()
+    expect(mockedCreate).not.toHaveBeenCalled()
+  })
+
+  it('rejects an amount exceeding the schema maximum', async () => {
+    const req = makeRequest('POST', 'http://localhost/api/routes-b/subscriptions', {
+      clientEmail: 'bob@example.com',
+      description: 'Retainer',
+      amount: 100001,
+    })
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.error).toBe('Invalid request body')
+    expect(body.details.amount).toBeDefined()
+    expect(mockedCreate).not.toHaveBeenCalled()
+  })
 })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { registerRoute } from '../_lib/openapi'
+import { createSubscriptionSchema } from '@/lib/validations'
 import { z } from 'zod'
 
 registerRoute({
@@ -86,7 +87,6 @@ async function getAuthenticatedUser(request: NextRequest) {
 }
 
 const VALID_STATUSES = ['active', 'paused', 'cancelled'] as const
-const VALID_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 
 function computeNextGenerationDate(
   frequency: string,
@@ -173,53 +173,38 @@ export async function POST(request: NextRequest) {
   const auth = await getAuthenticatedUser(request)
   if ('error' in auth) return auth.error
 
-  const body = await request.json()
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const parsed = createSubscriptionSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid request body', details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    )
+  }
   const {
     clientEmail,
     clientName,
     description,
-    amount,
+    amount: parsedAmount,
     currency = 'USD',
     frequency = 'monthly',
-    interval = 1,
+    interval: parsedInterval = 1,
     startDate,
-  } = body
-
-  if (!clientEmail || !description || amount === undefined || amount === null) {
-    return NextResponse.json(
-      { error: 'clientEmail, description, and amount are required' },
-      { status: 400 },
-    )
-  }
-
-  if (typeof clientEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) {
-    return NextResponse.json({ error: 'clientEmail must be a valid email address' }, { status: 400 })
-  }
-
-  const parsedAmount = Number(amount)
-  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 })
-  }
-
-  if (!(VALID_FREQUENCIES as readonly string[]).includes(frequency)) {
-    return NextResponse.json(
-      { error: `frequency must be one of: ${VALID_FREQUENCIES.join(', ')}` },
-      { status: 400 },
-    )
-  }
-
-  const parsedInterval = Number(interval)
-  if (!Number.isInteger(parsedInterval) || parsedInterval < 1) {
-    return NextResponse.json({ error: 'interval must be a positive integer' }, { status: 400 })
-  }
+  } = parsed.data
 
   let fromDate = new Date()
   if (startDate) {
-    const parsed = new Date(startDate)
-    if (Number.isNaN(parsed.getTime())) {
+    const parsedDate = new Date(startDate)
+    if (Number.isNaN(parsedDate.getTime())) {
       return NextResponse.json({ error: 'startDate must be a valid ISO date string' }, { status: 400 })
     }
-    fromDate = parsed
+    fromDate = parsedDate
   }
 
   const nextGenerationDate = computeNextGenerationDate(frequency, parsedInterval, fromDate)
