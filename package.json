@@ -41,6 +41,7 @@
     "speakeasy": "^2.0.0",
     "swagger-ui-react": "^5.31.2",
     "tailwind-merge": "^3.4.0",
+    "utf-8-validate": "^5.0.10",
     "viem": "^2.43.2",
     "yellowcard": "^1.1.4",
     "zod": "3.25.76"
