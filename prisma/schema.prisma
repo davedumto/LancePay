@@ -24,6 +24,7 @@ model User {
   twoFactorSecret  String?
   taxPercentage    Float    @default(0)
   timezone         String?
+  homeCurrency     String   @default("NGN") @db.VarChar(8)
   recoveryPhone         String?
   recoveryPhoneVerified Boolean  @default(false)
   virtualAccount         VirtualAccount?
@@ -111,6 +112,9 @@ model User {
   emergencyRecoveryApprovals EmergencyRecoveryApproval[]
   ledgerDriftFindings         LedgerDriftFinding[]
   driftCorrectionProposals   LedgerDriftCorrectionProposal[] @relation("DriftCorrectionProposer")
+  bankStatementLines         BankStatementLine[]
+  manualPaymentsReconciled   ManualPayment[] @relation("ManualPaymentReconciler")
+  invoiceFxLocks             InvoiceFxLock[]
 }
 
 model KycApplication {
@@ -375,6 +379,8 @@ model Invoice {
   decryptionSalt          String?
   messages                InvoiceMessage[]
   manualPayments          ManualPayment[]
+  fxLocks                 InvoiceFxLock[]
+  expenseReimbursements   ExpenseReimbursementMatch[]
   cancelledAt             DateTime?
   cancellationReason      String?
   doNotAutoCancel         Boolean               @default(false)
@@ -970,15 +976,41 @@ model ManualPayment {
   status        String    @default("pending")
   verifiedBy    String?
   verifiedAt    DateTime?
+  reconciledAt        DateTime?
+  reconciledBy        String?
+  bankStatementLineId String?   @unique
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  invoice  Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  verifier User?   @relation("ManualPaymentVerifier", fields: [verifiedBy], references: [id])
+  invoice           Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  verifier          User?              @relation("ManualPaymentVerifier", fields: [verifiedBy], references: [id])
+  reconciler        User?              @relation("ManualPaymentReconciler", fields: [reconciledBy], references: [id])
+  bankStatementLine BankStatementLine? @relation(fields: [bankStatementLineId], references: [id])
 
   @@index([invoiceId])
   @@index([status])
   @@index([verifiedBy])
+  @@index([reconciledBy])
+}
+
+/// One row of an imported bank statement. A line can be matched to at most
+/// one ManualPayment (ManualPayment.bankStatementLineId is unique), which is
+/// the audit trail for manual-payment reconciliation.
+model BankStatementLine {
+  id              String   @id @default(uuid())
+  userId          String
+  transactionDate DateTime @db.Date
+  amount          Decimal  @db.Decimal(15, 2)
+  currency        String   @default("NGN") @db.VarChar(8)
+  description     String?  @db.VarChar(255)
+  reference       String?  @db.VarChar(100)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manualPayment ManualPayment?
+
+  @@index([userId, transactionDate])
 }
 
 model Expense {
@@ -991,15 +1023,33 @@ model Expense {
   receiptUrl   String?  @db.VarChar(512)
   notes        String?  @db.Text
   expenseDate  DateTime
+  projectId    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project              Project?                   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  reimbursementMatch   ExpenseReimbursementMatch?
 
   @@index([userId])
   @@index([category])
   @@index([expenseDate])
   @@index([createdAt])
+  @@index([projectId])
+}
+
+/// Links an expense to the invoice that bills it back to the client. An
+/// expense is reimbursed by at most one invoice.
+model ExpenseReimbursementMatch {
+  id        String   @id @default(uuid())
+  expenseId String   @unique
+  invoiceId String
+  createdAt DateTime @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
 }
 
 model WithdrawalTransaction {
@@ -1546,8 +1596,38 @@ model FxRateSnapshot {
   capturedAt   DateTime
   createdAt    DateTime @default(now())
 
+  invoiceFxLocks InvoiceFxLock[]
+
   @@index([fromCurrency, toCurrency, capturedAt])
   @@index([capturedAt])
+}
+
+/// An exchange rate frozen against an invoice. The rate itself lives on the
+/// referenced FxRateSnapshot (inverted when the snapshot quotes the opposite
+/// direction); sourceAmount/lockedAmount record what the rate produced, since
+/// Invoice.amount can change after the lock. Locks are append-only: the latest
+/// row for an invoice is its current lock, and it stops being honored at
+/// expiresAt.
+model InvoiceFxLock {
+  id               String   @id @default(uuid())
+  invoiceId        String
+  fxRateSnapshotId String
+  inverted         Boolean  @default(false)
+  sourceAmount     Decimal  @db.Decimal(10, 2)
+  sourceCurrency   String   @db.VarChar(8)
+  lockedAmount     Decimal  @db.Decimal(15, 2)
+  lockedCurrency   String   @db.VarChar(8)
+  lockedBy         String
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  invoice        Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  fxRateSnapshot FxRateSnapshot @relation(fields: [fxRateSnapshotId], references: [id])
+  locker         User           @relation(fields: [lockedBy], references: [id])
+
+  @@index([invoiceId, createdAt])
+  @@index([fxRateSnapshotId])
+  @@index([lockedBy])
 }
 
 /// A client project grouping invoices and time entries.
@@ -1562,7 +1642,8 @@ model Project {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses Expense[]
 
   @@index([userId])
   @@index([status])
