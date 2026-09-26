@@ -933,6 +933,11 @@ model InvoiceCollaborator {
   internalTxId    String?   @db.VarChar(255)
   paidAt          DateTime?
   paymentSource   String?   // 'payment' | 'escrow' | 'advance'
+  /// Dollar amount this collaborator is owed against the invoice's current
+  /// total, kept in sync by the allocations/rebalance endpoint. Null until
+  /// the first rebalance runs.
+  allocatedAmount Decimal?  @db.Decimal(10, 2)
+  rebalancedAt    DateTime?
   createdAt       DateTime  @default(now())
 
   invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
