@@ -27,6 +27,7 @@ model User {
   homeCurrency     String   @default("NGN") @db.VarChar(8)
   recoveryPhone         String?
   recoveryPhoneVerified Boolean  @default(false)
+  publicVisibility       Boolean  @default(true)
   virtualAccount         VirtualAccount?
   wallet                 Wallet?
   bankAccounts           BankAccount[]
