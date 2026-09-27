@@ -142,5 +142,5 @@ async function PATCHHandler(request: NextRequest) {
   }
 }
 
-export const GET = withRequestId(GETHandler)
+export const GET = GETHandler
 export const PATCH = withRequestId(PATCHHandler)

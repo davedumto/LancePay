@@ -23,7 +23,7 @@ async function findOwnedInvoice(invoiceId: string, userId: string) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } | Promise<{ id: string }> },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -65,7 +65,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } | Promise<{ id: string }> },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)

@@ -39,14 +39,14 @@ async function getAuthenticatedUserId(request: NextRequest): Promise<string | nu
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const commentId = params.id
+  const commentId = (await params).
   if (!commentId || !commentId.trim()) {
     return NextResponse.json({ error: 'Comment id is required' }, { status: 400 })
   }

@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -17,7 +17,7 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const { id } = params
+    const {} = await params
     if (!id || id.trim() === '') {
       return NextResponse.json({ error: 'Batch ID is required' }, { status: 400 })
     }

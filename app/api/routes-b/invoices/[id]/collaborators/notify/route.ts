@@ -27,13 +27,13 @@ const db = prisma as unknown as {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id } = params
+    const {} = await params
     if (!id || !id.trim()) {
       return NextResponse.json({ error: 'Invoice ID is required' }, { status: 400 })
     }

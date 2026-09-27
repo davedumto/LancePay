@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
 
-import { getServerSession } from 'next-auth'
-
-import { authOptions } from '@/lib/auth'
+import { verifyAuthToken } from '@/lib/auth'
 
 // Status response type — NEVER include jwtToken
 export interface AnchorSessionStatus {
@@ -17,7 +15,7 @@ export interface AnchorSessionStatus {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     // 1. Authenticate the caller
@@ -29,7 +27,7 @@ export async function GET(
       )
     }
 
-    const { id } = params
+    const {} = await params
 
     // 2. Find the anchor session
     // SELECT only safe fields — explicitly exclude jwtToken

@@ -8,7 +8,7 @@ const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
   const claims = await verifyAuthToken(authToken || '')
@@ -17,7 +17,7 @@ export async function POST(
   const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const keyId = params.id
+  const keyId = (await params).
 
   // Look up the old API key
   const oldApiKey = await prisma.apiKey.findUnique({

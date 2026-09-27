@@ -26,7 +26,7 @@ async function getAuthenticatedUser(request: NextRequest) {
 // GET /api/routes-d/whitelist/addresses/[id]/cooldown-status — fetch cooldown status for a whitelisted address
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     // 1. Authenticate
@@ -38,7 +38,7 @@ export async function GET(
       )
     }
 
-    const { id } = params
+    const {} = await params
 
     // 2. Find whitelist address
     const whitelistAddress = await prisma.whitelistAddress.findUnique({

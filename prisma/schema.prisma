@@ -27,6 +27,7 @@ model User {
   homeCurrency     String   @default("NGN") @db.VarChar(8)
   recoveryPhone         String?
   recoveryPhoneVerified Boolean  @default(false)
+  publicVisibility       Boolean  @default(true)
   virtualAccount         VirtualAccount?
   wallet                 Wallet?
   bankAccounts           BankAccount[]
@@ -109,7 +110,7 @@ model User {
   portalSessionsIssued    ClientPortalSession[] @relation("PortalSessionOwner")
   portalSessionsAsClient  ClientPortalSession[] @relation("PortalSessionClient")
   emergencyRecoveryRequests  EmergencyRecoveryRequest[]  @relation("EmergencyRecoveryRequester")
-  emergencyRecoveryApprovals EmergencyRecoveryApproval[]
+  emergencyRecoveryRequestApprovals EmergencyRecoveryRequestApproval[]
   ledgerDriftFindings         LedgerDriftFinding[]
   driftCorrectionProposals   LedgerDriftCorrectionProposal[] @relation("DriftCorrectionProposer")
   bankStatementLines         BankStatementLine[]
@@ -1107,6 +1108,7 @@ model CollectiveWallet {
   signers   WalletSigner[]
   proposals MultisigProposal[]
   emergencyRecoveryRequests EmergencyRecoveryRequest[]
+  emergencyRecoveries       EmergencyRecovery[]
 
   @@index([stellarAddress])
 }
@@ -1509,14 +1511,14 @@ model EmergencyRecoveryRequest {
 
   wallet      CollectiveWallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
   requestedBy User                        @relation("EmergencyRecoveryRequester", fields: [requestedById], references: [id], onDelete: Cascade)
-  approvals   EmergencyRecoveryApproval[]
+  approvals   EmergencyRecoveryRequestApproval[]
 
   @@index([walletId])
   @@index([requestedById])
   @@index([status])
 }
 
-model EmergencyRecoveryApproval {
+model EmergencyRecoveryRequestApproval {
   id        String   @id @default(uuid())
   requestId String
   adminId   String

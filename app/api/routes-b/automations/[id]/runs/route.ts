@@ -35,7 +35,7 @@ function parseLimit(raw: string | null): number {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -43,7 +43,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = params
+    const {} = await params
     if (!id || !id.trim()) {
       return NextResponse.json({ error: 'Automation id is required' }, { status: 400 })
     }

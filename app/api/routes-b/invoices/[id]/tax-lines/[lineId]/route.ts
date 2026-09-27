@@ -22,7 +22,7 @@ async function findOwnedInvoice(invoiceId: string, userId: string) {
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; lineId: string } | Promise<{ id: string; lineId: string }> },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)

@@ -22,13 +22,13 @@ async function getAuthenticatedUser(request: NextRequest) {
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id } = params
+    const {} = await params
     if (!id || typeof id !== 'string' || !id.trim()) {
       return NextResponse.json({ error: 'Address ID is required' }, { status: 400 })
     }
