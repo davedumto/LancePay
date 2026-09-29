@@ -16,11 +16,11 @@ const CreateAllocationSchema = z.object({
 
 async function GETHandler(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
-    const invoiceId = params.id
+    const invoiceId = (await params).
 
     // Verify invoice exists and belongs to user
     const invoice = await prisma.invoice.findFirst({
@@ -58,11 +58,11 @@ async function GETHandler(
 
 async function POSTHandler(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     const auth = await requireScope(request, 'routes-b:read')
-    const invoiceId = params.id
+    const invoiceId = (await params).
 
     let body: unknown
     try {

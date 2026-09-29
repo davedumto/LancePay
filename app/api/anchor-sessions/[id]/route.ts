@@ -4,7 +4,7 @@ import { verifyAuthToken } from '@/lib/auth'
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     // 1. Authenticate the caller
@@ -29,7 +29,7 @@ export async function DELETE(
       )
     }
 
-    const { id } = params
+    const {} = await params
 
     // 2. Find the anchor session
     const anchorSession = await prisma.anchorSession.findUnique({

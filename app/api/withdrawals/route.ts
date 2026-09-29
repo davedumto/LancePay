@@ -197,8 +197,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 })
   }
 
-  const reference = `wd_${nanoid(10)}`
-
   // 1. Deduct USDC from the Stellar wallet before calling the off-ramp API.
   // debitDelegatedUSDC submits a real on-chain payment, so Horizon rejects
   // this outright if the wallet is actually underfunded - the off-ramp is
@@ -234,7 +232,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const transaction = await prisma.transaction.create({
+  const finalTransaction = await prisma.transaction.create({
     data: {
       userId: user.id,
       type: 'withdrawal',
@@ -265,8 +263,8 @@ export async function POST(request: NextRequest) {
 
   responsePayload = {
     message: 'Withdrawal initiated',
-    transactionId: transaction.id,
-    status: transaction.status,
+    transactionId: finalTransaction.id,
+    status: finalTransaction.status,
   }
   responseStatus = 201
   if (cacheKey) {

@@ -40,14 +40,14 @@ const SELECT_FIELDS = {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }
@@ -67,14 +67,14 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }
@@ -159,14 +159,14 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }

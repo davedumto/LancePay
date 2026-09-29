@@ -18,12 +18,12 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const params = new URL(request.url).searchParams
-    const reportingCurrency = (params.get('reportingCurrency') ?? 'USDC').toUpperCase()
+    const reportingCurrency = ((await params).('reportingCurrency') ?? 'USDC').toUpperCase()
     if (!SUPPORTED_CURRENCIES.includes(reportingCurrency as (typeof SUPPORTED_CURRENCIES)[number])) {
       return NextResponse.json({ error: 'reportingCurrency must be USDC or NGN' }, { status: 400 })
     }
 
-    const asOf = params.get('asOf') ? new Date(params.get('asOf')!) : new Date()
+    const asOf = (await params).('asOf') ? new Date((await params).('asOf')!) : new Date()
     if (Number.isNaN(asOf.getTime())) {
       return NextResponse.json({ error: 'asOf must be a valid date' }, { status: 400 })
     }

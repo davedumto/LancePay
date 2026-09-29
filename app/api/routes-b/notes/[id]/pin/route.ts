@@ -24,14 +24,14 @@ async function getAuthenticatedUserId(request: NextRequest): Promise<string | nu
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: any,
 ) {
   const userId = await getAuthenticatedUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const noteId = params.id
+  const noteId = (await params).
   if (!noteId || !noteId.trim()) {
     return NextResponse.json({ error: 'Note id is required' }, { status: 400 })
   }

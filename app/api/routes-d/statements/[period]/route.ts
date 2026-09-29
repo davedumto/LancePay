@@ -13,7 +13,7 @@ function csvEscape(value: unknown): string {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { period: string } }
+  { params }: any
 ) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -25,7 +25,7 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const { period } = params
+    const {} = await params
     const match = PERIOD_REGEX.exec(period ?? '')
     if (!match) {
       return NextResponse.json(

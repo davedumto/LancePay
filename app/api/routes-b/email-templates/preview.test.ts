@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/routes-b/email-templates/[id]/preview/route';
-import { getCurrentUser } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { verifyAuthToken } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 
 jest.mock('@/lib/auth');
 jest.mock('@/lib/prisma', () => ({

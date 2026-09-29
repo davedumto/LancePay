@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/db';
 import { verifyAuthToken } from '@/lib/auth';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string; v: string } }
+  { params }: any
 ) {
   try {
     // 1. Extract and verify Privy token
@@ -28,7 +28,7 @@ export async function POST(
 
     // 2. Verify template existence and ownership
     const template = await prisma.emailTemplate.findUnique({
-      where: { id: params.id },
+      where: { id: (await params). },
     });
 
     if (!template) {
@@ -47,10 +47,10 @@ export async function POST(
 
     // 3. Verify the target version exists and belongs to this template
     const targetVersion = await prisma.emailTemplateVersion.findUnique({
-      where: { id: params.v },
+      where: { id: (await params). },
     });
 
-    if (!targetVersion || targetVersion.templateId !== params.id) {
+    if (!targetVersion || targetVersion.templateId !== (await params).) {
       return NextResponse.json(
         { error: 'Not Found', message: 'Email template version not found.' },
         { status: 404 }
@@ -60,8 +60,8 @@ export async function POST(
     // 4. Activate the version
     // NOTE: Adjust 'activeVersionId' to match your exact Prisma schema field name
     const updatedTemplate = await prisma.emailTemplate.update({
-      where: { id: params.id },
-      data: { activeVersionId: params.v }, 
+      where: { id: (await params). },
+      data: { activeVersionId: (await params). }, 
     });
 
     return NextResponse.json({ data: updatedTemplate }, { status: 200 });

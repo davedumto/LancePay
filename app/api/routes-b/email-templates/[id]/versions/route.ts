@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/db';
 import { verifyAuthToken } from '@/lib/auth';
 
 const createVersionSchema = z.object({
@@ -12,7 +12,7 @@ const createVersionSchema = z.object({
 // GET: List all versions for a specific template
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     // Extract and verify Privy token
@@ -35,7 +35,7 @@ export async function GET(
     }
 
     const template = await prisma.emailTemplate.findUnique({
-      where: { id: params.id },
+      where: { id: (await params). },
     });
 
     if (!template) {
@@ -54,7 +54,7 @@ export async function GET(
     }
 
     const versions = await prisma.emailTemplateVersion.findMany({
-      where: { templateId: params.id },
+      where: { templateId: (await params). },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -71,7 +71,7 @@ export async function GET(
 // POST: Create a new version for a specific template
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     // Extract and verify Privy token
@@ -108,7 +108,7 @@ export async function POST(
     }
 
     const template = await prisma.emailTemplate.findUnique({
-      where: { id: params.id },
+      where: { id: (await params). },
     });
 
     if (!template) {
@@ -127,7 +127,7 @@ export async function POST(
 
     const newVersion = await prisma.emailTemplateVersion.create({
       data: {
-        templateId: params.id,
+        templateId: (await params).,
         subject: validation.data.subject,
         content: validation.data.content,
         versionNote: validation.data.versionNote,

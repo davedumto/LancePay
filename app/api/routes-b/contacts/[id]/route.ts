@@ -19,14 +19,14 @@ async function getAuthenticatedUser(request: NextRequest) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     const user = await getAuthenticatedUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const contact = await prisma.contact.findFirst({
-      where: { id: params.id, userId: user.id, deletedAt: null },
+      where: { id: (await params)., userId: user.id, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -52,7 +52,7 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
   try {
     const user = await getAuthenticatedUser(request)
@@ -68,7 +68,7 @@ export async function PATCH(
     const payload = (body ?? {}) as Record<string, unknown>
 
     const contact = await prisma.contact.findFirst({
-      where: { id: params.id, userId: user.id, deletedAt: null },
+      where: { id: (await params)., userId: user.id, deletedAt: null },
     })
 
     if (!contact) {
@@ -146,7 +146,7 @@ export async function PATCH(
     }
 
     const updatedContact = await prisma.contact.update({
-      where: { id: params.id },
+      where: { id: (await params). },
       data: updateData,
       select: {
         id: true,
