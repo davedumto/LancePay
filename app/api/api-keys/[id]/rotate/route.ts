@@ -17,7 +17,7 @@ export async function POST(
   const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const keyId = params.id
+  const keyId = (await params).id
 
   // Look up the old API key
   const oldApiKey = await prisma.apiKey.findUnique({

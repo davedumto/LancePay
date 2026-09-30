@@ -26,7 +26,7 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const contact = await prisma.contact.findFirst({
-      where: { id: params.id, userId: user.id, deletedAt: null },
+      where: { id: (await params).id, userId: user.id, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -68,7 +68,7 @@ export async function PATCH(
     const payload = (body ?? {}) as Record<string, unknown>
 
     const contact = await prisma.contact.findFirst({
-      where: { id: params.id, userId: user.id, deletedAt: null },
+      where: { id: (await params).id, userId: user.id, deletedAt: null },
     })
 
     if (!contact) {
@@ -146,7 +146,7 @@ export async function PATCH(
     }
 
     const updatedContact = await prisma.contact.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: updateData,
       select: {
         id: true,

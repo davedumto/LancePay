@@ -30,7 +30,7 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const quoteId = params.id
+    const quoteId = (await params).id
     if (!quoteId || !quoteId.trim()) {
       return NextResponse.json({ error: 'Quote id is required' }, { status: 400 })
     }

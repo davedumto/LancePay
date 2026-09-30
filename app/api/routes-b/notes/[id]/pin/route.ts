@@ -31,7 +31,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const noteId = params.id
+  const noteId = (await params).id
   if (!noteId || !noteId.trim()) {
     return NextResponse.json({ error: 'Note id is required' }, { status: 400 })
   }

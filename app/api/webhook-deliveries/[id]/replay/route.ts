@@ -140,7 +140,7 @@ export async function POST(
       return NextResponse.json({ error: 'User not found' }, { status: 401 })
     }
 
-    const deliveryId = params.id
+    const deliveryId = (await params).id
 
     // Look up delivery with related webhook
     const delivery = await prisma.webhookDelivery.findUnique({

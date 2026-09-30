@@ -46,7 +46,7 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const commentId = params.id
+  const commentId = (await params).id
   if (!commentId || !commentId.trim()) {
     return NextResponse.json({ error: 'Comment id is required' }, { status: 400 })
   }

@@ -20,7 +20,7 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const bankAccount = await prisma.bankAccount.findFirst({
-      where: { id: params.id, userId: user.id },
+      where: { id: (await params).id, userId: user.id },
       select: {
         id: true,
         bankName: true,

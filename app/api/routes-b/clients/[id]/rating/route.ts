@@ -18,12 +18,12 @@ export async function GET(
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     const client = await prisma.client.findFirst({
-      where: { id: params.id, userId: user.id },
+      where: { id: (await params).id, userId: user.id },
     })
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
     const feedbacks = await prisma.clientFeedback.findMany({
-      where: { clientId: params.id },
+      where: { clientId: (await params).id },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -34,7 +34,7 @@ export async function GET(
         : 0
 
     return NextResponse.json({
-      clientId: params.id,
+      clientId: (await params).id,
       averageRating: Math.round(averageRating * 100) / 100,
       totalReviews,
       ratings: feedbacks.map((f: any) => ({

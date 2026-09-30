@@ -47,7 +47,7 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).id
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }
@@ -74,7 +74,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).id
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }
@@ -166,7 +166,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ruleId = params.id
+  const ruleId = (await params).id
   if (!ruleId || !ruleId.trim()) {
     return NextResponse.json({ error: 'Automation rule id is required' }, { status: 400 })
   }

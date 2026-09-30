@@ -83,6 +83,8 @@ export const convertTimeEntriesSchema = z.object({
   clientName: z.string().max(255).nullish(),
   currency: z.string().regex(/^[A-Z]{3,5}$/, 'Invalid currency code').optional().default('USD'),
   dueDate: dateString.nullish(),
+})
+
 export const createWhitelistAddressSchema = z.object({
   label: z.string().min(1, 'Label is required').max(100, 'Label must be less than 100 characters'),
   address: z.string().min(1, 'Address is required').max(70, 'Address is too long'),
