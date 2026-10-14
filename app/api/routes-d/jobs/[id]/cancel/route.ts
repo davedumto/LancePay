@@ -24,7 +24,7 @@ export async function POST(
       return NextResponse.json({ error: 'Job ID is required' }, { status: 400 })
     }
 
-    const job = await prisma.job.findUnique({ where: { id } })
+    const job = await (prisma as any).job.findUnique({ where: { id } })
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
@@ -43,7 +43,7 @@ export async function POST(
       )
     }
 
-    const cancelled = await prisma.job.update({
+    const cancelled = await (prisma as any).job.update({
       where: { id },
       data: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: user.id },
       select: { id: true, type: true, status: true, cancelledAt: true },

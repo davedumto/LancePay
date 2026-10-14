@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     const since = new Date(Date.now() - daysRaw * 24 * 60 * 60 * 1000)
 
-    const snapshots = await prisma.onchainFeeSnapshot.findMany({
+    const snapshots = await (prisma as any).onchainFeeSnapshot.findMany({
       where: { network, capturedAt: { gte: since } },
       orderBy: { capturedAt: 'asc' },
       select: {
@@ -54,12 +54,12 @@ export async function GET(request: NextRequest) {
     const avgOverWindow =
       snapshots.length > 0
         ? Math.round(
-            snapshots.reduce((sum, s) => sum + s.avgFeeStroops, 0) / snapshots.length,
+            snapshots.reduce((sum: number, s: any) => sum + s.avgFeeStroops, 0) / snapshots.length,
           )
         : null
 
     const peak =
-      snapshots.length > 0 ? Math.max(...snapshots.map((s) => s.maxFeeStroops)) : null
+      snapshots.length > 0 ? Math.max(...snapshots.map((s: any) => s.maxFeeStroops)) : null
 
     return NextResponse.json({
       network,

@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     const status = VALID_STATUSES.includes(body.status) ? body.status : 'pending'
 
     // Record or update Circle payout webhook event
-    const webhookEvent = await prisma.webhookEvent.upsert({
+    const webhookEvent = await (prisma as any).webhookEvent.upsert({
       where: {
         externalId: body.payoutId,
       },

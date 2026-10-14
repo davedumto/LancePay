@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '20', 10), 100)
 
     const where = webhookId ? { webhookId } : {}
-    const deliveries = await prisma.webhookDelivery.findMany({
+    const deliveries = await (prisma as any).webhookDelivery.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: limit,

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all clients owned by this user with their invoice revenue data
-    const clients = await prisma.client.findMany({
+    const clients = await prisma.contact.findMany({
       where: { userId: user.id },
       select: {
         id: true,
@@ -53,10 +53,10 @@ export async function GET(request: NextRequest) {
           },
         })
 
-        const totalAmount = invoices.reduce((sum, invoice) => sum + (invoice.amount || 0), 0)
+        const totalAmount = invoices.reduce((sum, invoice) => sum + (invoice.amount ? Number(invoice.amount) : 0), 0)
         const paidAmount = invoices
           .filter((inv) => inv.status === 'paid')
-          .reduce((sum, invoice) => sum + (invoice.amount || 0), 0)
+          .reduce((sum, invoice) => sum + (invoice.amount ? Number(invoice.amount) : 0), 0)
         const outstandingAmount = totalAmount - paidAmount
 
         return {

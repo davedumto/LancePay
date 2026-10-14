@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const suppressions = await prisma.emailSuppression.findMany({
+    const suppressions = await (prisma as any).emailSuppression.findMany({
       where: { userId: claims.userId },
       orderBy: { createdAt: 'desc' },
     });
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if suppression already exists for this user
-    const existingSuppression = await prisma.emailSuppression.findFirst({
+    const existingSuppression = await (prisma as any).emailSuppression.findFirst({
       where: {
         userId: claims.userId,
         email: validation.data.email,
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newSuppression = await prisma.emailSuppression.create({
+    const newSuppression = await (prisma as any).emailSuppression.create({
       data: {
         userId: claims.userId,
         email: validation.data.email,

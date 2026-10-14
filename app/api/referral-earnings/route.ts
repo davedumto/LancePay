@@ -52,8 +52,8 @@ export async function GET(request: NextRequest) {
     for (const row of grouped) {
       totals[row.status] = {
         count: row._count.status,
-        amountUsdc: row._sum.amountUsdc,
-        platformFee: row._sum.platformFee,
+        amountUsdc: row._sum.amountUsdc ? row._sum.amountUsdc.toString() : null,
+        platformFee: row._sum.platformFee ? row._sum.platformFee.toString() : null,
       }
     }
 

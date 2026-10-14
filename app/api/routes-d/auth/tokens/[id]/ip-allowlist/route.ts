@@ -24,12 +24,12 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const apiToken = await prisma.apiToken.findFirst({
+    const apiToken = await (prisma as any).apiToken.findFirst({
       where: { id: (await params).id, userId: user.id },
     })
     if (!apiToken) return NextResponse.json({ error: 'Token not found' }, { status: 404 })
 
-    const entries = await prisma.tokenIpAllowlist.findMany({
+    const entries = await (prisma as any).tokenIpAllowlist.findMany({
       where: { tokenId: (await params).id },
       orderBy: { createdAt: 'asc' },
       select: { id: true, cidr: true, label: true, createdAt: true },
@@ -56,7 +56,7 @@ export async function POST(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const apiToken = await prisma.apiToken.findFirst({
+    const apiToken = await (prisma as any).apiToken.findFirst({
       where: { id: (await params).id, userId: user.id },
     })
     if (!apiToken) return NextResponse.json({ error: 'Token not found' }, { status: 404 })
@@ -68,14 +68,14 @@ export async function POST(
       return NextResponse.json({ error: 'cidr must be a valid IPv4/IPv6 address or CIDR range' }, { status: 400 })
     }
 
-    const existing = await prisma.tokenIpAllowlist.findFirst({
+    const existing = await (prisma as any).tokenIpAllowlist.findFirst({
       where: { tokenId: (await params).id, cidr: cidr.trim() },
     })
     if (existing) {
       return NextResponse.json({ error: 'CIDR already in allowlist' }, { status: 409 })
     }
 
-    const entry = await prisma.tokenIpAllowlist.create({
+    const entry = await (prisma as any).tokenIpAllowlist.create({
       data: {
         tokenId: (await params).id,
         cidr: cidr.trim(),

@@ -1689,8 +1689,7 @@ model TaxRate {
   effectiveTo   DateTime? // rate stops applying to invoices dated on or after this (null = open-ended)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  parentRateId String?
+  parentRateId  String?
 
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   parentRate TaxRate?  @relation("CompoundTax", fields: [parentRateId], references: [id], onDelete: SetNull)
