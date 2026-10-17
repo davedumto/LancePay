@@ -9,7 +9,14 @@ export async function DELETE(
   try {
     // 1. Authenticate the caller
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    const claims = await verifyAuthToken(authToken || '')
+    if (!authToken) {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const claims = await verifyAuthToken(authToken)
 
     if (!claims) {
       return NextResponse.json(
@@ -65,7 +72,7 @@ export async function DELETE(
     const terminated = await prisma.anchorSession.update({
       where: { id },
       data: {
-        jwtToken: '', // invalidate token — stale clients cannot resume
+        jwtToken: null, // invalidate token — stale clients cannot resume
       },
     })
 
