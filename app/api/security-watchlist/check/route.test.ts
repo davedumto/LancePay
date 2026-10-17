@@ -4,23 +4,63 @@ import { GET } from './route'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn(),
+    },
     securityWatchlist: {
       findFirst: vi.fn(),
     },
   },
 }))
+vi.mock('@/lib/auth', () => ({
+  verifyAuthToken: vi.fn(),
+}))
 
 import { prisma } from '@/lib/db'
+import { verifyAuthToken } from '@/lib/auth'
 
-function request(url = 'http://localhost/api/security-watchlist/check') {
-  return new NextRequest(url)
+function request(
+  url = 'http://localhost/api/security-watchlist/check',
+  token: string | null = 'compliance-token',
+) {
+  return new NextRequest(url, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(verifyAuthToken).mockResolvedValue({ userId: 'privy-compliance' } as any)
+  vi.mocked(prisma.user.findUnique).mockResolvedValue({
+    id: 'user-compliance',
+    email: 'compliance@lancepay.io',
+    role: 'compliance',
+  } as any)
 })
 
 describe('GET /api/security-watchlist/check', () => {
+  it('returns 401 when unauthenticated and does not query the watchlist', async () => {
+    const response = await GET(
+      request('http://localhost/api/security-watchlist/check?value=test@example.com', null),
+    )
+    expect(response.status).toBe(401)
+    expect(prisma.securityWatchlist.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 when authenticated user does not have a compliance role', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      id: 'user-regular',
+      email: 'freelancer@example.com',
+      role: 'freelancer',
+    } as any)
+
+    const response = await GET(
+      request('http://localhost/api/security-watchlist/check?value=test@example.com'),
+    )
+    expect(response.status).toBe(403)
+    expect(prisma.securityWatchlist.findFirst).not.toHaveBeenCalled()
+  })
+
   it('returns 400 when value is missing', async () => {
     const response = await GET(request())
     expect(response.status).toBe(400)
