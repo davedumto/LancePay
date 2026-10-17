@@ -1131,7 +1131,7 @@ model AnchorSession {
   id        String   @id @default(uuid())
   userId    String
   anchorId  String   @db.VarChar(50) // 'moneygram' | 'yellowcard'
-  jwtToken  String   @db.Text
+  jwtToken  String?  @db.Text
   expiresAt DateTime
   createdAt DateTime @default(now())
 
