@@ -1711,6 +1711,7 @@ model TaxRate {
   userId        String
   name          String    @db.VarChar(100)
   description   String?   @db.VarChar(300)
+  jurisdiction  String    @db.VarChar(100)
   rate          Decimal   @db.Decimal(6, 4) // e.g. 0.1000 for 10%
   isDefault     Boolean   @default(false)
   effectiveFrom DateTime  @default(now()) // rate applies to invoices dated on or after this
@@ -1726,6 +1727,8 @@ model TaxRate {
 
   @@index([userId])
   @@index([userId, name, effectiveFrom])
+  @@index([userId, jurisdiction, effectiveFrom])
+  @@index([parentRateId])
 }
 
 /// A member that the owning user has invited to collaborate on their account.
