@@ -28,7 +28,7 @@ describe('GET /api/leaderboard/trust-score', () => {
       { id: 'ts-2', score: 85, user: { id: 'u-2', name: 'Bob', createdAt: new Date('2025-01-02') } },
       { id: 'ts-3', score: 85, user: { id: 'u-3', name: 'Charlie', createdAt: new Date('2025-01-03') } }, // Tie break
     ]
-    
+
     vi.mocked(prisma.userTrustScore.findMany).mockResolvedValue([...mockScores, { id: 'ts-4' }] as any)
 
     const response = await GET(request('http://localhost/api/leaderboard/trust-score?limit=3'))
@@ -38,7 +38,7 @@ describe('GET /api/leaderboard/trust-score', () => {
     expect(body.data).toHaveLength(3)
     expect(body.data[0].id).toBe('ts-1')
     expect(body.nextCursor).toBe('ts-4')
-    
+
     expect(prisma.userTrustScore.findMany).toHaveBeenCalledWith({
       where: { user: { publicVisibility: true } },
       take: 4,
@@ -63,10 +63,37 @@ describe('GET /api/leaderboard/trust-score', () => {
       expect.objectContaining({
         take: 2,
         cursor: { id: 'ts-4' },
-      })
+      }),
     )
     expect(body.data).toHaveLength(1)
     expect(body.nextCursor).toBeUndefined()
+  })
+
+  it('returns 400 for malformed, zero, negative, or non-integer limit values without querying Prisma', async () => {
+    for (const invalid of ['abc', '0', '-5', '3.14', '']) {
+      const response = await GET(
+        request(`http://localhost/api/leaderboard/trust-score?limit=${invalid}`),
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({
+        error: 'limit must be a positive integer',
+      })
+    }
+    expect(prisma.userTrustScore.findMany).not.toHaveBeenCalled()
+  })
+
+  it('clamps limit values above the maximum page size (100)', async () => {
+    vi.mocked(prisma.userTrustScore.findMany).mockResolvedValue([] as any)
+
+    const response = await GET(
+      request('http://localhost/api/leaderboard/trust-score?limit=5000'),
+    )
+    expect(response.status).toBe(200)
+    expect(prisma.userTrustScore.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 101,
+      }),
+    )
   })
 
   it('returns 500 when database fails', async () => {
