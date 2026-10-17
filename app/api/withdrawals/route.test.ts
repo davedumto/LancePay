@@ -33,6 +33,11 @@ const mockUser = {
     userId: "user-1",
     status: "approved",
   },
+  sanctionsScreening: {
+    id: "ss-1",
+    userId: "user-1",
+    status: "clear",
+  },
 };
 const mockClaims = { userId: "privy-1" };
 const mockBankAccount = {
@@ -242,5 +247,67 @@ describe("POST /api/withdrawals", () => {
     );
     expect(res.status).toBe(201);
     expect(debitDelegatedUSDC).toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening record is missing", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: null,
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_SCREENING_NOT_FOUND");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening status is flagged", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: {
+        id: "ss-1",
+        userId: "user-1",
+        status: "flagged",
+      },
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_FLAGGED");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening status is under_review", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: {
+        id: "ss-1",
+        userId: "user-1",
+        status: "under_review",
+      },
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_UNDER_REVIEW");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
+  });
+
+  it("allows withdrawal when sanctions screening status is clear", async () => {
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(201);
+    expect(debitDelegatedUSDC).toHaveBeenCalled();
+    expect(initiateOfframp).toHaveBeenCalled();
   });
 });

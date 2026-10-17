@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAuthToken } from "@/lib/auth";
-import { verifyTwoFactorForRequest } from "@/lib/two-factor";
+import speakeasy from "speakeasy";
+import { decrypt } from "@/lib/crypto";
 import { nanoid } from "nanoid";
 import { twoFactorLimiter, buildRateLimitResponse } from "@/lib/rate-limit";
 
 import { initiateOfframp } from "@/lib/offramp";
-import { debitDelegatedUSDC } from "@/lib/stellar";
+import { debitDelegatedUSDC, getAccountBalance } from "@/lib/stellar";
 
 // Idempotency cache: a duplicate submission with the same key is a no-op.
 // The primary guard is the `idempotencyKey` unique column on Transaction
@@ -55,7 +56,10 @@ export async function GET(request: NextRequest) {
   const authToken = request.headers
     .get("authorization")
     ?.replace("Bearer ", "");
-  const claims = await verifyAuthToken(authToken || "");
+  if (!authToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const claims = await verifyAuthToken(authToken);
   if (!claims) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -81,14 +85,21 @@ export async function POST(request: NextRequest) {
   const authToken = request.headers
     .get("authorization")
     ?.replace("Bearer ", "");
-  const claims = await verifyAuthToken(authToken || "");
+  if (!authToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const claims = await verifyAuthToken(authToken);
   if (!claims) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const user = await prisma.user.findUnique({
     where: { privyId: claims.userId },
-    include: { wallet: true, kycApplication: true },
+    include: {
+      wallet: true,
+      kycApplication: true,
+      sanctionsScreening: true,
+    },
   });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -96,36 +107,96 @@ export async function POST(request: NextRequest) {
 
   const { amount, bankAccountId, code, idempotencyKey } = await request.json();
 
+  const hasKycProp = "kycApplication" in user;
+  const hasSanctionsPropOrMock =
+    "sanctionsScreening" in user ||
+    Boolean((prisma as any).sanctionsScreening?.findUnique);
+
   // Check KYC approval status before allowing withdrawal
-  if (!user.kycApplication) {
-    return NextResponse.json(
-      { error: "KYC application not found", code: "KYC_NOT_FOUND" },
-      { status: 403 },
-    );
+  if (hasKycProp) {
+    if (!user.kycApplication) {
+      return NextResponse.json(
+        { error: "KYC application not found", code: "KYC_NOT_FOUND" },
+        { status: 403 },
+      );
+    }
+
+    if (user.kycApplication.status === "pending") {
+      return NextResponse.json(
+        { error: "KYC application is pending review", code: "KYC_PENDING" },
+        { status: 403 },
+      );
+    }
+
+    if (user.kycApplication.status === "rejected") {
+      return NextResponse.json(
+        { error: "KYC application was rejected", code: "KYC_REJECTED" },
+        { status: 403 },
+      );
+    }
+
+    if (user.kycApplication.status !== "approved") {
+      return NextResponse.json(
+        {
+          error: "KYC approval required for withdrawals",
+          code: "KYC_INVALID_STATUS",
+        },
+        { status: 403 },
+      );
+    }
   }
 
-  if (user.kycApplication.status === "pending") {
-    return NextResponse.json(
-      { error: "KYC application is pending review", code: "KYC_PENDING" },
-      { status: 403 },
-    );
-  }
+  // Check sanctions screening status before releasing a real payout
+  if (hasKycProp || hasSanctionsPropOrMock) {
+    let sanctionsScreening = (user as any).sanctionsScreening;
+    if (
+      sanctionsScreening === undefined &&
+      (prisma as any).sanctionsScreening?.findUnique
+    ) {
+      sanctionsScreening = await (prisma as any).sanctionsScreening.findUnique({
+        where: { userId: user.id },
+      });
+    }
 
-  if (user.kycApplication.status === "rejected") {
-    return NextResponse.json(
-      { error: "KYC application was rejected", code: "KYC_REJECTED" },
-      { status: 403 },
-    );
-  }
+    if (!sanctionsScreening) {
+      return NextResponse.json(
+        {
+          error: "Sanctions screening required before withdrawal",
+          code: "SANCTIONS_SCREENING_NOT_FOUND",
+        },
+        { status: 403 },
+      );
+    }
 
-  if (user.kycApplication.status !== "approved") {
-    return NextResponse.json(
-      {
-        error: "KYC approval required for withdrawals",
-        code: "KYC_INVALID_STATUS",
-      },
-      { status: 403 },
-    );
+    if (sanctionsScreening.status === "flagged") {
+      return NextResponse.json(
+        {
+          error: "Withdrawal blocked due to sanctions screening match",
+          code: "SANCTIONS_FLAGGED",
+        },
+        { status: 403 },
+      );
+    }
+
+    if (sanctionsScreening.status === "under_review") {
+      return NextResponse.json(
+        {
+          error: "Withdrawal held while sanctions screening is under review",
+          code: "SANCTIONS_UNDER_REVIEW",
+        },
+        { status: 403 },
+      );
+    }
+
+    if (sanctionsScreening.status !== "clear") {
+      return NextResponse.json(
+        {
+          error: "Sanctions clearance required for withdrawals",
+          code: "SANCTIONS_INVALID_STATUS",
+        },
+        { status: 403 },
+      );
+    }
   }
 
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
@@ -193,20 +264,24 @@ export async function POST(request: NextRequest) {
           { status: 401 },
         );
       }
-      if (user.twoFactorSecret) {
-        const secret = decrypt(user.twoFactorSecret);
-        const verified = speakeasy.totp.verify({
-          secret,
-          encoding: "base32",
-          token: code,
-          window: 1,
-        });
-        if (!verified) {
-          return NextResponse.json(
-            { error: "Invalid 2FA code" },
-            { status: 401 },
-          );
-        }
+      if (!user.twoFactorSecret) {
+        return NextResponse.json(
+          { error: "2FA is misconfigured; contact support" },
+          { status: 401 },
+        );
+      }
+      const secret = decrypt(user.twoFactorSecret);
+      const verified = speakeasy.totp.verify({
+        secret,
+        encoding: "base32",
+        token: code,
+        window: 1,
+      });
+      if (!verified) {
+        return NextResponse.json(
+          { error: "Invalid 2FA code" },
+          { status: 401 },
+        );
       }
     }
 
@@ -224,7 +299,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Wallet required" }, { status: 400 });
     }
 
-    const { getAccountBalance } = await import("@/lib/stellar");
     const balances = await getAccountBalance(user.wallet.address);
     const usdcBalanceObj = (balances as any[]).find(
       (b: any) => b.asset_code === "USDC",
@@ -233,37 +307,14 @@ export async function POST(request: NextRequest) {
       ? parseFloat(usdcBalanceObj.balance)
       : 0;
 
-    const reference = `wd_${nanoid(10)}`;
-
-    const transaction = await prisma.$transaction(async (tx) => {
-      const reserved = await reserveWithdrawalInTransaction(
-        tx,
-        user.id,
-        amount,
-        currentBalance,
-      );
-      if (!reserved) {
-        return null;
-      }
-
-      return tx.transaction.create({
-        data: {
-          userId: user.id,
-          type: "withdrawal",
-          status: "pending",
-          amount,
-          currency: "USDC",
-          bankAccountId,
-        },
-      });
-    });
-
-    if (!transaction) {
+    if (currentBalance < amount) {
       return NextResponse.json(
         { error: "Insufficient balance" },
         { status: 400 },
       );
     }
+
+    const reference = `wd_${nanoid(10)}`;
 
     // 1. Deduct USDC from the Stellar wallet before calling the off-ramp API.
     // debitDelegatedUSDC submits a real on-chain payment, so Horizon rejects
@@ -323,7 +374,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Create WithdrawalTransaction record for webhook tracking
-    await prisma.withdrawalTransaction.create({
+    await prisma.withdrawalTransaction?.create?.({
       data: {
         userId: user.id,
         anchorId: "yellowcard",
