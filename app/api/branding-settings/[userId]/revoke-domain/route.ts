@@ -29,26 +29,43 @@ export async function POST(
     if (typeof reason !== 'string' || reason.trim() === '') {
       return NextResponse.json({ error: 'revocationReason is required' }, { status: 400 })
     }
-    if (reason.trim().length > 500) {
+    const trimmedReason = reason.trim()
+    if (trimmedReason.length > 500) {
       return NextResponse.json({ error: 'revocationReason must be at most 500 characters' }, { status: 400 })
     }
 
     const revokedAt = new Date()
     const result = await prisma.brandingSettings.updateMany({
-      where: { userId, customDomain: { not: null } },
+      where: {
+        userId,
+        customDomain: { not: null },
+        verificationStatus: 'verified',
+      },
       data: {
         customDomain: null,
         verificationToken: null,
         verificationStatus: 'unverified',
         verifiedAt: null,
         verificationAttempts: 0,
+        senderDomain: DEFAULT_SENDER_DOMAIN,
+        domainRevokedAt: revokedAt,
+        domainRevocationReason: trimmedReason,
       },
     })
     if (result.count === 0) {
       return NextResponse.json({ error: 'Verified custom domain not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ userId, senderDomain: DEFAULT_SENDER_DOMAIN, revokedAt, revocationReason: reason.trim() })
+    return NextResponse.json({
+      userId,
+      senderDomain: DEFAULT_SENDER_DOMAIN,
+      revokedAt,
+      domainRevokedAt: revokedAt,
+      revocationReason: trimmedReason,
+      domainRevocationReason: trimmedReason,
+      verificationStatus: 'unverified',
+      customDomain: null,
+    })
   } catch (error) {
     logger.error({ err: error }, 'POST /api/branding-settings/[userId]/revoke-domain error')
     return NextResponse.json({ error: 'Failed to revoke custom domain' }, { status: 500 })
