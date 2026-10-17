@@ -12,14 +12,28 @@ async function readBody(request: NextRequest) {
   return text.trim() ? JSON.parse(text) as Record<string, unknown> : {}
 }
 
+export function normalizeWatchlistValue(rawValue: string, rawType?: string | null): string {
+  const trimmed = rawValue.trim()
+  const normalizedType = rawType?.trim().toLowerCase() ?? ''
+  if (
+    normalizedType === 'email' ||
+    normalizedType === 'domain' ||
+    trimmed.includes('@') ||
+    trimmed.toLowerCase().startsWith('0x')
+  ) {
+    return trimmed.toLowerCase()
+  }
+  return trimmed
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireComplianceActor(request)
     if ('response' in auth) return auth.response
 
-    const type = new URL(request.url).searchParams.get('type')?.trim()
+    const typeParam = new URL(request.url).searchParams.get('type')?.trim().toLowerCase()
     const entries = await prisma.securityWatchlist.findMany({
-      where: type ? { type } : undefined,
+      where: typeParam ? { type: typeParam } : undefined,
       orderBy: { createdAt: 'desc' },
     })
     return NextResponse.json({ entries })
@@ -41,12 +55,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
 
-    const type = typeof body.type === 'string' ? body.type.trim() : ''
-    const value = typeof body.value === 'string' ? body.value.trim() : ''
+    const type = typeof body.type === 'string' ? body.type.trim().toLowerCase() : ''
+    const rawValue = typeof body.value === 'string' ? body.value.trim() : ''
     const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
     if (!type) return NextResponse.json({ error: 'type is required' }, { status: 400 })
-    if (!value) return NextResponse.json({ error: 'value is required' }, { status: 400 })
+    if (!rawValue) return NextResponse.json({ error: 'value is required' }, { status: 400 })
     if (!reason) return NextResponse.json({ error: 'reason is required' }, { status: 400 })
+
+    const value = normalizeWatchlistValue(rawValue, type)
 
     try {
       const entry = await prisma.securityWatchlist.create({ data: { type, value, reason } })
