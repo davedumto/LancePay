@@ -15,11 +15,35 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | 
   }
 }
 
+const revokedKeyIds = new Set<string>()
+const revokedKeyHashes = new Set<string>()
+
+/**
+ * Immediately marks an API key as revoked in the in-process request-time cache
+ * so in-flight or cached lookups reject the key without waiting for TTL expiry.
+ */
+export function invalidateApiKeyCache(keyId: string, hashedKey?: string | null): void {
+  if (keyId) revokedKeyIds.add(keyId)
+  if (hashedKey) revokedKeyHashes.add(hashedKey)
+}
+
+export function clearApiKeyRevocationCache(): void {
+  revokedKeyIds.clear()
+  revokedKeyHashes.clear()
+}
+
+export function isApiKeyRevokedInCache(keyId?: string | null, hashedKey?: string | null): boolean {
+  if (keyId && revokedKeyIds.has(keyId)) return true
+  if (hashedKey && revokedKeyHashes.has(hashedKey)) return true
+  return false
+}
+
 /**
  * Verify an API key from the request and return the associated user.
  * 
  * A key is valid if:
  * - It exists in the database (hashedKey matches)
+ * - It has not been invalidated in the request-time revocation cache
  * - isActive is true
  * - deactivatesAt is null OR deactivatesAt > now (grace period check)
  * 
@@ -35,6 +59,9 @@ export async function verifyApiKey(
 
   try {
     const hashedKey = hashToken(rawApiKey)
+    if (isApiKeyRevokedInCache(null, hashedKey)) {
+      return null
+    }
 
     const apiKey = await prisma.apiKey.findUnique({
       where: { hashedKey },
@@ -50,6 +77,10 @@ export async function verifyApiKey(
     })
 
     if (!apiKey) return null
+
+    if (isApiKeyRevokedInCache(apiKey.id, hashedKey)) {
+      return null
+    }
 
     // Check if key is active
     if (!apiKey.isActive) return null
