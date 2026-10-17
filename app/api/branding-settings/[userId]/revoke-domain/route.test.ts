@@ -35,20 +35,37 @@ beforeEach(() => {
 })
 
 describe('POST /api/branding-settings/[userId]/revoke-domain', () => {
-  it('atomically clears verified fields, restores the default sender, and records the reason', async () => {
+  it('atomically clears verified fields, restores the default sender, and persists the revocation audit fields', async () => {
     const response = await POST(request(), context())
+    const json = await response.json()
 
     expect(response.status).toBe(200)
     expect(prisma.brandingSettings.updateMany).toHaveBeenCalledWith({
-      where: { userId: 'owner-1', customDomain: { not: null }, domainVerifiedAt: { not: null } },
+      where: {
+        userId: 'owner-1',
+        customDomain: { not: null },
+        verificationStatus: 'verified',
+      },
       data: {
         customDomain: null,
-        domainVerifiedAt: null,
+        verificationToken: null,
+        verificationStatus: 'unverified',
+        verifiedAt: null,
+        verificationAttempts: 0,
         senderDomain: 'lancepay.com',
         domainRevokedAt: expect.any(Date),
         domainRevocationReason: 'Failed periodic re-verification',
       },
     })
+    expect(json).toMatchObject({
+      userId: 'owner-1',
+      senderDomain: 'lancepay.com',
+      revocationReason: 'Failed periodic re-verification',
+      domainRevocationReason: 'Failed periodic re-verification',
+      verificationStatus: 'unverified',
+      customDomain: null,
+    })
+    expect(typeof json.revokedAt).toBe('string')
   })
 
   it('allows an admin to revoke another user domain', async () => {
@@ -61,13 +78,22 @@ describe('POST /api/branding-settings/[userId]/revoke-domain', () => {
     expect((await POST(request({}, false), context())).status).toBe(401)
   })
 
-  it('requires a non-empty revocation reason', async () => {
+  it('requires a non-empty revocation reason of at most 500 characters', async () => {
     expect((await POST(request({ revocationReason: '  ' }), context())).status).toBe(400)
+    expect((await POST(request({ revocationReason: 'x'.repeat(501) }), context())).status).toBe(400)
   })
 
-  it('returns 404 when no verified domain exists', async () => {
+  it('returns 404 when no verified domain exists (e.g. unverified or pending)', async () => {
     vi.mocked(prisma.brandingSettings.updateMany).mockResolvedValue({ count: 0 })
-    expect((await POST(request(), context())).status).toBe(404)
+    const res = await POST(request(), context())
+    expect(res.status).toBe(404)
+    expect(prisma.brandingSettings.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          verificationStatus: 'verified',
+        }),
+      }),
+    )
   })
 
   it('returns 500 when the atomic update fails', async () => {
