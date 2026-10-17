@@ -34,6 +34,9 @@ export async function DELETE(
     if (verification.userId !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    if (verification.expiresAt <= new Date()) {
+      return NextResponse.json({ error: 'Income verification not found' }, { status: 404 })
+    }
 
     await prisma.incomeVerification.delete({ where: { id } })
 
