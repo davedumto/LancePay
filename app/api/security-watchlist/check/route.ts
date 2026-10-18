@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireComplianceActor } from '@/app/api/_lib/compliance-auth'
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireComplianceActor(request)
+    if ('response' in auth) return auth.response
+
     const { searchParams } = new URL(request.url)
     const value = searchParams.get('value')
     let type = searchParams.get('type')
