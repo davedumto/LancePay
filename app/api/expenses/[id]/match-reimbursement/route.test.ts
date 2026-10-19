@@ -90,6 +90,12 @@ vi.mock('@/lib/db', () => {
         const tx = {
           expenseReimbursementMatch: {
             create: vi.fn(async ({ data }: any) => {
+              if (store.state.matches.some((m) => m.expenseId === data.expenseId)) {
+                throw Object.assign(
+                  new Error('Unique constraint failed on the fields: (`expenseId`)'),
+                  { code: 'P2002' },
+                )
+              }
               const match = { id: 'match-new', ...data }
               store.state.matches.push(match)
               return match
@@ -263,5 +269,27 @@ describe('POST /api/expenses/[id]/match-reimbursement', () => {
     seed({ expenses: [{ id: 'exp-1' }] })
     const res = await POST(req('exp-1', { invoiceId: 'inv-unknown' }), { params: Promise.resolve({ id: 'exp-1' }) })
     expect(res.status).toBe(404)
+  })
+
+  it('handles concurrent TOCTOU match requests for the same expense by succeeding once (201) and returning 409 (never 500) on the racer', async () => {
+    const expenseDate = new Date('2026-01-10T10:00:00Z')
+    seed({
+      expenses: [{ id: 'exp-1', amount: d('100'), currency: 'USD', expenseDate }],
+      invoices: [{ id: 'inv-1', currency: 'NGN', amount: d('1000') }],
+      fxSnapshots: [{ rate: d('1500'), capturedAt: expenseDate }],
+    })
+
+    const [resA, resB] = await Promise.all([
+      POST(req('exp-1', { invoiceId: 'inv-1' }), { params: Promise.resolve({ id: 'exp-1' }) }),
+      POST(req('exp-1', { invoiceId: 'inv-1' }), { params: Promise.resolve({ id: 'exp-1' }) }),
+    ])
+
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b)
+    expect(statuses).toEqual([201, 409])
+    expect(store.state.matches).toHaveLength(1)
+
+    const conflictRes = resA.status === 409 ? resA : resB
+    const conflictBody = await conflictRes.json()
+    expect(conflictBody.error).toMatch(/already matched/i)
   })
 })
