@@ -47,6 +47,14 @@ model User {
   paymentAdvances                   PaymentAdvance[]
   apiKeys                           ApiKey[]
   sandboxSessions                   SandboxSession[]
+  featureFlagsCreated               FeatureFlag[]                      @relation("FeatureFlagsCreated")
+  featureFlagChanges                FeatureFlagChange[]
+  killSwitchesEngaged               KillSwitch[]                       @relation("KillSwitchesEngaged")
+  killSwitchesDisengaged            KillSwitch[]                       @relation("KillSwitchesDisengaged")
+  incidentsCreated                  Incident[]                         @relation("IncidentsCreated")
+  adminImpersonations               ImpersonationSession[]             @relation("AdminImpersonationSessions")
+  targetImpersonations              ImpersonationSession[]             @relation("TargetImpersonationSessions")
+  trustlineBootstraps               TrustlineBootstrap[]
   brandingSettings                  BrandingSettings?
   bankFeedSyncs                     BankFeedSync[]
   plaidAccounts                     PlaidAccount[]
@@ -556,6 +564,7 @@ model ApiKey {
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   sandboxSessions SandboxSession[]
+  persistedQueries PersistedQuery[]
 
   @@index([userId])
   @@index([hashedKey])
@@ -565,15 +574,19 @@ model ApiKey {
 // one session per key may be "active" (enforced by a partial unique index in
 // the migration). Seeded data lives in seedData so it never touches live rows.
 model SandboxSession {
-  id        String   @id @default(uuid())
-  apiKeyId  String
-  userId    String
-  status    String   @default("active") @db.VarChar(20)
-  seed      String   @db.VarChar(64)
-  seedData  Json
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(uuid())
+  apiKeyId    String
+  userId      String
+  status      String    @default("active") @db.VarChar(20)
+  seed        String    @db.VarChar(64)
+  seedData    Json
+  resetCount  Int       @default(0)
+  lastResetAt DateTime?
+  jobInFlight Boolean   @default(false)
+  activeJobId String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1131,7 +1144,7 @@ model AnchorSession {
   id        String   @id @default(uuid())
   userId    String
   anchorId  String   @db.VarChar(50) // 'moneygram' | 'yellowcard'
-  jwtToken  String   @db.Text
+  jwtToken  String?  @db.Text
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -1711,6 +1724,7 @@ model TaxRate {
   userId        String
   name          String    @db.VarChar(100)
   description   String?   @db.VarChar(300)
+  jurisdiction  String    @db.VarChar(100)
   rate          Decimal   @db.Decimal(6, 4) // e.g. 0.1000 for 10%
   isDefault     Boolean   @default(false)
   effectiveFrom DateTime  @default(now()) // rate applies to invoices dated on or after this
@@ -1725,7 +1739,8 @@ model TaxRate {
   childRates TaxRate[] @relation("CompoundTax")
 
   @@index([userId])
-  @@index([userId, name, effectiveFrom])
+  @@index([userId, jurisdiction, effectiveFrom])
+  @@index([parentRateId])
 }
 
 /// A member that the owning user has invited to collaborate on their account.
@@ -2176,3 +2191,159 @@ model DistributedJobLock {
 
   @@index([expiresAt])
 }
+
+model PersistedQuery {
+  id          String   @id @default(uuid())
+  appId       String
+  hash        String   @db.VarChar(64)
+  query       String   @db.Text
+  normalized  String   @db.Text
+  depth       Int
+  complexity  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  apiKey      ApiKey?  @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, hash])
+  @@index([appId])
+  @@index([hash])
+}
+
+model FeatureFlag {
+  id                String              @id @default(uuid())
+  key               String              @unique @db.VarChar(100)
+  name              String              @db.VarChar(255)
+  description       String?             @db.Text
+  rolloutPercentage Int                 @default(0)
+  cohortRules       Json                @default("[]")
+  enabled           Boolean             @default(false)
+  killed            Boolean             @default(false)
+  archived          Boolean             @default(false)
+  version           Int                 @default(1)
+  changeLog         Json                @default("[]")
+  createdById       String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  createdBy         User                @relation("FeatureFlagsCreated", fields: [createdById], references: [id])
+  changes           FeatureFlagChange[]
+
+  @@index([key])
+  @@index([createdById])
+  @@index([archived])
+}
+
+model FeatureFlagChange {
+  id            String      @id @default(uuid())
+  featureFlagId String
+  changedById   String
+  action        String      @db.VarChar(50)
+  priorConfig   Json
+  newConfig     Json
+  reason        String?     @db.Text
+  createdAt     DateTime    @default(now())
+
+  featureFlag   FeatureFlag @relation(fields: [featureFlagId], references: [id], onDelete: Cascade)
+  changedBy     User        @relation(fields: [changedById], references: [id])
+
+  @@index([featureFlagId])
+  @@index([changedById])
+}
+
+model ImpersonationSession {
+  id            String    @id @default(uuid())
+  adminId       String
+  targetUserId  String
+  token         String    @unique @db.Text
+  justification String    @db.Text
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  admin         User      @relation("AdminImpersonationSessions", fields: [adminId], references: [id], onDelete: Cascade)
+  targetUser    User      @relation("TargetImpersonationSessions", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([expiresAt])
+}
+
+model KillSwitch {
+  id              String    @id @default(uuid())
+  key             String    @unique @db.VarChar(100)
+  subsystem       String    @db.VarChar(100)
+  status          String    @default("disengaged") @db.VarChar(20)
+  incidentRef     String?   @db.VarChar(100)
+  beforeSnapshot  Json?
+  afterSnapshot   Json?
+  engagedAt       DateTime?
+  engagedById     String?
+  disengagedAt    DateTime?
+  disengagedById  String?
+  elapsedSeconds  Int?
+  reason          String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  engagedBy       User?     @relation("KillSwitchesEngaged", fields: [engagedById], references: [id])
+  disengagedBy    User?     @relation("KillSwitchesDisengaged", fields: [disengagedById], references: [id])
+
+  @@index([key])
+  @@index([status])
+}
+
+model Incident {
+  id          String    @id @default(uuid())
+  reference   String    @unique @db.VarChar(100)
+  title       String    @db.VarChar(255)
+  status      String    @default("open") @db.VarChar(20)
+  severity    String    @default("high") @db.VarChar(20)
+  createdById String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdBy   User?     @relation("IncidentsCreated", fields: [createdById], references: [id])
+
+  @@index([reference])
+  @@index([status])
+}
+
+model TrustlineBootstrap {
+  id             String    @id @default(uuid())
+  walletAddress  String    @unique @db.VarChar(56)
+  userId         String
+  assetCode      String    @default("USDC") @db.VarChar(12)
+  issuerAddress  String    @db.VarChar(56)
+  status         String    @default("pending") @db.VarChar(20)
+  txHash         String?   @db.VarChar(64)
+  error          String?   @db.Text
+  retryCount     Int       @default(0)
+  lastAttemptAt  DateTime  @default(now())
+  sponsoredById  String?   @db.VarChar(56)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([walletAddress])
+  @@index([status])
+  @@index([userId])
+}
+
+model SdkBundle {
+  id           String    @id @default(uuid())
+  cacheKey     String    @unique @db.VarChar(128)
+  language     String    @db.VarChar(50)
+  apiVersion   String    @db.VarChar(50)
+  specRevision String    @db.VarChar(64)
+  downloadUrl  String    @db.VarChar(255)
+  fileSize     Int
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([cacheKey])
+  @@index([expiresAt])
+}
+

@@ -33,6 +33,11 @@ const mockUser = {
     userId: "user-1",
     status: "approved",
   },
+  sanctionsScreening: {
+    id: "sanc-1",
+    userId: "user-1",
+    status: "clear",
+  },
 };
 const mockClaims = { userId: "privy-1" };
 const mockBankAccount = {
@@ -76,6 +81,18 @@ beforeEach(() => {
     id: "wd-1",
     status: "pending",
   } as any);
+  vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => {
+    return callback({
+      userWithdrawalBalance: {
+        upsert: vi.fn().mockResolvedValue({}),
+        findUnique: vi.fn().mockResolvedValue({ userId: "user-1", availableUsdc: 100 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      transaction: {
+        create: vi.fn().mockResolvedValue({ id: "txn-1", status: "pending" }),
+      },
+    });
+  });
 });
 
 describe("POST /api/withdrawals", () => {
@@ -236,11 +253,66 @@ describe("POST /api/withdrawals", () => {
     expect(debitDelegatedUSDC).not.toHaveBeenCalled();
   });
 
-  it("allows withdrawal when KYC application is approved", async () => {
+  it("allows withdrawal when KYC application is approved and sanctions screening is clear", async () => {
     const res = await POST(
       makeRequest({ amount: 50, bankAccountId: "bank-1" }),
     );
     expect(res.status).toBe(201);
     expect(debitDelegatedUSDC).toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening is missing (requires manual review / not automatic pass)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: null,
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_REQUIRED");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening is flagged", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: {
+        id: "sanc-1",
+        userId: "user-1",
+        status: "flagged",
+      },
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_BLOCKED");
+    expect(json.status).toBe("flagged");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
+  });
+
+  it("rejects withdrawal when sanctions screening is under_review", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...mockUser,
+      sanctionsScreening: {
+        id: "sanc-1",
+        userId: "user-1",
+        status: "under_review",
+      },
+    } as any);
+    const res = await POST(
+      makeRequest({ amount: 50, bankAccountId: "bank-1" }),
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.code).toBe("SANCTIONS_BLOCKED");
+    expect(json.status).toBe("under_review");
+    expect(debitDelegatedUSDC).not.toHaveBeenCalled();
+    expect(initiateOfframp).not.toHaveBeenCalled();
   });
 });

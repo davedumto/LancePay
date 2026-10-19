@@ -33,6 +33,7 @@
     "gsap": "^3.14.2",
     "handlebars": "^4.7.9",
     "lucide-react": "^0.469.0",
+    "nanoid": "^6.0.2",
     "next": "^16.1.0",
     "next-auth": "^4.24.15",
     "next-swagger-doc": "^0.4.1",

@@ -1,13 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { logger } from '@/lib/logger'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
+
+function parsePositiveInteger(
+  value: string | null,
+  fallback: number,
+): number | null {
+  if (value === null) return fallback;
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const limitParam = searchParams.get('limit')
-    const limit = limitParam ? parseInt(limitParam, 10) : 50
-    const cursor = searchParams.get('cursor')
+    const { searchParams } = new URL(request.url);
+    const limitParam = searchParams.get("limit");
+    const parsedLimit = parsePositiveInteger(limitParam, DEFAULT_LIMIT);
+    if (parsedLimit === null) {
+      return NextResponse.json(
+        { error: "limit must be a positive integer" },
+        { status: 400 },
+      );
+    }
+    const limit = Math.min(parsedLimit, MAX_LIMIT);
+    const cursor = searchParams.get("cursor");
 
     const scores = await prisma.userTrustScore.findMany({
       where: {
@@ -18,9 +38,9 @@ export async function GET(request: NextRequest) {
       take: limit + 1,
       cursor: cursor ? { id: cursor } : undefined,
       orderBy: [
-        { score: 'desc' },
-        { user: { createdAt: 'asc' } },
-        { id: 'asc' },
+        { score: "desc" },
+        { user: { createdAt: "asc" } },
+        { id: "asc" },
       ],
       select: {
         id: true,
@@ -37,20 +57,23 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    })
+    });
 
-    let nextCursor: string | undefined = undefined
+    let nextCursor: string | undefined = undefined;
     if (scores.length > limit) {
-      const nextItem = scores.pop()
-      nextCursor = nextItem?.id
+      const nextItem = scores.pop();
+      nextCursor = nextItem?.id;
     }
 
     return NextResponse.json({
       data: scores,
       nextCursor,
-    })
+    });
   } catch (error) {
-    logger.error({ err: error }, 'GET /api/leaderboard/trust-score error')
-    return NextResponse.json({ error: 'Failed to fetch leaderboard' }, { status: 500 })
+    logger.error({ err: error }, "GET /api/leaderboard/trust-score error");
+    return NextResponse.json(
+      { error: "Failed to fetch leaderboard" },
+      { status: 500 },
+    );
   }
 }

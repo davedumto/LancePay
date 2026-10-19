@@ -6,7 +6,8 @@ import { nanoid } from "nanoid";
 import { twoFactorLimiter, buildRateLimitResponse } from "@/lib/rate-limit";
 
 import { initiateOfframp } from "@/lib/offramp";
-import { debitDelegatedUSDC } from "@/lib/stellar";
+import { debitDelegatedUSDC, getAccountBalance } from "@/lib/stellar";
+import { reserveWithdrawalInTransaction } from "@/lib/withdrawal-ledger";
 
 // Idempotency cache: a duplicate submission with the same key is a no-op.
 // The primary guard is the `idempotencyKey` unique column on Transaction
@@ -78,23 +79,63 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authToken = request.headers
-    .get("authorization")
-    ?.replace("Bearer ", "");
-  const claims = await verifyAuthToken(authToken || "");
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const authToken = authHeader.replace("Bearer ", "");
+  const claims = await verifyAuthToken(authToken);
   if (!claims) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const user = await prisma.user.findUnique({
     where: { privyId: claims.userId },
-    include: { wallet: true, kycApplication: true },
+    include: { wallet: true, kycApplication: true, sanctionsScreening: true },
   });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const { amount, bankAccountId, code, idempotencyKey } = await request.json();
+  let body: any = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+  const { amount, bankAccountId, code, idempotencyKey } = body;
+
+  // Check sanctions screening status before releasing payout
+  if (!user.sanctionsScreening) {
+    return NextResponse.json(
+      { error: "Sanctions screening required", code: "SANCTIONS_REQUIRED" },
+      { status: 403 },
+    );
+  }
+
+  if (
+    user.sanctionsScreening.status === "flagged" ||
+    user.sanctionsScreening.status === "under_review"
+  ) {
+    return NextResponse.json(
+      {
+        error: "Withdrawal rejected due to sanctions screening status",
+        code: "SANCTIONS_BLOCKED",
+        status: user.sanctionsScreening.status,
+      },
+      { status: 403 },
+    );
+  }
+
+  if (user.sanctionsScreening.status !== "clear") {
+    return NextResponse.json(
+      {
+        error: "Sanctions screening clearance required",
+        code: "SANCTIONS_NOT_CLEAR",
+      },
+      { status: 403 },
+    );
+  }
 
   // Check KYC approval status before allowing withdrawal
   if (!user.kycApplication) {
@@ -224,7 +265,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Wallet required" }, { status: 400 });
     }
 
-    const { getAccountBalance } = await import("@/lib/stellar");
     const balances = await getAccountBalance(user.wallet.address);
     const usdcBalanceObj = (balances as any[]).find(
       (b: any) => b.asset_code === "USDC",
