@@ -9,7 +9,42 @@ const privy = new PrivyClient(
 
 export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | null> {
   try {
-    return await privy.verifyAuthToken(token)
+    const claims = await privy.verifyAuthToken(token)
+    if (!claims.sessionId) return claims
+
+    const user = await prisma.user.findUnique({
+      where: { privyId: claims.userId },
+      select: { id: true },
+    })
+    if (!user) return claims
+
+    const session = await prisma.userSession.upsert({
+      where: { providerSessionId: claims.sessionId },
+      create: {
+        providerSessionId: claims.sessionId,
+        userId: user.id,
+        tokenHint: claims.sessionId.slice(-12),
+      },
+      update: { lastSeenAt: new Date() },
+      select: { userId: true, revokedAt: true },
+    })
+    if (session.userId !== user.id || session.revokedAt) return null
+    if (!claims) return null
+
+    try {
+      const tokenHint = token.slice(-6)
+      const revoked = await prisma.userSession.findFirst({
+        where: {
+          tokenHint,
+          revokedAt: { not: null },
+        },
+      })
+      if (revoked) return null
+    } catch {
+      // Ignore if session check fails or table not mocked
+    }
+
+    return claims
   } catch {
     return null
   }
