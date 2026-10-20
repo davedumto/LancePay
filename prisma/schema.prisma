@@ -1447,6 +1447,18 @@ model TimeEntry {
 
 /// Active authentication sessions surfaced to the user.
 model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  providerSessionId String? @unique @db.VarChar(255)
+  deviceLabel  String?   @db.VarChar(100)
+  userAgent    String?   @db.VarChar(500)
+  ipAddress    String?   @db.VarChar(45)
+  tokenHint    String?   @db.VarChar(12)
+  issuedAt     DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   id          String    @id @default(uuid())
   userId      String
   deviceLabel String?   @db.VarChar(100)

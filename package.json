@@ -24,6 +24,7 @@
     "@solana/kit": "^5.4.0",
     "@stellar/stellar-sdk": "^13.3.0",
     "@upstash/qstash": "^2.9.0",
+    "@vercel/blob": "^2.8.2",
     "ai": "^6.0.101",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
