@@ -126,6 +126,7 @@ model User {
   bankStatementLines                BankStatementLine[]
   manualPaymentsReconciled          ManualPayment[]                    @relation("ManualPaymentReconciler")
   invoiceFxLocks                    InvoiceFxLock[]
+  pushSubscriptions                 PushSubscription[]
 }
 
 model KycApplication {
