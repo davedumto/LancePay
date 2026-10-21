@@ -15,6 +15,7 @@ export const ITEM_STATUS = {
 export const NON_TERMINAL_ITEM_STATUSES = [ITEM_STATUS.pending, ITEM_STATUS.processing]
 
 export const BATCH_STATUS = {
+  pending: 'pending',
   completed: 'completed',
   cancelled: 'cancelled',
   processing: 'processing',
