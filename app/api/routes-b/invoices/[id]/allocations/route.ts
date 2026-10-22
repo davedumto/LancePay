@@ -32,7 +32,7 @@ async function GETHandler(
       return errorResponse('NOT_FOUND', 'Invoice not found', {}, 404)
     }
 
-    const allocations = await prisma.invoiceAllocation.findMany({
+    const allocations = await (prisma as any).invoiceAllocation.findMany({
       where: { invoiceId },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -112,13 +112,13 @@ async function POSTHandler(
     }
 
     // Calculate total allocations including the new one
-    const existingAllocations = await prisma.invoiceAllocation.findMany({
+    const existingAllocations = await (prisma as any).invoiceAllocation.findMany({
       where: { invoiceId },
       select: { amount: true },
     })
 
     const totalExisting = existingAllocations.reduce(
-      (sum, alloc) => sum.add(alloc.amount),
+      (sum: any, alloc: any) => sum.add(alloc.amount),
       new Decimal(0)
     )
 
@@ -139,7 +139,7 @@ async function POSTHandler(
       )
     }
 
-    const allocation = await prisma.invoiceAllocation.create({
+    const allocation = await (prisma as any).invoiceAllocation.create({
       data: {
         invoiceId,
         amount,

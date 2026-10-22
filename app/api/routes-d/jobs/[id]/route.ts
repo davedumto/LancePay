@@ -17,7 +17,7 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const {} = await params
+    const { id } = await params
     if (!id || id.trim() === '') {
       return NextResponse.json({ error: 'Job ID is required' }, { status: 400 })
     }

@@ -38,7 +38,7 @@ export async function GET(
       )
     }
 
-    const {} = await params
+    const { id } = await params
 
     // 2. Find whitelist address
     const whitelistAddress = await prisma.whitelistAddress.findUnique({

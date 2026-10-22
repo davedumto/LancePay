@@ -65,29 +65,37 @@ export async function GET(request: NextRequest) {
     const now = new Date()
 
     invoices.forEach((invoice) => {
-      analytics.invoices.push(invoice)
-      analytics.totalAmount += invoice.amount || 0
+      const amount = invoice.amount ? Number(invoice.amount) : 0
+      analytics.invoices.push({
+        id: invoice.id,
+        amount,
+        status: invoice.status,
+        dueDate: invoice.dueDate,
+        createdAt: invoice.createdAt,
+        clientId: invoice.clientId || '',
+      })
+      analytics.totalAmount += amount
 
       switch (invoice.status) {
         case 'paid':
-          analytics.paidAmount += invoice.amount || 0
+          analytics.paidAmount += amount
           analytics.byStatus.paid += 1
           break
         case 'pending':
           if (invoice.dueDate && invoice.dueDate < now) {
-            analytics.overdueAmount += invoice.amount || 0
+            analytics.overdueAmount += amount
             analytics.byStatus.overdue += 1
           } else {
-            analytics.pendingAmount += invoice.amount || 0
+            analytics.pendingAmount += amount
             analytics.byStatus.pending += 1
           }
           break
         case 'overdue':
-          analytics.overdueAmount += invoice.amount || 0
+          analytics.overdueAmount += amount
           analytics.byStatus.overdue += 1
           break
         case 'cancelled':
-          analytics.cancelledAmount += invoice.amount || 0
+          analytics.cancelledAmount += amount
           analytics.byStatus.cancelled += 1
           break
       }

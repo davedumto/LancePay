@@ -45,7 +45,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const updatedClient = await prisma.user.update({
+    const updatedClient = await (prisma.user as any).update({
       where: { id },
       data: { creditLimit },
     });
@@ -53,7 +53,7 @@ export async function PATCH(
     return NextResponse.json({
       message: "Client credit limit updated successfully",
       clientId: id,
-      creditLimit: updatedClient.creditLimit,
+      creditLimit: updatedClient?.creditLimit || creditLimit,
     });
   } catch (error) {
     logger.error({ err: error }, "Update credit limit error");

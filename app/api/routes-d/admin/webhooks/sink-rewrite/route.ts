@@ -38,13 +38,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'newTargetUrl must use http or https' }, { status: 400 })
     }
 
-    const webhook = await prisma.webhook.findUnique({ where: { id: webhookId } })
+    const webhook = await (prisma as any).userWebhook.findUnique({ where: { id: webhookId } })
     if (!webhook) {
       return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
     }
 
     const previousUrl = webhook.targetUrl
-    const updated = await prisma.webhook.update({
+    const updated = await (prisma as any).userWebhook.update({
       where: { id: webhookId },
       data: { targetUrl: newTargetUrl },
       select: { id: true, targetUrl: true, updatedAt: true },

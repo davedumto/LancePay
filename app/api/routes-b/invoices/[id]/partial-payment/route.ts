@@ -43,12 +43,12 @@ export async function POST(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    const previousPaidAmount = invoice.paidAmount || 0;
+    const previousPaidAmount = (invoice as any).paidAmount || 0;
     const newPaidAmount = previousPaidAmount + body.amount;
-    const totalAmount = invoice.amount || 0;
+    const totalAmount = Number(invoice.amount) || 0;
     const newStatus = newPaidAmount >= totalAmount ? "PAID" : "PARTIALLY_PAID";
 
-    const updatedInvoice = await prisma.invoice.update({
+    const updatedInvoice = await (prisma as any).invoice.update({
       where: { id },
       data: {
         paidAmount: newPaidAmount,

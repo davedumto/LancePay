@@ -73,7 +73,16 @@ export async function GET(request: NextRequest) {
 
     withdrawals.forEach((withdrawal) => {
       const amount = Number(withdrawal.amount)
-      analytics.withdrawals.push(withdrawal)
+      analytics.withdrawals.push({
+        id: withdrawal.id,
+        amount,
+        asset: withdrawal.asset,
+        status: withdrawal.status,
+        anchorId: withdrawal.anchorId,
+        withdrawType: withdrawal.withdrawType,
+        createdAt: withdrawal.createdAt,
+        completedAt: withdrawal.completedAt,
+      })
       analytics.totalAmount += amount
 
       // Status breakdown

@@ -43,7 +43,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const {} = await params
+    const { id } = await params
     if (!id || !id.trim()) {
       return NextResponse.json({ error: 'Automation id is required' }, { status: 400 })
     }

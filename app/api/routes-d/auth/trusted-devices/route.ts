@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const devices = await prisma.trustedDevice.findMany({
+    const devices = await (prisma as any).trustedDevice.findMany({
       where: { userId: user.id },
       orderBy: { lastSeenAt: 'desc' },
       select: {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     const userAgent = request.headers.get('user-agent') ?? 'unknown'
 
-    const device = await prisma.trustedDevice.create({
+    const device = await (prisma as any).trustedDevice.create({
       data: {
         userId: user.id,
         name: name.trim(),

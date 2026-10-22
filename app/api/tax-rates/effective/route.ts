@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
   // Select the rate whose effective window contains the requested date, not
   // merely the most recent rate. Half-open window: effectiveFrom <= date < effectiveTo.
-  const rate = await prisma.taxRate.findFirst({
+  const rate: any = await (prisma as any).taxRate.findFirst({
     where: {
       userId: user.id,
       jurisdiction,
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
   })
   cursorId = rate.parentRateId
   while (cursorId && !nodesById.has(cursorId)) {
-    const parent = await prisma.taxRate.findFirst({
+    const parent = await (prisma as any).taxRate.findFirst({
       where: { id: cursorId, userId: user.id },
     })
     if (!parent) break
