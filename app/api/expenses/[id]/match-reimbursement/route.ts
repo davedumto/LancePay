@@ -139,6 +139,12 @@ export async function POST(
       { status: 201 },
     )
   } catch (error) {
+    if ((error as any)?.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'Expense is already matched to an invoice' },
+        { status: 409 },
+      )
+    }
     logger.error({ err: error }, 'POST /api/expenses/[id]/match-reimbursement error')
     return NextResponse.json({ error: 'Failed to match reimbursement' }, { status: 500 })
   }

@@ -1,0 +1,58 @@
+directive @internal on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+directive @private on FIELD_DEFINITION | OBJECT
+
+"""
+Core user account in LancePay
+"""
+type User {
+  id: ID!
+  email: String!
+  name: String
+  role: String!
+  privyId: String @internal
+  internalFlags: [String!] @internal
+  createdAt: String!
+  updatedAt: String!
+}
+
+"""
+Invoice representation
+"""
+type Invoice {
+  id: ID!
+  invoiceNumber: String!
+  amount: String!
+  currency: String!
+  status: String!
+  dueDate: String
+  internalAuditSecret: String @internal
+  createdAt: String!
+}
+
+"""
+Payment transaction
+"""
+type Transaction {
+  id: ID!
+  hash: String
+  amount: String!
+  asset: String!
+  status: String!
+  timestamp: String!
+}
+
+"""
+Platform internal metrics and telemetry
+"""
+type PlatformInternalMetrics @internal {
+  id: ID!
+  databaseConnections: Int!
+  activeJobs: Int!
+}
+
+type Query {
+  me: User
+  invoice(id: ID!): Invoice
+  transactions(limit: Int): [Transaction!]!
+  internalHealth: PlatformInternalMetrics @internal
+}
