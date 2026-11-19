@@ -7,6 +7,16 @@ const privy = new PrivyClient(
   process.env.PRIVY_APP_SECRET!
 )
 
+/**
+ * Verify a Privy auth token and enforce session revocation.
+ *
+ * Revocation is enforced against the session row upserted from the verified
+ * `claims.sessionId`: the row is keyed by `providerSessionId`, and a token is
+ * rejected when that row has a `revokedAt` value or belongs to another user.
+ *
+ * @param token - The bearer token issued by Privy
+ * @returns The verified claims for an active session, or null if invalid/revoked
+ */
 export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | null> {
   try {
     const claims = await privy.verifyAuthToken(token)
@@ -29,20 +39,6 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | 
       select: { userId: true, revokedAt: true },
     })
     if (session.userId !== user.id || session.revokedAt) return null
-    if (!claims) return null
-
-    try {
-      const tokenHint = token.slice(-6)
-      const revoked = await prisma.userSession.findFirst({
-        where: {
-          tokenHint,
-          revokedAt: { not: null },
-        },
-      })
-      if (revoked) return null
-    } catch {
-      // Ignore if session check fails or table not mocked
-    }
 
     return claims
   } catch {

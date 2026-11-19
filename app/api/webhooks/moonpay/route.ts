@@ -1,30 +1,26 @@
-import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendPaymentReceivedEmail } from '@/lib/email'
 import { logger } from '@/lib/logger'
+import { verifyMoonPaySignatureV2 } from '@/lib/moonpay-signature'
 
-function verifyMoonPaySignature(rawBody: string, signature: string, secret: string): boolean {
-  if (!signature || !secret) return false
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('base64')
-  try {
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-  } catch {
-    return false // handles length mismatch
-  }
+const DEFAULT_SIGNATURE_TOLERANCE_SECONDS = 300
+
+function getToleranceSeconds(): number {
+  const configured = Number(process.env.MOONPAY_WEBHOOK_TOLERANCE_SECONDS)
+  return Number.isFinite(configured) && configured >= 0
+    ? configured
+    : DEFAULT_SIGNATURE_TOLERANCE_SECONDS
 }
 
 export async function POST(request: NextRequest) {
   try {
     // Step 1: Read raw body and verify webhook signature
     const rawBody = await request.text()
-    const signature = request.headers.get('moonpay-signature') ?? ''
+    const signature = request.headers.get('moonpay-signature-v2') ?? ''
     const secret = process.env.MOONPAY_WEBHOOK_KEY ?? ''
 
-    if (!verifyMoonPaySignature(rawBody, signature, secret)) {
+    if (!verifyMoonPaySignatureV2(rawBody, signature, secret, getToleranceSeconds())) {
       console.warn('MoonPay webhook: invalid signature')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }

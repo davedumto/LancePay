@@ -575,6 +575,16 @@ export async function getExchangeRate() {
 
 ## 7. Monitoring & Observability
 
+### Log Redaction
+
+The pino logger in `lib/logger.ts` redacts sensitive values before they reach Vercel logs. The redaction list covers:
+
+- `authorization`, `cookie`, and `signature` headers (`signature`, `x-yc-signature`, `moonpay-signature`, `moonpay-signature-v2`, including nested `req.headers.*` paths)
+- Secret-like keys: `apiKey`/`api_key`, `accessToken`/`access_token`, `refreshToken`/`refresh_token`, `secret`, `clientSecret`/`client_secret`, `webhookSecret`/`webhook_secret`, `privateKey`/`private_key`, and `password`
+- Account and authentication secrets: `accountNumber` and `twoFactorSecret`
+
+`logError` also strips these fields from its `errorInfo` argument before logging, including nested objects. Redacted values appear as `[Redacted]`.
+
 ### Error Tracking (Sentry)
 
 ```typescript

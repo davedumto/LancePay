@@ -3,64 +3,55 @@
  * Run: npx tsx scripts/verify-moonpay-webhook.ts
  *
  * Tests:
- * 1. Valid signature + valid body → passes
+ * 1. Valid Moonpay-Signature-V2 + valid body → passes
  * 2. Valid signature + tampered body → rejected
  * 3. Wrong secret → rejected
- * 4. Missing/empty signature → rejected
- * 5. Missing/empty secret → rejected
+ * 4. Stale timestamp → rejected
+ * 5. Missing/empty signature → rejected
+ * 6. Missing/empty secret → rejected
  */
 
-import crypto from 'crypto'
-
-function verifyMoonPaySignature(rawBody: string, signature: string, secret: string): boolean {
-  if (!signature || !secret) return false
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('base64')
-  try {
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-  } catch {
-    return false // handles length mismatch
-  }
-}
+import { signMoonPayWebhook, verifyMoonPaySignatureV2 } from '../lib/moonpay-signature'
 
 const testSecret = 'wk_test_secret_123'
 const payload = JSON.stringify({
   type: 'transaction_completed',
   data: { status: 'completed', externalTransactionId: 'INV-2025-001' },
 })
-const validSignature = crypto
-  .createHmac('sha256', testSecret)
-  .update(payload)
-  .digest('base64')
+const now = Math.floor(Date.now() / 1000)
+const validSignature = signMoonPayWebhook(payload, now, testSecret)
 
 type TestCase = { description: string; result: boolean; expected: boolean }
 
 const tests: TestCase[] = [
   {
     description: 'Valid signature + valid body',
-    result: verifyMoonPaySignature(payload, validSignature, testSecret),
+    result: verifyMoonPaySignatureV2(payload, validSignature, testSecret),
     expected: true,
   },
   {
     description: 'Valid signature + tampered body',
-    result: verifyMoonPaySignature(payload + 'x', validSignature, testSecret),
+    result: verifyMoonPaySignatureV2(payload + 'x', validSignature, testSecret),
     expected: false,
   },
   {
     description: 'Correct body + wrong secret',
-    result: verifyMoonPaySignature(payload, validSignature, 'wrong_secret'),
+    result: verifyMoonPaySignatureV2(payload, validSignature, 'wrong_secret'),
+    expected: false,
+  },
+  {
+    description: 'Correct body + stale timestamp',
+    result: verifyMoonPaySignatureV2(payload, signMoonPayWebhook(payload, now - 3600, testSecret), testSecret),
     expected: false,
   },
   {
     description: 'Correct body + empty signature',
-    result: verifyMoonPaySignature(payload, '', testSecret),
+    result: verifyMoonPaySignatureV2(payload, '', testSecret),
     expected: false,
   },
   {
     description: 'Correct body + valid signature + empty secret',
-    result: verifyMoonPaySignature(payload, validSignature, ''),
+    result: verifyMoonPaySignatureV2(payload, validSignature, ''),
     expected: false,
   },
 ]
