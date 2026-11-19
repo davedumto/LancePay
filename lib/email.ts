@@ -1,10 +1,22 @@
 import { Resend } from 'resend'
+import { logger } from '@/lib/logger'
 
-const resend = new Resend(process.env.RESEND_API_KEY || 're_placeholder')
+type EmailResult =
+  | { success: true; id?: string }
+  | { success: false; reason: 'not_configured' | 'provider_error' | 'development'; error?: unknown }
+
+let cachedResend: Resend | null = null
+
+function getResend(apiKey: string): Resend {
+  if (!cachedResend) cachedResend = new Resend(apiKey)
+  return cachedResend
+}
 
 // Centralized sender identity (server-only).
 // Must be a verified sender in Resend (domain or single sender).
-const RESEND_FROM = process.env.RESEND_FROM || 'LancePay <onboarding@resend.dev>'
+function getResendFrom(): string {
+  return process.env.RESEND_FROM || ''
+}
 
 interface PaymentEmailParams {
   to: string
@@ -141,23 +153,45 @@ function escapeHtml(input: string): string {
 }
 
 
-export async function sendEmail(params: { to: string; subject: string; template?: string; html?: string }) {
+export async function sendEmail(params: { to: string; subject: string; template?: string; html?: string }): Promise<EmailResult> {
   const { to, subject, template, html } = params
   const htmlContent = html || template || ''
 
+  const apiKey = process.env.RESEND_API_KEY
+  const from = getResendFrom()
+  const isProduction = process.env.NODE_ENV === 'production'
+
+  if (!apiKey || !from) {
+    if (isProduction) {
+      const missing = [
+        !apiKey && 'RESEND_API_KEY',
+        !from && 'RESEND_FROM',
+      ].filter(Boolean) as string[]
+      logger.error({ missing }, 'Resend is not configured; refusing to send email in production')
+      return { success: false, reason: 'not_configured' }
+    }
+
+    console.warn('Resend is not configured; logging rendered email instead of sending', { to, subject })
+    console.log(htmlContent)
+    return { success: false, reason: 'development' }
+  }
+
   try {
-    const { error } = await resend.emails.send({
-      from: RESEND_FROM,
+    const { data, error } = await getResend(apiKey).emails.send({
+      from,
       to: [to],
       subject,
       html: htmlContent,
     })
 
-    if (error) console.error('Email error:', error)
-    return { success: !error }
+    if (error) {
+      logger.error({ err: error }, 'Email error')
+      return { success: false, reason: 'provider_error', error }
+    }
+    return { success: true, id: data?.id }
   } catch (error) {
-    console.error('Email send failed:', error)
-    return { success: false }
+    logger.error({ err: error }, 'Email send failed')
+    return { success: false, reason: 'provider_error', error }
   }
 }
 
