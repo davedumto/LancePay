@@ -121,7 +121,27 @@ Runs daily at 2:00 AM UTC (`0 2 * * *`). It automatically cancels unpaid invoice
 - **Due Date:** More than 90 days ago
 - **Exclusions:** Invoices with active escrow, active disputes, or `doNotAutoCancel: true` are never auto-cancelled.
 
-To manually test the auto-cancellation cron locally, run:
+Invoices are processed in keyset-paginated batches (`CANCEL_CRON_BATCH_SIZE`,
+default 200) under a time budget (`CANCEL_CRON_TIME_BUDGET_MS`, default 50s,
+`CANCEL_CRON_MAX_PAGES`, default 50); the response reports `processed`,
+`remaining` and `outOfBudget` so the next run resumes the backlog.
+
+**Race guard:** each invoice is cancelled with a conditional `updateMany`
+that re-checks `status: 'pending'` plus all eligibility predicates. If a
+MoonPay webhook (or any other writer) settles or changes the invoice
+between the read and the write, the update affects zero rows and no
+cancellation email or audit event is emitted for it.
+
+**Webhook Delivery Retries:**
+Runs every 5 minutes (`*/5 * * * *`). It picks up due `WebhookDelivery`
+rows, claims each with a conditional update, redelivers, applies
+exponential backoff (`lib/webhook-delivery.ts`), dead-letters after
+`maxAttempts` (15), and auto-disables webhooks that hit 10 consecutive
+failures (emailing the owner via `sendWebhookDisabledEmail`). Tune with
+`WEBHOOK_RETRY_CRON_BATCH_SIZE` / `WEBHOOK_RETRY_CRON_MAX_BATCHES`.
+
+To manually test the crons locally, run:
 ```bash
 curl -H "Authorization: Bearer YOUR_CRON_SECRET" http://localhost:3000/api/cron/cancel-overdue-invoices
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" http://localhost:3000/api/cron/process-webhook-retries
 ```
