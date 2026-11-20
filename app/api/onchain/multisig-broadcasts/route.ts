@@ -96,12 +96,12 @@ export async function POST(request: NextRequest) {
     let stellarTxHash: string
     try {
       const sourceSecretKey = decrypt(proposal.wallet.encryptedSecretKey)
-      stellarTxHash = await submitMultisigPaymentWithRetry(
+      stellarTxHash = (await submitMultisigPaymentWithRetry(
         sourceSecretKey,
         proposal.destinationAddress,
         proposal.amountUsdc.toString(),
         proposal.memo ?? undefined,
-      )
+      )).hash
     } catch (error: any) {
       const message = error?.message || 'Failed to broadcast multisig transaction'
 

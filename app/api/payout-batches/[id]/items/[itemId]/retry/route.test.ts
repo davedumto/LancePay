@@ -74,7 +74,7 @@ beforeEach(() => {
   vi.mocked(prisma.payoutBatch.findFirst).mockResolvedValue(completedBatch as any)
   vi.mocked(prisma.payoutItem.findFirst).mockResolvedValue(failedItem as any)
   vi.mocked(prisma.payoutItem.updateMany).mockResolvedValue({ count: 1 } as any)
-  vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-123')
+  vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-123' })
 
   tx.payoutItem.update.mockImplementation(async (args: any) => ({ ...failedItem, ...args.data }))
   tx.payoutBatch.updateMany.mockResolvedValue({ count: 1 })

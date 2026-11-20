@@ -69,7 +69,7 @@ beforeEach(() => {
   vi.mocked(getAccountBalance).mockResolvedValue([
     { asset_code: "USDC", balance: "100" },
   ] as any);
-  vi.mocked(debitDelegatedUSDC).mockResolvedValue("tx-hash-real");
+  vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: "confirmed", hash: "tx-hash-real" });
   vi.mocked(initiateOfframp).mockResolvedValue({
     transactionId: "offramp-1",
   } as any);

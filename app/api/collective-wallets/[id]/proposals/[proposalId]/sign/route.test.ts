@@ -66,7 +66,7 @@ beforeEach(() => {
   } as any)
   vi.mocked(prisma.multisigProposal.updateMany).mockResolvedValue({ count: 1 } as any)
   vi.mocked(prisma.multisigProposal.update).mockResolvedValue({} as any)
-  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue('tx-hash-1')
+  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-1' })
   mockWeights([1])
 })
 

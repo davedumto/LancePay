@@ -71,7 +71,7 @@ beforeEach(() => {
     signers: [{ id: 'ws-1' }],
   } as any)
   vi.mocked(prisma.multisigProposal.findFirst).mockResolvedValue({ ...BASE_FAILED_PROPOSAL } as any)
-  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue('tx-hash-success')
+  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-success' })
   vi.mocked(prisma.multisigProposal.update).mockImplementation(async ({ data }: any) => ({
     ...BASE_FAILED_PROPOSAL,
     ...data,

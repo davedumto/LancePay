@@ -140,12 +140,12 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     let stellarTxHash: string
     try {
       const sourceSecretKey = decrypt(proposal.wallet.encryptedSecretKey)
-      stellarTxHash = await submitMultisigPaymentWithRetry(
+      stellarTxHash = (await submitMultisigPaymentWithRetry(
         sourceSecretKey,
         proposal.destinationAddress,
         proposal.amountUsdc.toString(),
         proposal.memo ?? undefined
-      )
+      )).hash
     } catch (broadcastError: unknown) {
       const errorMessage =
         broadcastError instanceof Error

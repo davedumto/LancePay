@@ -75,7 +75,7 @@ describe('Withdrawal API', () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
     vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue(mockBankAccount as any)
     vi.mocked(getAccountBalance).mockResolvedValue([{ asset_code: 'USDC', balance: '100.0' }] as any)
-    vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-real')
+    vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-real' })
     vi.mocked(initiateOfframp).mockResolvedValue({ transactionId: 'ext-tx-123', status: 'pending' })
     vi.mocked(prisma.transaction.create).mockResolvedValue({ id: 'internal-tx-123', status: 'pending' } as any)
     vi.mocked(prisma.withdrawalTransaction.create).mockResolvedValue({ id: 'wd-tx-123', status: 'pending' } as any)
@@ -171,7 +171,7 @@ describe('Withdrawal API', () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
     vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue({ id: 'bank-1' } as any)
     vi.mocked(getAccountBalance).mockResolvedValue([{ asset_code: 'USDC', balance: '100.0' }] as any)
-    vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-real')
+    vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-real' })
     vi.mocked(initiateOfframp).mockRejectedValue(new Error('API Down'))
 
     const res = await POST(makeRequest({ amount: 50, bankAccountId: 'bank-1' }))
@@ -222,7 +222,7 @@ describe('Withdrawal API', () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
     vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue(mockBankAccount as any)
     vi.mocked(getAccountBalance).mockResolvedValue([{ asset_code: 'USDC', balance: '100.0' }] as any)
-    vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-real')
+    vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-real' })
 
     const res = await POST(makeRequest({ amount: 50, bankAccountId: 'bank-1' }))
     const json = await res.json()
@@ -258,7 +258,7 @@ describe('Withdrawal API', () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
     vi.mocked(prisma.bankAccount.findFirst).mockResolvedValue(mockBankAccount as any)
     vi.mocked(getAccountBalance).mockResolvedValue([{ asset_code: 'USDC', balance: '100.0' }] as any)
-    vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-real')
+    vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-real' })
 
     const res = await POST(makeRequest({ amount: 50, bankAccountId: 'bank-1', code: '123456' }))
     

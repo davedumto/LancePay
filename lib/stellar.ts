@@ -52,10 +52,63 @@ export type StellarError =
   | { type: "insufficient_funds"; message: string };
 
 /**
+ * Horizon result codes carried alongside a Stellar error.
+ */
+export interface StellarResultCodes {
+  transaction?: string;
+  operations?: string[];
+}
+
+/**
+ * Error thrown by Stellar operations. Extends Error so stack traces and
+ * `instanceof Error` checks work, while keeping the `type` field that
+ * existing callers inspect. Carries the Horizon transaction/operation
+ * result codes, the HTTP status, and the original cause for debugging.
+ */
+export class StellarOperationError extends Error {
+  readonly type: StellarError["type"];
+  readonly resultCodes?: StellarResultCodes;
+  readonly status?: number;
+
+  constructor(
+    type: StellarError["type"],
+    message: string,
+    options?: {
+      cause?: unknown;
+      resultCodes?: StellarResultCodes;
+      status?: number;
+    },
+  ) {
+    super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
+    this.name = "StellarOperationError";
+    this.type = type;
+    this.resultCodes = options?.resultCodes;
+    this.status = options?.status;
+  }
+}
+
+/**
+ * Outcome of submitting a transaction to Horizon.
+ *
+ * `pending_confirmation` means the submission response was lost to a
+ * Horizon 504 or network timeout and the transaction could not be confirmed
+ * or ruled out within the reconciliation window — it may still land. Callers
+ * must treat the returned hash as possibly in-flight and must NOT rebuild
+ * and resubmit an equivalent transaction while it is unresolved.
+ */
+export type StellarSubmissionStatus = "confirmed" | "pending_confirmation";
+
+export interface StellarPaymentResult {
+  status: StellarSubmissionStatus;
+  hash: string;
+}
+
+/**
  * Type definition for Stellar SDK error responses
  */
 interface StellarErrorResponse {
   response?: {
+    status?: number;
     data?: {
       extras?: {
         result_codes?: {
@@ -118,10 +171,11 @@ export async function getAccountBalance(
     // This allows the UI to handle "new account" state gracefully if needed
     // or we can let the caller handle the 404.
     // For now, let's stick to the existing error handling pattern but maybe refine it.
-    throw {
-      type: "network_error",
-      message: "Failed to fetch Stellar account balance.",
-    } as StellarError;
+    throw toStellarError(
+      "network_error",
+      "Failed to fetch Stellar account balance.",
+      error,
+    );
   }
 }
 
@@ -136,16 +190,165 @@ export function isValidStellarAddress(address: string): boolean {
 
 const STELLAR_TEXT_MEMO_MAX_BYTES = 28;
 
-function sanitizeStellarTextMemo(memo?: string): string | null {
-  if (!memo) return null;
-  let trimmed = memo.trim();
-  if (!trimmed) return null;
+export interface SanitizedStellarMemo {
+  /** Memo text safe to embed in a Stellar text memo, or null when empty. */
+  text: string | null;
+  /** True when the input exceeded 28 UTF-8 bytes and was truncated. */
+  truncated: boolean;
+}
 
-  while (Buffer.byteLength(trimmed, "utf8") > STELLAR_TEXT_MEMO_MAX_BYTES) {
-    trimmed = trimmed.slice(0, -1);
+/**
+ * Sanitize a user-supplied memo for a Stellar `Memo.text`.
+ *
+ * Stellar text memos are limited to 28 UTF-8 bytes. Truncation walks the
+ * input by Unicode code point (`Array.from`), so a multi-byte character —
+ * including astral characters such as emoji that occupy a UTF-16 surrogate
+ * pair — is either kept whole or dropped entirely; a surrogate pair is never
+ * split into an invalid lone surrogate.
+ */
+export function sanitizeStellarTextMemo(memo?: string): SanitizedStellarMemo {
+  const empty: SanitizedStellarMemo = { text: null, truncated: false };
+  if (!memo) return empty;
+  const trimmed = memo.trim();
+  if (!trimmed) return empty;
+
+  let text = "";
+  let truncated = false;
+  for (const codePoint of Array.from(trimmed)) {
+    if (Buffer.byteLength(text + codePoint, "utf8") > STELLAR_TEXT_MEMO_MAX_BYTES) {
+      truncated = true;
+      break;
+    }
+    text += codePoint;
   }
 
-  return trimmed || null;
+  return text ? { text, truncated } : empty;
+}
+
+/**
+ * HTTP statuses that mean Horizon accepted the request but the response was
+ * lost — the transaction may still be processed and land on-chain.
+ */
+const SUBMISSION_TIMEOUT_HTTP_STATUSES = new Set([408, 504, 524]);
+
+/**
+ * How long to keep re-checking a transaction hash after a submission timeout
+ * before reporting `pending_confirmation`.
+ */
+export const STELLAR_SUBMISSION_CONFIRM_TIMEOUT_MS = 30_000;
+const STELLAR_SUBMISSION_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Whether a submission error is a timeout after which the transaction may
+ * still have been accepted: a Horizon 408/504/524 gateway timeout or a
+ * network-level failure (socket reset, DNS, fetch abort) with no HTTP status.
+ */
+function isSubmissionTimeoutError(err: unknown): boolean {
+  const status = extractResultCodes(err).status;
+  if (status !== undefined) {
+    return SUBMISSION_TIMEOUT_HTTP_STATUSES.has(status);
+  }
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; code?: string };
+  return (
+    e.name === "TimeoutError" ||
+    e.name === "AbortError" ||
+    e.name === "FetchError" ||
+    e.code === "ECONNRESET" ||
+    e.code === "ETIMEDOUT" ||
+    e.code === "ECONNABORTED" ||
+    e.code === "EAI_AGAIN"
+  );
+}
+
+type SubmissionPollOutcome = "confirmed" | "failed" | "unknown";
+
+/**
+ * Poll Horizon for a transaction by hash until it is confirmed successful,
+ * confirmed failed, or the confirmation window elapses. A 404 (transaction
+ * not yet indexed) or a transient Horizon error keeps the poll going.
+ */
+async function pollTransactionOutcome(
+  hash: string,
+  timeoutMs: number = STELLAR_SUBMISSION_CONFIRM_TIMEOUT_MS,
+): Promise<SubmissionPollOutcome> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const tx = await server.transactions().transaction(hash).call();
+      if (tx.transaction_successful === true) return "confirmed";
+      if (tx.transaction_successful === false) return "failed";
+    } catch {
+      // Not yet indexed or transient Horizon error — keep polling.
+    }
+    if (Date.now() >= deadline) return "unknown";
+    await new Promise((resolve) =>
+      setTimeout(resolve, STELLAR_SUBMISSION_POLL_INTERVAL_MS),
+    );
+  }
+}
+
+/**
+ * Submit a signed transaction and reconcile ambiguous timeouts.
+ *
+ * On a Horizon 504 or network timeout the submission response may have been
+ * lost even though the transaction landed, so the hash is re-checked against
+ * Horizon for up to STELLAR_SUBMISSION_CONFIRM_TIMEOUT_MS. The caller always
+ * receives the deterministic transaction hash and must never rebuild and
+ * resubmit while the outcome is `pending_confirmation`.
+ *
+ * @throws the original submission error for non-timeout failures, or a
+ *   StellarOperationError when the transaction is confirmed failed
+ */
+async function submitAndConfirm(
+  transaction: Transaction,
+): Promise<StellarPaymentResult> {
+  try {
+    const result = await server.submitTransaction(transaction);
+    return { status: "confirmed", hash: result.hash };
+  } catch (err: unknown) {
+    if (!isSubmissionTimeoutError(err)) throw err;
+
+    // Transaction.hash() returns the 32-byte hash; Horizon indexes it as hex.
+    const hash = Buffer.from(transaction.hash()).toString("hex");
+    const outcome = await pollTransactionOutcome(hash);
+    if (outcome === "confirmed") {
+      return { status: "confirmed", hash };
+    }
+    if (outcome === "failed") {
+      throw new StellarOperationError(
+        "payment_failed",
+        "Transaction was rejected by the network after a submission timeout.",
+        { cause: err },
+      );
+    }
+    return { status: "pending_confirmation", hash };
+  }
+}
+
+/**
+ * Wrap an arbitrary failure in a StellarOperationError, preserving the
+ * original error as `cause` and extracting Horizon result codes/status.
+ */
+function toStellarError(
+  type: StellarError["type"],
+  message: string,
+  err?: unknown,
+): StellarOperationError {
+  let resultCodes: StellarResultCodes | undefined;
+  let status: number | undefined;
+  if (err !== undefined) {
+    const codes = extractResultCodes(err);
+    status = codes.status;
+    if (codes.tx || codes.ops?.length) {
+      resultCodes = { transaction: codes.tx, operations: codes.ops };
+    }
+  }
+  return new StellarOperationError(type, message, {
+    cause: err,
+    resultCodes,
+    status,
+  });
 }
 
 /**
@@ -154,9 +357,14 @@ function sanitizeStellarTextMemo(memo?: string): string | null {
  * @param fromSecretKey Sender secret key
  * @param toPublicKey Recipient public key
  * @param amount Amount of USDC to send (string)
- * @param memo Optional transaction memo (truncated to 28 bytes)
- * @returns transaction hash
- * @throws StellarError
+ * @param memo Optional transaction memo. Stellar text memos are limited to
+ *   28 UTF-8 bytes; longer memos are truncated on a code-point boundary (a
+ *   multi-byte character or emoji is never split), and a `console.warn` is
+ *   emitted so the truncation is visible to operators.
+ * @returns StellarPaymentResult — `confirmed` with the transaction hash, or
+ *   `pending_confirmation` when a submission timeout left the outcome
+ *   unresolved after the 30 second reconciliation window
+ * @throws StellarOperationError
  */
 export async function sendUSDCPayment(
   fromPublicKey: string,
@@ -164,12 +372,9 @@ export async function sendUSDCPayment(
   toPublicKey: string,
   amount: string,
   memo?: string,
-): Promise<string> {
+): Promise<StellarPaymentResult> {
   if (!isValidStellarAddress(toPublicKey)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid recipient Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid recipient Stellar address.");
   }
 
   try {
@@ -189,20 +394,25 @@ export async function sendUSDCPayment(
       )
       .setTimeout(30);
 
-    const safeMemo = sanitizeStellarTextMemo(memo);
-    if (safeMemo) {
-      builder.addMemo(Memo.text(safeMemo));
+    const sanitizedMemo = sanitizeStellarTextMemo(memo);
+    if (sanitizedMemo.truncated) {
+      console.warn("Stellar memo truncated to 28 UTF-8 bytes", { toPublicKey });
+    }
+    if (sanitizedMemo.text) {
+      builder.addMemo(Memo.text(sanitizedMemo.text));
     }
 
     const transaction = builder.build();
 
     transaction.sign(senderKeypair);
 
-    const txResult = await server.submitTransaction(transaction);
-
-    return txResult.hash;
+    return await submitAndConfirm(transaction);
   } catch (err: unknown) {
     console.error("Error sending USDC payment:", err);
+
+    if (err instanceof StellarOperationError) {
+      throw err;
+    }
 
     // Type-safe extraction
     let message = "Failed to send USDC payment.";
@@ -216,7 +426,7 @@ export async function sendUSDCPayment(
       }
     }
 
-    throw { type: "payment_failed", message } as StellarError;
+    throw toStellarError("payment_failed", message, err);
   }
 }
 
@@ -239,9 +449,11 @@ export async function sendUSDCPayment(
  * @param fromPublicKey User's wallet public key (transaction source)
  * @param toPublicKey Treasury/receiver public key
  * @param amount Amount of USDC to debit (string)
- * @param memo Optional transaction memo (truncated to 28 bytes)
- * @returns transaction hash
- * @throws StellarError with type "insufficient_funds" on an underfunded account
+ * @param memo Optional transaction memo (truncated to 28 UTF-8 bytes on a
+ *   code-point boundary; see sendUSDCPayment)
+ * @returns StellarPaymentResult — `confirmed` or `pending_confirmation`
+ * @throws StellarOperationError with type "insufficient_funds" on an
+ *   underfunded account
  */
 export async function debitDelegatedUSDC(
   delegateSecretKey: string,
@@ -249,12 +461,9 @@ export async function debitDelegatedUSDC(
   toPublicKey: string,
   amount: string,
   memo?: string,
-): Promise<string> {
+): Promise<StellarPaymentResult> {
   if (!isValidStellarAddress(fromPublicKey) || !isValidStellarAddress(toPublicKey)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid Stellar address.");
   }
 
   try {
@@ -274,9 +483,12 @@ export async function debitDelegatedUSDC(
       )
       .setTimeout(30);
 
-    const safeMemo = sanitizeStellarTextMemo(memo);
-    if (safeMemo) {
-      builder.addMemo(Memo.text(safeMemo));
+    const sanitizedMemo = sanitizeStellarTextMemo(memo);
+    if (sanitizedMemo.truncated) {
+      console.warn("Stellar memo truncated to 28 UTF-8 bytes", { toPublicKey });
+    }
+    if (sanitizedMemo.text) {
+      builder.addMemo(Memo.text(sanitizedMemo.text));
     }
 
     const transaction = builder.build();
@@ -284,26 +496,31 @@ export async function debitDelegatedUSDC(
     // Signed by the delegated signer, not the user - see doc comment above.
     transaction.sign(delegateKeypair);
 
-    const txResult = await server.submitTransaction(transaction);
-    return txResult.hash;
+    return await submitAndConfirm(transaction);
   } catch (err: unknown) {
     console.error("Error debiting delegated USDC withdrawal:", err);
+
+    if (err instanceof StellarOperationError) {
+      throw err;
+    }
 
     const stellarError = err as StellarErrorResponse;
     const opsMessage =
       stellarError?.response?.data?.extras?.result_codes?.operations?.[0];
 
     if (opsMessage === "op_underfunded") {
-      throw {
-        type: "insufficient_funds",
-        message: "Wallet does not have enough USDC to cover this withdrawal.",
-      } as StellarError;
+      throw toStellarError(
+        "insufficient_funds",
+        "Wallet does not have enough USDC to cover this withdrawal.",
+        err,
+      );
     }
 
-    throw {
-      type: "payment_failed",
-      message: opsMessage || "Failed to debit withdrawal from Stellar wallet.",
-    } as StellarError;
+    throw toStellarError(
+      "payment_failed",
+      opsMessage || "Failed to debit withdrawal from Stellar wallet.",
+      err,
+    );
   }
 }
 
@@ -329,7 +546,10 @@ export async function prepareBadgeTrustlineXdr(
 ): Promise<string> {
   const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
   const baseFee = (await server.fetchBaseFee()).toString();
-  const safeMemo = sanitizeStellarTextMemo(memo);
+  const sanitizedMemo = sanitizeStellarTextMemo(memo);
+  if (sanitizedMemo.truncated) {
+    console.warn("Stellar memo truncated to 28 UTF-8 bytes", { recipientPublicKey });
+  }
 
   const recipientAccount = await server.loadAccount(recipientPublicKey);
   const txBuilder = new TransactionBuilder(recipientAccount, {
@@ -344,8 +564,8 @@ export async function prepareBadgeTrustlineXdr(
     )
     .setTimeout(30);
 
-  if (safeMemo) {
-    txBuilder.addMemo(Memo.text(safeMemo));
+  if (sanitizedMemo.text) {
+    txBuilder.addMemo(Memo.text(sanitizedMemo.text));
   }
 
   return txBuilder.build().toXDR();
@@ -378,10 +598,7 @@ export async function issueSoulboundBadge(
   memo?: string,
 ): Promise<string> {
   if (!isValidStellarAddress(recipientPublicKey)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid recipient Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid recipient Stellar address.");
   }
 
   try {
@@ -389,7 +606,10 @@ export async function issueSoulboundBadge(
     const issuerPublicKey = issuerKeypair.publicKey();
     const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
     const baseFee = (await server.fetchBaseFee()).toString();
-    const safeMemo = sanitizeStellarTextMemo(memo);
+    const sanitizedMemo = sanitizeStellarTextMemo(memo);
+    if (sanitizedMemo.truncated) {
+      console.warn("Stellar memo truncated to 28 UTF-8 bytes", { recipientPublicKey });
+    }
 
     // Step 1 (trustline creation) is performed client-side: the caller must use
     // prepareBadgeTrustlineXdr(), have the recipient sign the returned XDR via
@@ -435,8 +655,8 @@ export async function issueSoulboundBadge(
       )
       .setTimeout(30);
 
-    if (safeMemo) {
-      paymentTxBuilder.addMemo(Memo.text(safeMemo));
+    if (sanitizedMemo.text) {
+      paymentTxBuilder.addMemo(Memo.text(sanitizedMemo.text));
     }
 
     const paymentTx = paymentTxBuilder.build();
@@ -446,6 +666,10 @@ export async function issueSoulboundBadge(
     return result.hash;
   } catch (err: unknown) {
     console.error("Error issuing soulbound badge:", err);
+
+    if (err instanceof StellarOperationError) {
+      throw err;
+    }
 
     let message = "Failed to issue soulbound badge.";
 
@@ -458,7 +682,7 @@ export async function issueSoulboundBadge(
       }
     }
 
-    throw { type: "payment_failed", message } as StellarError;
+    throw toStellarError("payment_failed", message, err);
   }
 }
 
@@ -484,10 +708,7 @@ export async function getWalletBadges(
   }[]
 > {
   if (!isValidStellarAddress(walletAddress)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid wallet Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid wallet Stellar address.");
   }
 
   try {
@@ -511,10 +732,11 @@ export async function getWalletBadges(
       }));
   } catch (error) {
     console.error("Error fetching wallet badges:", error);
-    throw {
-      type: "network_error",
-      message: "Failed to fetch wallet badges.",
-    } as StellarError;
+    throw toStellarError(
+      "network_error",
+      "Failed to fetch wallet badges.",
+      error,
+    );
   }
 }
 
@@ -564,10 +786,11 @@ export async function configureBadgeIssuer(
     return result.hash;
   } catch (err: unknown) {
     console.error("Error configuring badge issuer:", err);
-    throw {
-      type: "payment_failed",
-      message: "Failed to configure badge issuer account.",
-    } as StellarError;
+    throw toStellarError(
+      "payment_failed",
+      "Failed to configure badge issuer account.",
+      err,
+    );
   }
 }
 
@@ -636,10 +859,11 @@ export async function addTrustline(
     return result.hash;
   } catch (error) {
     console.error("Error adding trustline:", error);
-    throw {
-      type: "network_error", // Simplify error type for now
-      message: "Failed to add trustline.",
-    } as StellarError;
+    throw toStellarError(
+      "network_error", // Simplify error type for now
+      "Failed to add trustline.",
+      error,
+    );
   }
 }
 
@@ -680,10 +904,11 @@ export async function removeTrustline(
     return result.hash;
   } catch (error) {
     console.error("Error removing trustline:", error);
-    throw {
-      type: "network_error",
-      message: "Failed to remove trustline.",
-    } as StellarError;
+    throw toStellarError(
+      "network_error",
+      "Failed to remove trustline.",
+      error,
+    );
   }
 }
 
@@ -853,11 +1078,10 @@ export async function calculateStrictReceivePath(
     const pathsResponse = await pathsCallBuilder.call();
 
     if (pathsResponse.records.length === 0) {
-      throw {
-        type: "payment_failed",
-        message:
-          "No path found for this asset pair. The destination asset may not have sufficient liquidity on the DEX.",
-      } as StellarError;
+      throw new StellarOperationError(
+        "payment_failed",
+        "No path found for this asset pair. The destination asset may not have sufficient liquidity on the DEX.",
+      );
     }
 
     const bestPath = pathsResponse.records[0];
@@ -876,14 +1100,15 @@ export async function calculateStrictReceivePath(
   } catch (error: unknown) {
     console.error("Error calculating strict receive path:", error);
 
-    if (error && typeof error === "object" && "type" in error) {
+    if (error instanceof StellarOperationError) {
       throw error;
     }
 
-    throw {
-      type: "network_error",
-      message: "Failed to calculate path payment route.",
-    } as StellarError;
+    throw toStellarError(
+      "network_error",
+      "Failed to calculate path payment route.",
+      error,
+    );
   }
 }
 
@@ -910,10 +1135,7 @@ export async function sendPathPayment(
   path?: Asset[],
 ): Promise<string> {
   if (!isValidStellarAddress(toPublicKey)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid recipient Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid recipient Stellar address.");
   }
 
   try {
@@ -945,6 +1167,10 @@ export async function sendPathPayment(
   } catch (err: unknown) {
     console.error("Error sending path payment:", err);
 
+    if (err instanceof StellarOperationError) {
+      throw err;
+    }
+
     let message = "Failed to send path payment.";
 
     if (err && typeof err === "object") {
@@ -956,7 +1182,7 @@ export async function sendPathPayment(
       }
     }
 
-    throw { type: "payment_failed", message } as StellarError;
+    throw toStellarError("payment_failed", message, err);
   }
 }
 
@@ -998,9 +1224,12 @@ export const MULTISIG_BROADCAST_MAX_SEQUENCE_RETRIES = 3;
  * landed between building and submitting this one.
  *
  * Retries are capped at MULTISIG_BROADCAST_MAX_SEQUENCE_RETRIES so sustained
- * contention fails loudly instead of looping forever.
+ * contention fails loudly instead of looping forever. A submission timeout
+ * never triggers a rebuild-and-resubmit: the in-flight hash is reconciled
+ * against Horizon and reported as `pending_confirmation` when unresolved.
  *
- * @throws StellarError on invalid destination or after retries are exhausted
+ * @returns StellarPaymentResult — `confirmed` or `pending_confirmation`
+ * @throws StellarOperationError on invalid destination or after retries are exhausted
  */
 export async function submitMultisigPaymentWithRetry(
   sourceSecretKey: string,
@@ -1008,16 +1237,16 @@ export async function submitMultisigPaymentWithRetry(
   amount: string,
   memo?: string,
   maxRetries: number = MULTISIG_BROADCAST_MAX_SEQUENCE_RETRIES,
-): Promise<string> {
+): Promise<StellarPaymentResult> {
   if (!isValidStellarAddress(destinationAddress)) {
-    throw {
-      type: "invalid_address",
-      message: "Invalid destination Stellar address.",
-    } as StellarError;
+    throw new StellarOperationError("invalid_address", "Invalid destination Stellar address.");
   }
 
   const sourceKeypair = Keypair.fromSecret(sourceSecretKey);
-  const safeMemo = sanitizeStellarTextMemo(memo);
+  const sanitizedMemo = sanitizeStellarTextMemo(memo);
+  if (sanitizedMemo.truncated) {
+    console.warn("Stellar memo truncated to 28 UTF-8 bytes", { destinationAddress });
+  }
 
   let lastError: unknown;
 
@@ -1040,15 +1269,14 @@ export async function submitMultisigPaymentWithRetry(
         )
         .setTimeout(30);
 
-      if (safeMemo) {
-        builder.addMemo(Memo.text(safeMemo));
+      if (sanitizedMemo.text) {
+        builder.addMemo(Memo.text(sanitizedMemo.text));
       }
 
       const transaction = builder.build();
       transaction.sign(sourceKeypair);
 
-      const txResult = await server.submitTransaction(transaction);
-      return txResult.hash;
+      return await submitAndConfirm(transaction);
     } catch (err: unknown) {
       lastError = err;
 
@@ -1066,6 +1294,10 @@ export async function submitMultisigPaymentWithRetry(
 
   console.error("Error broadcasting multisig payment:", lastError);
 
+  if (lastError instanceof StellarOperationError) {
+    throw lastError;
+  }
+
   let message = "Failed to broadcast multisig payment.";
   if (lastError && typeof lastError === "object") {
     const opsMessage = extractResultCodes(lastError).ops?.[0];
@@ -1077,5 +1309,5 @@ export async function submitMultisigPaymentWithRetry(
     }
   }
 
-  throw { type: "payment_failed", message } as StellarError;
+  throw toStellarError("payment_failed", message, lastError);
 }

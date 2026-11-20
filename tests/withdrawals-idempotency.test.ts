@@ -71,7 +71,7 @@ describe('Withdrawal idempotency (#1517)', () => {
     vi.mocked(getAccountBalance).mockResolvedValue([
       { asset_code: 'USDC', balance: '100.0' },
     ] as any)
-    vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-1' as any)
+    vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-1' })
     vi.mocked(initiateOfframp).mockResolvedValue({
       transactionId: 'ext-tx-123',
       status: 'pending',
