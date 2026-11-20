@@ -80,7 +80,7 @@ export async function GET(
     }
 
     // Resolve the hash scoped to caller's developer app
-    const record = getPersistedQuery(apiKey.id, hash);
+    const record = await getPersistedQuery(apiKey.id, hash);
 
     // Indistinguishable 404 between not registered and not authorized
     if (!record || record.appId !== apiKey.id) {

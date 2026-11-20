@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { invalidatePersistedQuery } from '@/lib/persisted-queries'
 
 export type GatewayTier = 'free' | 'starter' | 'pro' | 'enterprise'
 
@@ -212,6 +213,9 @@ export async function POST(request: NextRequest) {
         complexity,
       },
     })
+
+    // Keep the read-through cache coherent with direct Prisma writes.
+    invalidatePersistedQuery(appId, computedHash)
 
     logger.info(
       { appId, hash: computedHash, depth, complexity, tier },
