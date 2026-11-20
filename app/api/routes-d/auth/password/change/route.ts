@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 // POST /api/routes-d/auth/password/change — change the authenticated user's password
 

@@ -1,8 +1,8 @@
 import crypto, { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
 
-const AUDIT_SECRET =
-  process.env.AUDIT_SECRET || "default-audit-secret-change-in-production";
+export const AUDIT_SIGNING_SECRET =
+  process.env.AUDIT_SIGNING_SECRET || "default-audit-secret-change-in-production";
 
 interface AuditMetadata {
   ip?: string;
@@ -17,7 +17,7 @@ export function generateSignature(
   metadata: AuditMetadata | null,
 ): string {
   const payload = `${invoiceId}:${eventType}:${timestamp}:${JSON.stringify(metadata || {})}`;
-  return createHmac("sha256", AUDIT_SECRET).update(payload).digest("hex");
+  return createHmac("sha256", AUDIT_SIGNING_SECRET).update(payload).digest("hex");
 }
 
 /**

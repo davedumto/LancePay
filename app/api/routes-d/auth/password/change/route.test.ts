@@ -4,14 +4,14 @@ import { POST } from './route'
 jest.mock('@/lib/db', () => ({ prisma: { user: { findUnique: jest.fn(), update: jest.fn() } } }))
 jest.mock('@/lib/auth', () => ({ verifyAuthToken: jest.fn() }))
 jest.mock('@/lib/logger', () => ({ logger: { info: jest.fn(), error: jest.fn() } }))
-jest.mock('bcrypt', () => ({
+jest.mock('bcryptjs', () => ({
   compare: jest.fn(),
   hash: jest.fn().mockResolvedValue('new-hash'),
 }))
 
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 const mockVerify = verifyAuthToken as jest.Mock
 const mockCompare = bcrypt.compare as jest.Mock

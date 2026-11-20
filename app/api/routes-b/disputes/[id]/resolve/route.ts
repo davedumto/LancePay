@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import crypto from 'crypto'
+import { AUDIT_SIGNING_SECRET } from '@/lib/audit'
 
 // POST /api/routes-b/disputes/[id]/resolve
 // Resolve a dispute and apply the corresponding financial adjustment to the
@@ -201,7 +202,7 @@ export async function POST(
         arbiterEmail: actor.email,
       })
       const signature = crypto
-        .createHmac('sha256', process.env.AUDIT_SIGNING_SECRET ?? 'dev-secret')
+        .createHmac('sha256', AUDIT_SIGNING_SECRET)
         .update(metadataJson)
         .digest('hex')
 

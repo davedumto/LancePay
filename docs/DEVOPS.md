@@ -44,11 +44,11 @@
                     │                                │                                │
                     ▼                                ▼                                ▼
           ┌─────────────────┐               ┌─────────────────┐               ┌─────────────────┐
-          │      NEON       │               │     UPSTASH     │               │    ALCHEMY      │
-          │  (PostgreSQL)   │               │     (Redis)     │               │   (Base RPC)    │
-          │   Serverless    │               │  Rate Limiting  │               │  Blockchain     │
-          └─────────────────┘               │  Session Cache  │               └─────────────────┘
-                                            └─────────────────┘
+          │      NEON       │               │  IN-MEMORY      │               │    STELLAR      │
+          │  (PostgreSQL)   │               │  RATE LIMITING  │               │   HORIZON       │
+          │   Serverless    │               │ (per-instance)  │               │ (RPC + account  │
+          └─────────────────┘               └─────────────────┘               │    data)        │
+                                                                            └─────────────────┘
                     
                     ┌────────────────────────────────────────────────────────────────┐
                     │                     EXTERNAL SERVICES                          │
@@ -66,8 +66,8 @@
 | **Frontend + API** | Vercel (Next.js) | Edge functions, auto-scaling, zero config |
 | **Database** | Neon (PostgreSQL) | True serverless, branching, global edge |
 | **Auth + Wallets** | Privy | Google OAuth + embedded wallets in one SDK |
-| **Cache/Rate Limit** | Upstash Redis | Serverless, pay-per-request |
-| **Blockchain RPC** | Alchemy | Reliable, enhanced APIs, webhooks |
+| **Rate Limiting** | In-memory store (`lib/rate-limit.ts`, `lib/shared-cache.ts`) | Zero external deps; per-instance on serverless |
+| **Blockchain RPC** | Stellar Horizon (`NEXT_PUBLIC_STELLAR_HORIZON_URL`) | Native ledger for USDC payments and account data |
 | **CDN/Security** | Cloudflare | DDoS protection, WAF, caching |
 | **Secrets** | Vercel Environment Variables | Encrypted, per-environment |
 | **Monitoring** | Sentry + Vercel Analytics | Errors + performance |
@@ -154,11 +154,14 @@ PRIVY_APP_SECRET=your-privy-app-secret
 PRIVY_WEBHOOK_SECRET=your-webhook-secret
 
 # ═══════════════════════════════════════════════════════════════
-# BLOCKCHAIN
+# BLOCKCHAIN (Stellar)
 # ═══════════════════════════════════════════════════════════════
-ALCHEMY_API_KEY=your-alchemy-key
-NEXT_PUBLIC_BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}
-USDC_CONTRACT_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+STELLAR_NETWORK=testnet            # testnet | public
+STELLAR_FUNDING_WALLET_SECRET=S...
+NEXT_PUBLIC_STELLAR_NETWORK=testnet
+NEXT_PUBLIC_STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
+NEXT_PUBLIC_USDC_ISSUER=GA...
+NEXT_PUBLIC_USDC_CODE=USDC
 
 # ═══════════════════════════════════════════════════════════════
 # ONRAMP (MoonPay)
@@ -173,12 +176,6 @@ MOONPAY_WEBHOOK_SECRET=whsec_xxx
 YELLOWCARD_API_KEY=your-api-key
 YELLOWCARD_SECRET_KEY=your-secret-key
 YELLOWCARD_WEBHOOK_SECRET=your-webhook-secret
-
-# ═══════════════════════════════════════════════════════════════
-# CACHE (Upstash Redis)
-# ═══════════════════════════════════════════════════════════════
-UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxx
 
 # ═══════════════════════════════════════════════════════════════
 # EMAIL (Resend)
@@ -238,10 +235,6 @@ npx prisma migrate dev --name init
 ```typescript
 // lib/db.ts
 import { PrismaClient } from '@prisma/client'
-import { neonConfig } from '@neondatabase/serverless'
-
-// Enable connection pooling for serverless
-neonConfig.fetchConnectionCache = true
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
@@ -282,10 +275,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           createOnLogin: 'all-users',
           noPromptOnSignature: true,
         },
-        
-        // Default chain
-        defaultChain: base,
-        supportedChains: [base],
       }}
     >
       {children}
@@ -323,27 +312,20 @@ export function AuthButton() {
 }
 ```
 
-### Upstash Redis Usage
+### Rate Limiting & In-Memory Cache
 
-```typescript
-// lib/redis.ts
-import { Redis } from '@upstash/redis'
+The app does **not** use a Redis client. Rate limiting and short-lived caching
+are handled by in-process stores:
 
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
+- `lib/rate-limit.ts` — sliding-window counters kept in a global `Map`
+  (shared across warm serverless invocations on the same instance). Defines
+  middleware policies (`/api/pay`, `/api/auth`) and per-route
+  `RouteRateLimiter` instances for 2FA and KYC endpoints.
+- `lib/shared-cache.ts` — generic TTL cache (`SharedCache`) used for
+  exchange-rate and other frequently read values.
 
-// Rate limiting
-export async function rateLimit(ip: string, limit = 10, window = 60) {
-  const key = `rate_limit:${ip}`
-  const current = await redis.incr(key)
-  if (current === 1) {
-    await redis.expire(key, window)
-  }
-  return current <= limit
-}
-```
+Because the store is per-instance, limits are approximate under horizontal
+scaling — sufficient for abuse prevention, not for strict quotas.
 
 ---
 
@@ -445,7 +427,7 @@ export async function POST(request: Request) {
 | Security Measure | Implementation |
 |------------------|----------------|
 | **Authentication** | Privy (Google OAuth + session tokens) |
-| **Rate Limiting** | Upstash Redis (10 req/min for auth, 100/min for API) |
+| **Rate Limiting** | In-memory limiter in `lib/rate-limit.ts` (policies for `/api/pay`, `/api/auth`, 2FA, KYC) |
 | **Input Validation** | Zod schemas on all inputs |
 | **SQL Injection** | Parameterized queries (Prisma) |
 | **XSS** | React auto-escapes, CSP headers |
@@ -560,13 +542,13 @@ Vercel handles scaling automatically:
 ### Caching Strategy
 
 ```typescript
-// Cache frequently accessed data
+// Cache frequently accessed data (per-instance, see lib/shared-cache.ts)
 export async function getExchangeRate() {
-  const cached = await redis.get('exchange_rate:USD_NGN')
-  if (cached) return JSON.parse(cached)
+  const cached = sharedCache.get('exchange_rate:USD_NGN')
+  if (cached) return cached
   
   const rate = await fetchFromYellowCard()
-  await redis.setex('exchange_rate:USD_NGN', 300, JSON.stringify(rate))
+  sharedCache.set('exchange_rate:USD_NGN', rate, 5 * 60_000)
   return rate
 }
 ```
@@ -605,8 +587,7 @@ Sentry.init({
 export async function GET() {
   const checks = {
     database: await checkDatabase(),
-    redis: await checkRedis(),
-    blockchain: await checkBlockchainRPC(),
+    stellar: await checkStellarHorizon(),
   }
   
   const healthy = Object.values(checks).every(c => c.status === 'ok')
@@ -647,12 +628,11 @@ vercel rollback [deployment-url]
 | **Vercel** | Free | $20/mo | $150/mo |
 | **Neon** | Free | $19/mo | $69/mo |
 | **Privy** | Free (< 1K MAU) | $99/mo | $299/mo |
-| **Upstash** | Free | $10/mo | $50/mo |
-| **Alchemy** | Free | Free | $49/mo |
+| **Stellar Horizon** | Free | Free | Free |
 | **Sentry** | Free | Free | $26/mo |
 | **Cloudflare** | Free | Free | $20/mo |
 | **Resend** | Free | $20/mo | $50/mo |
-| **Total** | **$0** | **~$170/mo** | **~$715/mo** |
+| **Total** | **$0** | **~$180/mo** | **~$615/mo** |
 
 ---
 
@@ -675,7 +655,7 @@ vercel rollback [deployment-url]
 - [ ] Set up MoonPay sandbox (onramp)
 - [ ] Apply for Yellow Card API access (offramp)
 - [ ] Configure webhook handlers
-- [ ] Add rate limiting with Upstash
+- [ ] Configure rate limiting policies (`lib/rate-limit.ts`)
 
 ### Week 3: Production Readiness
 - [ ] Configure Cloudflare (DNS + WAF)

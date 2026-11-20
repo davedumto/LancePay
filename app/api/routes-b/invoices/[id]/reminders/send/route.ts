@@ -4,6 +4,7 @@ import { verifyAuthToken } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { sendInvoiceToClient } from "@/lib/email";
 import crypto from "crypto";
+import { AUDIT_SIGNING_SECRET } from "@/lib/audit";
 
 // POST /api/routes-b/invoices/[id]/reminders/send — send an immediate invoice reminder
 
@@ -94,7 +95,7 @@ export async function POST(
 
     const metadata = { reminderId: reminder.id, manual: true };
     const signature = crypto
-      .createHmac("sha256", process.env.AUDIT_SIGNING_SECRET ?? "dev-secret")
+      .createHmac("sha256", AUDIT_SIGNING_SECRET)
       .update(JSON.stringify(metadata))
       .digest("hex");
 
