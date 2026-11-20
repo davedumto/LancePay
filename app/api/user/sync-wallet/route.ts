@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { verifyAuthTokenForProvisioning } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { PrivyClient } from '@privy-io/server-auth'
 
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
     if (!authToken) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const claims = await verifyAuthToken(authToken)
+    const claims = await verifyAuthTokenForProvisioning(authToken)
     if (!claims) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
 
     // Find user

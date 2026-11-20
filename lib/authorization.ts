@@ -34,6 +34,15 @@ export function isAdminEmail(email: string): boolean {
  * 2. Invoice collaborator (can access with masked sensitive data)
  * 3. System admin (can access all logs)
  *
+ * Masking rules applied to non-owner audit metadata (see
+ * `maskSensitiveData` in `@/lib/audit`):
+ * - `ip` fields: IPv4 keeps the first two octets (`a.b.***.***`), IPv6 keeps
+ *   the first two hextets (`h1:h2:****`), IPv4-mapped IPv6 is masked as IPv4,
+ *   anything else becomes `****`.
+ * - `userAgent` fields are replaced with `***`.
+ * - Any string containing `@` is masked as an email (`u***@domain`) — this
+ *   applies recursively to nested objects and arrays up to a depth of 5.
+ *
  * @param invoiceId - Invoice ID to check access for
  * @param userId - User ID to verify
  * @param userEmail - User email for admin check

@@ -83,17 +83,38 @@ export async function logAuditEvent(
 }
 
 /**
- * Mask an IP address to prevent user tracking
+ * Mask an IP address to prevent user tracking.
+ *
+ * - IPv4 (`a.b.c.d`) keeps the first two octets: `a.b.***.***`
+ * - IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is masked as IPv4
+ * - Other IPv6 addresses keep the first two hextets: `h1:h2:****`
+ * - Anything else is fully masked as `****`
+ *
  * @param ip - IP address to mask
- * @returns Masked IP (e.g., 192.168.***.***) or undefined
+ * @returns Masked IP or undefined for empty input
  */
 function maskIp(ip: string | undefined): string | undefined {
   if (!ip) return undefined;
+
+  const ipv4Mapped = ip.match(/::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (ipv4Mapped) {
+    return maskIp(ipv4Mapped[1]);
+  }
+
   const parts = ip.split(".");
-  if (parts.length === 4) {
+  if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p))) {
     return `${parts[0]}.${parts[1]}.***.***`;
   }
-  return undefined;
+
+  if (ip.includes(":")) {
+    const hextets = ip.split(":").filter(Boolean);
+    if (hextets.length >= 2) {
+      return `${hextets[0]}:${hextets[1]}:****`;
+    }
+    return "****";
+  }
+
+  return "****";
 }
 
 /**
@@ -106,6 +127,43 @@ function maskEmail(email: string | undefined): string | undefined {
   const [local, domain] = email.split("@");
   if (!local || !domain) return undefined;
   return `${local.charAt(0)}***@${domain}`;
+}
+
+/** Maximum depth maskSensitiveData will recurse into nested metadata. */
+const MAX_MASK_DEPTH = 5;
+
+/**
+ * Recursively mask PII inside metadata: `ip` fields via maskIp, `userAgent`
+ * fields are blanked, and any string containing `@` is treated as an email
+ * and masked via maskEmail — at every nesting level, including inside arrays.
+ * Depth is capped to stay safe on deeply nested or cyclic structures.
+ */
+function maskNode(value: unknown, depth: number): unknown {
+  if (depth > MAX_MASK_DEPTH) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => maskNode(item, depth + 1));
+  }
+
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "ip" && typeof child === "string") {
+        out[key] = maskIp(child);
+      } else if (key === "userAgent" && typeof child === "string") {
+        out[key] = "***";
+      } else {
+        out[key] = maskNode(child, depth + 1);
+      }
+    }
+    return out;
+  }
+
+  if (typeof value === "string" && value.includes("@")) {
+    return maskEmail(value);
+  }
+
+  return value;
 }
 
 /**
@@ -121,27 +179,7 @@ export function maskSensitiveData(
 ): AuditMetadata | null {
   if (!metadata || isOwner) return metadata;
 
-  const masked = { ...metadata };
-
-  // Mask IP address
-  if (masked.ip) {
-    masked.ip = maskIp(masked.ip as string);
-  }
-
-  // Mask user agent
-  if (masked.userAgent) {
-    masked.userAgent = "***";
-  }
-
-  // Mask any email fields
-  Object.keys(masked).forEach((key) => {
-    const value = masked[key];
-    if (typeof value === "string" && value.includes("@")) {
-      masked[key] = maskEmail(value);
-    }
-  });
-
-  return masked;
+  return maskNode(metadata, 0) as AuditMetadata;
 }
 
 export function extractRequestMetadata(headers: Headers): AuditMetadata {

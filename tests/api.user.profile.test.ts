@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PUT } from '@/app/api/user/profile/route'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { verifyAuthTokenForProvisioning } from '@/lib/auth'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    user: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+    user: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
   },
 }))
 
 vi.mock('@/lib/auth', () => ({
   verifyAuthToken: vi.fn(),
+  verifyAuthTokenForProvisioning: vi.fn(),
 }))
 
 vi.mock('@/lib/crypto', () => ({
@@ -45,7 +46,7 @@ function makeRequest(body: object) {
 describe('PUT /api/user/profile', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(verifyAuthToken).mockResolvedValue({ userId: 'privy-1' } as never)
+    vi.mocked(verifyAuthTokenForProvisioning).mockResolvedValue({ userId: 'privy-1' } as never)
     vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as never)
     vi.mocked(prisma.user.update).mockImplementation(
       (async ({ data }: { data: object }) => ({ id: 'user-1', ...mockUser, ...data })) as never,

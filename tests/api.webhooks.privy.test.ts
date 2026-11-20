@@ -20,7 +20,7 @@ vi.mock('@/lib/logger', () => ({
 const SECRET = 'whsec_' + Buffer.from('super-secret-signing-key!!').toString('base64')
 const URL = 'http://localhost/api/webhooks/privy'
 
-function signPayload(rawBody: string, id = 'msg_123', timestamp = '1700000000') {
+function signPayload(rawBody: string, id = 'msg_123', timestamp = Math.floor(Date.now() / 1000).toString()) {
   const key = Buffer.from(SECRET.slice('whsec_'.length), 'base64')
   const signedContent = `${id}.${timestamp}.${rawBody}`
   const signature = crypto.createHmac('sha256', key).update(signedContent).digest('base64')

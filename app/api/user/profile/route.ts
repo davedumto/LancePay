@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { verifyAuthTokenForProvisioning } from '@/lib/auth'
 import { verifyTwoFactorForRequest } from '@/lib/two-factor'
 import { logger } from '@/lib/logger'
 import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
@@ -8,7 +8,7 @@ import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
 export async function GET(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    const claims = await verifyAuthToken(authToken || '')
+    const claims = await verifyAuthTokenForProvisioning(authToken || '')
     if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // First try to find existing user
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
-    const claims = await verifyAuthToken(authToken || '')
+    const claims = await verifyAuthTokenForProvisioning(authToken || '')
     if (!claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { name, phone, taxPercentage, code } = await request.json()
@@ -58,17 +58,9 @@ export async function PUT(request: NextRequest) {
       if (!code) {
         return NextResponse.json({ error: '2FA code required' }, { status: 401 })
       }
-      if (user.twoFactorSecret) {
-        const secret = decrypt(user.twoFactorSecret)
-        const verified = speakeasy.totp.verify({
-          secret: secret,
-          encoding: 'base32',
-          token: code,
-          window: 1
-        })
-        if (!verified) {
-          return NextResponse.json({ error: 'Invalid 2FA code' }, { status: 401 })
-        }
+      const twoFactor = await verifyTwoFactorForRequest(user, code)
+      if (!twoFactor.ok) {
+        return NextResponse.json({ error: twoFactor.error }, { status: twoFactor.status })
       }
     }
 

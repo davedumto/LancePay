@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GET } from '@/app/api/user/balance/route'
 import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
+import { verifyAuthTokenForProvisioning } from '@/lib/auth'
 import { getAccountBalance } from '@/lib/stellar'
 
 vi.mock('@/lib/db', () => ({
@@ -11,7 +11,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-vi.mock('@/lib/auth', () => ({ verifyAuthToken: vi.fn() }))
+vi.mock('@/lib/auth', () => ({ verifyAuthToken: vi.fn(), verifyAuthTokenForProvisioning: vi.fn() }))
 vi.mock('@/lib/stellar', () => ({ getAccountBalance: vi.fn() }))
 vi.mock('@/lib/assets', () => ({ resolveAssetMetadata: vi.fn().mockReturnValue({}) }))
 vi.mock('@/lib/pricing', () => ({ getAssetPrices: vi.fn().mockResolvedValue({ USDC: { price: 1, currency: 'USD' } }) }))
@@ -21,7 +21,7 @@ vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn() } }))
 describe('GET /api/user/balance pending invoices by currency', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(verifyAuthToken).mockResolvedValue({ userId: 'privy-1' } as never)
+    vi.mocked(verifyAuthTokenForProvisioning).mockResolvedValue({ userId: 'privy-1' } as never)
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       id: 'user-1',
       privyId: 'privy-1',

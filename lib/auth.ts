@@ -14,19 +14,52 @@ const privy = new PrivyClient(
  * `claims.sessionId`: the row is keyed by `providerSessionId`, and a token is
  * rejected when that row has a `revokedAt` value or belongs to another user.
  *
+ * A verified token whose `privyId` has no local `User` row is treated as
+ * UNAUTHENTICATED (returns null): without a user row there is no session to
+ * check for revocation, so accepting the claims would let tokens for deleted
+ * or never-provisioned accounts bypass revocation entirely. Routes that
+ * legitimately provision a user on first login must use
+ * {@link verifyAuthTokenForProvisioning} instead.
+ *
  * @param token - The bearer token issued by Privy
- * @returns The verified claims for an active session, or null if invalid/revoked
+ * @returns The verified claims for an active session, or null if invalid/revoked/unprovisioned
  */
 export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | null> {
+  return verifyAuthTokenInternal(token, { allowUnprovisioned: false })
+}
+
+/**
+ * Verify a Privy auth token for first-login provisioning routes only.
+ *
+ * Identical to {@link verifyAuthToken} except that a verified token with no
+ * matching `User` row is allowed through so the route can create the user.
+ * Once the user exists the same session-revocation checks apply, so this must
+ * only be used by routes that actually perform provisioning
+ * (currently `/api/user/profile`, `/api/user/balance`, `/api/user/sync-wallet`).
+ * All other routes must use {@link verifyAuthToken}.
+ *
+ * @param token - The bearer token issued by Privy
+ * @returns The verified claims, or null if invalid/revoked
+ */
+export async function verifyAuthTokenForProvisioning(
+  token: string,
+): Promise<AuthTokenClaims | null> {
+  return verifyAuthTokenInternal(token, { allowUnprovisioned: true })
+}
+
+async function verifyAuthTokenInternal(
+  token: string,
+  { allowUnprovisioned }: { allowUnprovisioned: boolean },
+): Promise<AuthTokenClaims | null> {
   try {
     const claims = await privy.verifyAuthToken(token)
-    if (!claims.sessionId) return claims
 
     const user = await prisma.user.findUnique({
       where: { privyId: claims.userId },
       select: { id: true },
     })
-    if (!user) return claims
+    if (!user) return allowUnprovisioned ? claims : null
+    if (!claims.sessionId) return claims
 
     const session = await prisma.userSession.upsert({
       where: { providerSessionId: claims.sessionId },
