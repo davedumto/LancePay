@@ -59,8 +59,9 @@ NGN (Bank Account)
 
 ### Caching Strategy
 
-- **Exchange rates**: Cached for 60 seconds
+- **Exchange rates**: Cached for 60 seconds (`EXCHANGE_RATE_CACHE_TTL_MS` in `lib/exchange-rate.ts`; the same constant drives the fetch `revalidate` window, so they cannot drift apart)
 - **Stellar network fees**: Cached for 60 seconds
+- **Rate freshness**: Responses include the rate's age (`cacheAgeMs` / `cacheAgeSeconds` on `/api/exchange-rate`) so clients can see how stale a quote is
 - **Benefits**: 
   - Reduces API calls to external providers
   - Improves response time
@@ -95,6 +96,7 @@ NGN (Bank Account)
 | `feeBreakdown.offRamp` | number | Fee charged by Yellow Card (USDC) |
 | `effectiveRate` | number | NGN received per USD sent (after all fees) |
 | `timestamp` | string | ISO 8601 timestamp of calculation |
+| `rateAgeSeconds` | number | Age of the exchange rate used, in seconds (0 = freshly fetched). Surfaced so clients can judge quote freshness |
 
 ## API Integration
 
@@ -300,11 +302,16 @@ const FEE_CONFIG = {
 
 ### Updating Cache Duration
 
-To modify cache duration (currently 60 seconds):
+To modify the exchange-rate cache TTL (currently 60 seconds), change the
+single constant in [lib/exchange-rate.ts](../lib/exchange-rate.ts):
 
 ```typescript
-const CACHE_DURATION = 60 * 1000; // Change this value (milliseconds)
+export const EXCHANGE_RATE_CACHE_TTL_MS = 60 * 1000; // milliseconds
 ```
+
+Both the in-process cache check and the fetch `revalidate` window derive
+from this constant — do not add a second TTL elsewhere. `tests/lib/exchange-rate.test.ts`
+pins the value to the documented 60 seconds.
 
 ## Support
 
