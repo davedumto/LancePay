@@ -13,6 +13,7 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
 import { HORIZON_URL, STELLAR_NETWORK } from '@/lib/stellar'
+import { STELLAR_NETWORK_CONFIG } from '@/lib/stellar-network'
 
 const bootstrapSchema = z.object({
   walletAddress: z
@@ -21,9 +22,7 @@ const bootstrapSchema = z.object({
     .refine((val) => StrKey.isValidEd25519PublicKey(val), 'Invalid Stellar public key address'),
 })
 
-const DEFAULT_USDC_ISSUER =
-  process.env.NEXT_PUBLIC_USDC_ISSUER ||
-  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
+const DEFAULT_USDC_ISSUER = STELLAR_NETWORK_CONFIG.usdcIssuer
 
 async function getAuthenticatedUser(request: NextRequest): Promise<{ id: string; email: string } | null> {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')

@@ -6,6 +6,8 @@ type RateLimitPolicy = {
   methods: string[]
   maxRequests: number
   windowMs: number
+  /** Stricter limit applied to requests with no client IP identifier. */
+  anonymousMaxRequests: number
 }
 
 type RateLimitEntry = {
@@ -21,6 +23,200 @@ export type RequestRateLimitResult = {
   resetAt: number
 }
 
+// ── RateLimitStore ──────────────────────────────────────────────────────────
+
+export type ConsumeResult = {
+  count: number
+  resetAt: number
+  /** false when the window was already exhausted and nothing was counted. */
+  counted: boolean
+}
+
+/**
+   * Storage backend for fixed-window counters.
+   *
+   * `consume` must be atomic: concurrent calls for the same key must not
+   * overshoot `limit`. Implementations return the post-consume count and
+   * window reset instant.
+   */
+export interface RateLimitStore {
+  consume(key: string, limit: number, windowMs: number, now: number): Promise<ConsumeResult>
+  peek(key: string, now: number): Promise<RateLimitEntry | null>
+  delete(key: string): Promise<void>
+}
+
+const CLEANUP_THRESHOLD = 5000
+
+/**
+ * Default in-process store. Correct for local development and tests; on
+ * serverless platforms each instance keeps its own map, so production
+ * deployments should set RATE_LIMIT_STORE=redis (see .env.example).
+ */
+export class MemoryRateLimitStore implements RateLimitStore {
+  private entries = new Map<string, RateLimitEntry>()
+
+  private cleanupExpired(now: number) {
+    if (this.entries.size < CLEANUP_THRESHOLD) return
+    for (const [key, value] of this.entries) {
+      if (value.resetAt <= now) this.entries.delete(key)
+    }
+  }
+
+  async consume(key: string, limit: number, windowMs: number, now: number): Promise<ConsumeResult> {
+    this.cleanupExpired(now)
+    const existing = this.entries.get(key)
+
+    if (!existing || now >= existing.resetAt) {
+      const resetAt = now + windowMs
+      this.entries.set(key, { count: 1, resetAt })
+      return { count: 1, resetAt, counted: true }
+    }
+
+    if (existing.count >= limit) {
+      return { count: existing.count, resetAt: existing.resetAt, counted: false }
+    }
+
+    existing.count += 1
+    this.entries.set(key, existing)
+    return { count: existing.count, resetAt: existing.resetAt, counted: true }
+  }
+
+  async peek(key: string, now: number): Promise<RateLimitEntry | null> {
+    const existing = this.entries.get(key)
+    if (!existing || now >= existing.resetAt) return null
+    return existing
+  }
+
+  async delete(key: string): Promise<void> {
+    this.entries.delete(key)
+  }
+}
+
+/** Minimal Redis-compatible client surface (ioredis / @upstash/redis). */
+export interface RedisEvalClient {
+  eval(script: string, keys: string[], args: Array<string | number>): Promise<unknown>
+}
+
+/**
+ * Lua script implementing the same fixed-window semantics as
+ * MemoryRateLimitStore.consume: start a new window when missing/expired,
+ * count the request while under the limit, otherwise leave the counter
+ * untouched. Executed atomically by Redis so concurrent requests cannot
+ * overshoot the limit.
+ */
+const CONSUME_SCRIPT = `
+local data = redis.call('HMGET', KEYS[1], 'count', 'resetAt')
+local count = tonumber(data[1]) or 0
+local resetAt = tonumber(data[2]) or 0
+local limit = tonumber(ARGV[1])
+local windowMs = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local counted = 0
+if resetAt <= now or count == 0 then
+  resetAt = now + windowMs
+  count = 1
+  counted = 1
+elseif count < limit then
+  count = count + 1
+  counted = 1
+end
+redis.call('HMSET', KEYS[1], 'count', count, 'resetAt', resetAt)
+redis.call('PEXPIRE', KEYS[1], windowMs + 1000)
+return { count, resetAt, counted }
+`
+
+const PEEK_SCRIPT = `
+local data = redis.call('HMGET', KEYS[1], 'count', 'resetAt')
+local count = tonumber(data[1]) or 0
+local resetAt = tonumber(data[2]) or 0
+local now = tonumber(ARGV[1])
+if resetAt <= now or count == 0 then
+  return nil
+end
+return { count, resetAt }
+`
+
+/**
+ * Redis-backed store. Counters live in a shared Redis instance so limits
+ * hold across serverless instances and cold starts.
+ */
+export class RedisRateLimitStore implements RateLimitStore {
+  constructor(private readonly client: RedisEvalClient) {}
+
+  async consume(key: string, limit: number, windowMs: number, now: number): Promise<ConsumeResult> {
+    const raw = (await this.client.eval(CONSUME_SCRIPT, [key], [
+      limit,
+      windowMs,
+      now,
+    ])) as [number, number, number] | null
+    if (!raw) {
+      // Defensive fallback; the script always returns a triple.
+      return { count: limit, resetAt: now + windowMs, counted: false }
+    }
+    const [count, resetAt, counted] = raw
+    return { count: Number(count), resetAt: Number(resetAt), counted: Number(counted) === 1 }
+  }
+
+  async peek(key: string, now: number): Promise<RateLimitEntry | null> {
+    const raw = (await this.client.eval(PEEK_SCRIPT, [key], [now])) as
+      | [number, number]
+      | null
+    if (!raw) return null
+    const [count, resetAt] = raw
+    return { count: Number(count), resetAt: Number(resetAt) }
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.eval(`return redis.call('DEL', KEYS[1])`, [key], [])
+  }
+}
+
+const globalStore = globalThis as typeof globalThis & {
+  __lancepayRateLimitMemoryStore?: MemoryRateLimitStore
+  __lancepayRateLimitStorePromise?: Promise<RateLimitStore>
+}
+
+function memoryStore(): MemoryRateLimitStore {
+  if (!globalStore.__lancepayRateLimitMemoryStore) {
+    globalStore.__lancepayRateLimitMemoryStore = new MemoryRateLimitStore()
+  }
+  return globalStore.__lancepayRateLimitMemoryStore
+}
+
+async function createStore(): Promise<RateLimitStore> {
+  const kind = (process.env.RATE_LIMIT_STORE || 'memory').trim().toLowerCase()
+  if (kind === 'redis' || kind === 'upstash') {
+    const url = process.env.UPSTASH_REDIS_REST_URL
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN
+    if (!url || !token) {
+      throw new Error(
+        'RATE_LIMIT_STORE=redis requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN',
+      )
+    }
+    const { Redis } = await import('@upstash/redis')
+    return new RedisRateLimitStore(new Redis({ url, token }))
+  }
+  return memoryStore()
+}
+
+/**
+ * Resolve the active store once per process. Defaults to the in-memory
+ * store; set RATE_LIMIT_STORE=redis with Upstash credentials for a shared
+ * backend across serverless instances.
+ */
+export function getRateLimitStore(): Promise<RateLimitStore> {
+  if (!globalStore.__lancepayRateLimitStorePromise) {
+    globalStore.__lancepayRateLimitStorePromise = createStore()
+  }
+  return globalStore.__lancepayRateLimitStorePromise
+}
+
+/** Test hook: reset the cached store selection. */
+export function resetRateLimitStoreForTests(): void {
+  globalStore.__lancepayRateLimitStorePromise = undefined
+  globalStore.__lancepayRateLimitMemoryStore = undefined
+}
+
 const POLICIES: RateLimitPolicy[] = [
   {
     id: 'api-pay',
@@ -28,6 +224,7 @@ const POLICIES: RateLimitPolicy[] = [
     methods: ['GET', 'POST'],
     maxRequests: 60,
     windowMs: 60_000,
+    anonymousMaxRequests: 10,
   },
   {
     id: 'api-auth',
@@ -35,17 +232,9 @@ const POLICIES: RateLimitPolicy[] = [
     methods: ['GET', 'POST'],
     maxRequests: 30,
     windowMs: 60_000,
+    anonymousMaxRequests: 5,
   },
 ]
-
-const globalStore = globalThis as typeof globalThis & {
-  __lancepayRateLimitStore?: Map<string, RateLimitEntry>
-}
-
-const STORE = globalStore.__lancepayRateLimitStore ?? new Map<string, RateLimitEntry>()
-if (!globalStore.__lancepayRateLimitStore) {
-  globalStore.__lancepayRateLimitStore = STORE
-}
 
 function findPolicy(pathname: string, method: string): RateLimitPolicy | null {
   const upperMethod = method.toUpperCase()
@@ -58,35 +247,62 @@ function findPolicy(pathname: string, method: string): RateLimitPolicy | null {
   return null
 }
 
-function getClientIdentifier(request: NextRequest): string {
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  if (forwardedFor) {
-    const ip = forwardedFor.split(',')[0]?.trim()
-    if (ip) return ip
-  }
-
-  const realIp = request.headers.get('x-real-ip')?.trim()
-  if (realIp) return realIp
-
-  const cfIp = request.headers.get('cf-connecting-ip')?.trim()
-  if (cfIp) return cfIp
-
-  return 'anonymous'
+type ClientIdentifier = {
+  /** Bucket key suffix — an IP when known, 'anonymous' otherwise. */
+  identifier: string
+  anonymous: boolean
 }
 
-function cleanupExpiredEntries(now: number) {
-  if (STORE.size < 5000) return
-  for (const [key, value] of STORE.entries()) {
-    if (value.resetAt <= now) {
-      STORE.delete(key)
-    }
+/**
+ * Resolve the client identifier for rate limiting.
+ *
+ * Checks the common platform-injected forwarding headers
+ * (x-forwarded-for, x-real-ip, cf-connecting-ip, true-client-ip,
+ * fastly-client-ip, x-client-ip, x-vercel-forwarded-for). When none is
+ * present the request is marked `anonymous`: it is then limited by the
+ * policy's stricter `anonymousMaxRequests` bucket (shared across all
+ * headerless clients — a deliberate trade-off so unidentified traffic
+ * cannot get unlimited requests) and the occurrence is logged once per
+ * window.
+ */
+function getClientIdentifier(request: NextRequest): ClientIdentifier {
+  const candidates = [
+    'x-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
+    'true-client-ip',
+    'fastly-client-ip',
+    'x-client-ip',
+    'x-vercel-forwarded-for',
+  ]
+  for (const header of candidates) {
+    const value = request.headers.get(header)?.trim()
+    if (!value) continue
+    // For multi-value forwarding headers the left-most entry is the
+    // client-supplied original sender.
+    const first = value.split(',')[0]?.trim()
+    if (first) return { identifier: first, anonymous: false }
   }
+  return { identifier: 'anonymous', anonymous: true }
+}
+
+// Tracks the last window in which each policy logged an anonymous request,
+// so the occurrence is logged once per window rather than per request.
+const anonymousLoggedWindows = new Map<string, number>()
+
+function logAnonymousRateLimitOnce(policy: RateLimitPolicy, resetAt: number) {
+  if (anonymousLoggedWindows.get(policy.id) === resetAt) return
+  anonymousLoggedWindows.set(policy.id, resetAt)
+  console.warn(
+    `[rate-limit] ${policy.id}: request without client IP headers applied to ` +
+      `stricter anonymous bucket (${policy.anonymousMaxRequests}/${Math.round(policy.windowMs / 1000)}s)`,
+  )
 }
 
 /**
  * Route-level rate limiter for use inside API handlers.
  * Supports composite keys (e.g. IP + userId) and manual reset.
- * Shares the same global store as middleware-level rate limiting.
+ * Shares the same store as middleware-level rate limiting.
  */
 export class RouteRateLimiter {
   private maxRequests: number
@@ -99,75 +315,49 @@ export class RouteRateLimiter {
     this.windowMs = opts.windowMs
   }
 
-  check(identifier: string): RequestRateLimitResult {
-    const now = Date.now()
-    cleanupExpiredEntries(now)
-
-    const key = `${this.policyId}:${identifier}`
-    const existing = STORE.get(key)
-
-    if (!existing || now >= existing.resetAt) {
-      const resetAt = now + this.windowMs
-      STORE.set(key, { count: 1, resetAt })
-      return {
-        policyId: this.policyId,
-        allowed: true,
-        limit: this.maxRequests,
-        remaining: this.maxRequests - 1,
-        resetAt,
-      }
-    }
-
-    if (existing.count >= this.maxRequests) {
-      return {
-        policyId: this.policyId,
-        allowed: false,
-        limit: this.maxRequests,
-        remaining: 0,
-        resetAt: existing.resetAt,
-      }
-    }
-
-    existing.count += 1
-    STORE.set(key, existing)
-
+  async check(identifier: string): Promise<RequestRateLimitResult> {
+    const store = await getRateLimitStore()
+    const result = await store.consume(
+      `${this.policyId}:${identifier}`,
+      this.maxRequests,
+      this.windowMs,
+      Date.now(),
+    )
     return {
       policyId: this.policyId,
-      allowed: true,
+      allowed: result.counted,
       limit: this.maxRequests,
-      remaining: Math.max(this.maxRequests - existing.count, 0),
-      resetAt: existing.resetAt,
+      remaining: Math.max(this.maxRequests - result.count, 0),
+      resetAt: result.resetAt,
     }
   }
 
-  reset(identifier: string): void {
-    STORE.delete(`${this.policyId}:${identifier}`)
+  async reset(identifier: string): Promise<void> {
+    const store = await getRateLimitStore()
+    await store.delete(`${this.policyId}:${identifier}`)
   }
 
   /**
    * Read the current state for an identifier without incrementing the counter.
    * Returns null when no entry exists (i.e. no requests have been made yet).
    */
-  peek(identifier: string): RequestRateLimitResult | null {
-    const now = Date.now()
-    const key = `${this.policyId}:${identifier}`
-    const existing = STORE.get(key)
+  async peek(identifier: string): Promise<RequestRateLimitResult | null> {
+    const store = await getRateLimitStore()
+    const existing = await store.peek(`${this.policyId}:${identifier}`, Date.now())
+    if (!existing) return null
 
-    if (!existing || now >= existing.resetAt) return null
-
-    const remaining = Math.max(this.maxRequests - existing.count, 0)
     return {
       policyId: this.policyId,
       allowed: existing.count < this.maxRequests,
       limit: this.maxRequests,
-      remaining,
+      remaining: Math.max(this.maxRequests - existing.count, 0),
       resetAt: existing.resetAt,
     }
   }
 }
 
 export function getClientIp(request: NextRequest): string {
-  return getClientIdentifier(request)
+  return getClientIdentifier(request).identifier
 }
 
 /**
@@ -175,80 +365,62 @@ export function getClientIp(request: NextRequest): string {
  * matches the given IP, without consuming any quota. Entries that have
  * never been hit or whose window has expired are omitted.
  */
-export function peekRateLimitStatus(ip: string): Array<{
+export async function peekRateLimitStatus(ip: string): Promise<Array<{
   policyId: string
   limit: number
   remaining: number
   resetAt: number
   allowed: boolean
-}> {
+}>> {
+  const store = await getRateLimitStore()
   const now = Date.now()
-  return POLICIES.flatMap((policy) => {
-    const key = `${policy.id}:${ip}`
-    const entry = STORE.get(key)
-    if (!entry || now >= entry.resetAt) {
-      // Window not started or already expired — report as fully available
-      return [{
+  return Promise.all(
+    POLICIES.map(async (policy) => {
+      const entry = await store.peek(`${policy.id}:${ip}`, now)
+      if (!entry) {
+        return {
+          policyId: policy.id,
+          limit: policy.maxRequests,
+          remaining: policy.maxRequests,
+          resetAt: 0,
+          allowed: true,
+        }
+      }
+      return {
         policyId: policy.id,
         limit: policy.maxRequests,
-        remaining: policy.maxRequests,
-        resetAt: 0,
-        allowed: true,
-      }]
-    }
-    const remaining = Math.max(policy.maxRequests - entry.count, 0)
-    return [{
-      policyId: policy.id,
-      limit: policy.maxRequests,
-      remaining,
-      resetAt: entry.resetAt,
-      allowed: entry.count < policy.maxRequests,
-    }]
-  })
+        remaining: Math.max(policy.maxRequests - entry.count, 0),
+        resetAt: entry.resetAt,
+        allowed: entry.count < policy.maxRequests,
+      }
+    }),
+  )
 }
 
-export function checkRequestRateLimit(request: NextRequest): RequestRateLimitResult | null {
+export async function checkRequestRateLimit(request: NextRequest): Promise<RequestRateLimitResult | null> {
   const policy = findPolicy(request.nextUrl.pathname, request.method)
   if (!policy) return null
 
-  const now = Date.now()
-  cleanupExpiredEntries(now)
+  const { identifier, anonymous } = getClientIdentifier(request)
+  const limit = anonymous ? policy.anonymousMaxRequests : policy.maxRequests
+  const store = await getRateLimitStore()
+  const result = await store.consume(
+    `${policy.id}:${identifier}`,
+    limit,
+    policy.windowMs,
+    Date.now(),
+  )
 
-  const identifier = getClientIdentifier(request)
-  const key = `${policy.id}:${identifier}`
-  const existing = STORE.get(key)
-
-  if (!existing || now >= existing.resetAt) {
-    const resetAt = now + policy.windowMs
-    STORE.set(key, { count: 1, resetAt })
-    return {
-      policyId: policy.id,
-      allowed: true,
-      limit: policy.maxRequests,
-      remaining: policy.maxRequests - 1,
-      resetAt,
-    }
+  if (anonymous) {
+    logAnonymousRateLimitOnce(policy, result.resetAt)
   }
-
-  if (existing.count >= policy.maxRequests) {
-    return {
-      policyId: policy.id,
-      allowed: false,
-      limit: policy.maxRequests,
-      remaining: 0,
-      resetAt: existing.resetAt,
-    }
-  }
-
-  existing.count += 1
-  STORE.set(key, existing)
 
   return {
     policyId: policy.id,
-    allowed: true,
-    limit: policy.maxRequests,
-    remaining: Math.max(policy.maxRequests - existing.count, 0),
-    resetAt: existing.resetAt,
+    allowed: result.counted,
+    limit,
+    remaining: Math.max(limit - result.count, 0),
+    resetAt: result.resetAt,
   }
 }
 

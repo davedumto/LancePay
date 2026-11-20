@@ -35,10 +35,10 @@ function applyRateLimitHeaders(response: NextResponse, params: {
   response.headers.set('X-RateLimit-Policy', params.policyId);
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
 
   const nonce = crypto.randomUUID();
-  const rateLimit = checkRequestRateLimit(request);
+  const rateLimit = await checkRequestRateLimit(request);
 
   if (rateLimit && !rateLimit.allowed) {
     const retryAfterSeconds = Math.max(

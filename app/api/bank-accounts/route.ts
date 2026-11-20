@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   // 2FA Check
   if (user.twoFactorEnabled) {
-    const rateLimitResult = twoFactorLimiter.check(user.id)
+    const rateLimitResult = await twoFactorLimiter.check(user.id)
     if (!rateLimitResult.allowed) {
       return buildRateLimitResponse(rateLimitResult)
     }

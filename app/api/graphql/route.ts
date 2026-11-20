@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     const { apiKey, userId } = auth;
 
     // 1. API key rate limit enforcement
-    const rateCheck = limiter.check(apiKey.id);
+    const rateCheck = await limiter.check(apiKey.id);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { errors: [{ message: "Rate limit exceeded for API key" }] },
