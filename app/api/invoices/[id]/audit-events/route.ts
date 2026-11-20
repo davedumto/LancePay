@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import crypto from 'crypto'
+import { AUDIT_SIGNING_SECRET } from '@/lib/audit'
 
 export async function GET(
   request: NextRequest,
@@ -59,7 +60,7 @@ export async function GET(
       },
     })
 
-    const auditSigningSecret = process.env.AUDIT_SIGNING_SECRET ?? 'dev-secret'
+    const auditSigningSecret = AUDIT_SIGNING_SECRET
 
     const verifiedEvents = events.map((event) => {
       let isSignatureValid = false

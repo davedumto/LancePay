@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { Resend } from 'resend';
 import { timingSafeEqual } from '@/lib/crypto';
+import { ADMIN_EMAILS } from '@/lib/authorization';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'reversed']);
 
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
       try {
         await resend.emails.send({
           from: 'LancePay Alerts <no-reply@lancepay.com>',
-          to: process.env.ADMIN_EMAIL || 'admin@lancepay.com',
+          to: ADMIN_EMAILS.length ? ADMIN_EMAILS : ['admin@lancepay.com'],
           subject: `🚨 Withdrawal Failed — ${reference || transactionId}`,
           html: `
             <h1>Off-ramp Failure Alert</h1>

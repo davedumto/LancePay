@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import crypto from 'crypto'
+import { AUDIT_SIGNING_SECRET } from '@/lib/audit'
 
 const VALID_REASONS = [
   'fraud',
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const metadataJson = JSON.stringify({ invoiceId, reason, notes, adminEmail: admin.email })
     const signature = crypto
-      .createHmac('sha256', process.env.AUDIT_SIGNING_SECRET ?? 'dev-secret')
+      .createHmac('sha256', AUDIT_SIGNING_SECRET)
       .update(metadataJson)
       .digest('hex')
 

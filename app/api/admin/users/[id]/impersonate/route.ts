@@ -7,7 +7,7 @@ import { verifyAuthToken } from '@/lib/auth'
 
 const DEFAULT_SESSION_DURATION_MINUTES = 30
 const IMPERSONATION_SECRET =
-  process.env.AUTH_SECRET || process.env.AUDIT_SECRET || 'lancepay-impersonation-secret-key-prod'
+  process.env.AUTH_SECRET || process.env.AUDIT_SIGNING_SECRET || 'lancepay-impersonation-secret-key-prod'
 
 const impersonateRequestSchema = z.object({
   justification: z
