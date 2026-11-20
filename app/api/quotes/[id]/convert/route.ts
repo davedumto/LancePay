@@ -6,7 +6,7 @@ import {
   evaluateQuoteConversionEligibility,
   referencedProductIds,
 } from '@/lib/quote-conversion'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 
 // POST /api/quotes/[id]/convert — convert an eligible quote into an invoice.
 // Performs the same eligibility checks as the conversion-eligibility endpoint;
@@ -72,38 +72,40 @@ export async function POST(
       )
     }
 
-    // Convert the quote to an invoice
-    const invoiceNumber = generateInvoiceNumber()
+    // Convert the quote to an invoice. The transaction is retried on an
+    // invoiceNumber P2002 collision — it is atomic, so a retry cannot
+    // partially convert the quote.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
-    const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Create the invoice from the quote
-      const invoice = await tx.invoice.create({
-        data: {
-          userId: user.id,
-          invoiceNumber,
-          clientEmail: quote.clientEmail,
-          clientName: quote.clientName,
-          description: quote.description,
-          amount: quote.amount,
-          currency: quote.currency,
-          paymentLink,
-          status: 'pending',
-        },
-      })
+    const result = await withInvoiceNumberRetry((invoiceNumber) =>
+      prisma.$transaction(async (tx) => {
+        // Create the invoice from the quote
+        const invoice = await tx.invoice.create({
+          data: {
+            userId: user.id,
+            invoiceNumber,
+            clientEmail: quote.clientEmail,
+            clientName: quote.clientName,
+            description: quote.description,
+            amount: quote.amount,
+            currency: quote.currency,
+            paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+            status: 'pending',
+          },
+        })
 
-      // Mark the quote as converted and link it to the invoice
-      await tx.quote.update({
-        where: { id: quote.id },
-        data: {
-          status: 'converted',
-          invoiceId: invoice.id,
-        },
-      })
+        // Mark the quote as converted and link it to the invoice
+        await tx.quote.update({
+          where: { id: quote.id },
+          data: {
+            status: 'converted',
+            invoiceId: invoice.id,
+          },
+        })
 
-      return invoice
-    })
+        return invoice
+      }),
+    )
 
     return NextResponse.json(
       {

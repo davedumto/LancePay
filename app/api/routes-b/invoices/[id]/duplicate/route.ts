@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 
 export async function POST(
   request: NextRequest,
@@ -31,25 +31,25 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const invoiceNumber = generateInvoiceNumber()
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
-  const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
-  const newInvoice = await prisma.invoice.create({
-    data: {
-      userId: user.id,
-      invoiceNumber,
-      paymentLink,
-      clientEmail: originalInvoice.clientEmail,
-      clientName: originalInvoice.clientName,
-      description: originalInvoice.description,
-      amount: originalInvoice.amount,
-      currency: originalInvoice.currency,
-      status: 'pending',
-      dueDate: null,
-      paidAt: null,
-    },
-  })
+  const newInvoice = await withInvoiceNumberRetry((invoiceNumber) =>
+    prisma.invoice.create({
+      data: {
+        userId: user.id,
+        invoiceNumber,
+        paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+        clientEmail: originalInvoice.clientEmail,
+        clientName: originalInvoice.clientName,
+        description: originalInvoice.description,
+        amount: originalInvoice.amount,
+        currency: originalInvoice.currency,
+        status: 'pending',
+        dueDate: null,
+        paidAt: null,
+      },
+    }),
+  )
 
   return NextResponse.json(newInvoice, { status: 201 })
 }

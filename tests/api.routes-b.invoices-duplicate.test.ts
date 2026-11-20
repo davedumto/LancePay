@@ -15,6 +15,8 @@ vi.mock('@/lib/db', () => ({
 }))
 vi.mock('@/lib/utils', () => ({
   generateInvoiceNumber: () => 'INV-2026-DUP',
+  withInvoiceNumberRetry: (fn: (invoiceNumber: string) => unknown) =>
+    fn('INV-2026-DUP'),
 }))
 
 const BASE_URL = 'http://localhost/api/routes-b/invoices/inv-123/duplicate'

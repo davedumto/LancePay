@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { createInvoiceSchema } from '@/lib/validations'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 import { z } from 'zod'
 
 const bulkInvoiceJobSchema = z.object({
@@ -143,9 +144,7 @@ async function processJobAsync(
     try {
       const { clientEmail, clientName, description, amount, currency, dueDate } = recipient
 
-      // Generate unique invoice number
-      const invoiceNumber = generateInvoiceNumber()
-      const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
+      const paymentLinkBase = `${baseUrl}/pay/`
 
       // Auto-link client if they have a LancePay account
       const clientUser = await prisma.user.findUnique({
@@ -153,20 +152,22 @@ async function processJobAsync(
         select: { id: true },
       })
 
-      const invoice = await prisma.invoice.create({
-        data: {
-          userId,
-          invoiceNumber,
-          clientEmail: clientEmail.toLowerCase(),
-          clientName: clientName || null,
-          description,
-          amount,
-          currency,
-          paymentLink,
-          dueDate: dueDate ? new Date(dueDate) : null,
-          clientId: clientUser?.id || null,
-        },
-      })
+      const invoice = await withInvoiceNumberRetry((invoiceNumber) =>
+        prisma.invoice.create({
+          data: {
+            userId,
+            invoiceNumber,
+            clientEmail: clientEmail.toLowerCase(),
+            clientName: clientName || null,
+            description,
+            amount,
+            currency,
+            paymentLink: `${paymentLinkBase}${invoiceNumber}`,
+            dueDate: dueDate ? new Date(dueDate) : null,
+            clientId: clientUser?.id || null,
+          },
+        }),
+      )
 
       results.push({
         recipientEmail: clientEmail.toLowerCase(),
@@ -212,6 +213,3 @@ async function processJobAsync(
   )
 }
 
-function generateInvoiceNumber(): string {
-  return `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
-}

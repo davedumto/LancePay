@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 
 async function resolveUser(request: NextRequest) {
   const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -105,28 +106,27 @@ async function retryFailedRowsAsync(
       // Since we only store email and error, we need to reconstruct from any available data
       // For now, we'll do a basic retry with minimal data
 
-      const invoiceNumber = generateInvoiceNumber()
-      const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
-
       const clientUser = await prisma.user.findUnique({
         where: { email: clientEmail.toLowerCase() },
         select: { id: true },
       })
 
-      const invoice = await prisma.invoice.create({
-        data: {
-          userId,
-          invoiceNumber,
-          clientEmail: clientEmail.toLowerCase(),
-          clientName: null,
-          description: 'Retry from bulk invoice job',
-          amount: 0,
-          currency: 'USD',
-          paymentLink,
-          dueDate: null,
-          clientId: clientUser?.id || null,
-        },
-      })
+      const invoice = await withInvoiceNumberRetry((invoiceNumber) =>
+        prisma.invoice.create({
+          data: {
+            userId,
+            invoiceNumber,
+            clientEmail: clientEmail.toLowerCase(),
+            clientName: null,
+            description: 'Retry from bulk invoice job',
+            amount: 0,
+            currency: 'USD',
+            paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+            dueDate: null,
+            clientId: clientUser?.id || null,
+          },
+        }),
+      )
 
       // Find and update the result entry
       const resultIndex = allResults.findIndex((r) => r.recipientEmail === clientEmail)
@@ -188,6 +188,3 @@ async function retryFailedRowsAsync(
   }
 }
 
-function generateInvoiceNumber(): string {
-  return `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
-}

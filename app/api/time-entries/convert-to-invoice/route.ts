@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 import { convertTimeEntriesSchema } from '@/lib/validations'
 
 /**
@@ -116,43 +116,45 @@ export async function POST(request: NextRequest) {
     lineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
   )
 
-  const invoiceNumber = generateInvoiceNumber()
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
-  const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
   const description = `Time entries (${entries.length}) converted to invoice`
 
   // Create the invoice, its line items, and mark the entries billed atomically.
-  const invoice = await prisma.$transaction(async (tx) => {
-    const createdInvoice = await tx.invoice.create({
-      data: {
-        userId: user.id,
-        invoiceNumber,
-        clientEmail: clientEmail.toLowerCase(),
-        clientName: clientName ?? null,
-        description,
-        amount: totalAmount,
-        currency,
-        paymentLink,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        lineItems: {
-          create: lineItems.map((item) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            position: item.position,
-          })),
+  // The whole transaction is retried on an invoiceNumber P2002 collision —
+  // it is atomic, so a retry cannot double-bill the time entries.
+  const invoice = await withInvoiceNumberRetry((invoiceNumber) =>
+    prisma.$transaction(async (tx) => {
+      const createdInvoice = await tx.invoice.create({
+        data: {
+          userId: user.id,
+          invoiceNumber,
+          clientEmail: clientEmail.toLowerCase(),
+          clientName: clientName ?? null,
+          description,
+          amount: totalAmount,
+          currency,
+          paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          lineItems: {
+            create: lineItems.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              position: item.position,
+            })),
+          },
         },
-      },
-    })
+      })
 
-    await tx.timeEntry.updateMany({
-      where: { id: { in: uniqueIds }, userId: user.id },
-      data: { status: 'billed', invoiceId: createdInvoice.id },
-    })
+      await tx.timeEntry.updateMany({
+        where: { id: { in: uniqueIds }, userId: user.id },
+        data: { status: 'billed', invoiceId: createdInvoice.id },
+      })
 
-    return createdInvoice
-  })
+      return createdInvoice
+    }),
+  )
 
   return NextResponse.json(
     {

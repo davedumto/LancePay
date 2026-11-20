@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 import { sendInvoiceToClient } from '@/lib/email'
 import { createInvoiceSchema } from '@/lib/validations'
 
@@ -72,9 +72,7 @@ export async function POST(request: NextRequest) {
   }
   const { clientEmail, clientName, description, amount, currency, dueDate } = parsed.data
 
-  const invoiceNumber = generateInvoiceNumber()
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
-  const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
   // Auto-link client if they have a LancePay account
   const clientUser = await prisma.user.findUnique({
@@ -82,20 +80,24 @@ export async function POST(request: NextRequest) {
     select: { id: true },
   })
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      userId: user.id,
-      invoiceNumber,
-      clientEmail: clientEmail.toLowerCase(),
-      clientName: clientName || null,
-      description,
-      amount,
-      currency,
-      paymentLink,
-      dueDate: dueDate ? new Date(dueDate) : null,
-      clientId: clientUser?.id || null,
-    },
-  })
+  // paymentLink embeds the invoice number, so both are generated inside the
+  // retry callback — a P2002 collision gets a fresh number and link.
+  const invoice = await withInvoiceNumberRetry((invoiceNumber) =>
+    prisma.invoice.create({
+      data: {
+        userId: user.id,
+        invoiceNumber,
+        clientEmail: clientEmail.toLowerCase(),
+        clientName: clientName || null,
+        description,
+        amount,
+        currency,
+        paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        clientId: clientUser?.id || null,
+      },
+    }),
+  )
 
   // Fire-and-forget — email failure must not block the API response
   sendInvoiceToClient({
