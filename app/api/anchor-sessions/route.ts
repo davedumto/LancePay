@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { isSupportedAnchor, SUPPORTED_ANCHORS } from '@/lib/anchors'
-import { initiateSep24Session } from '@/lib/sep24'
+import { initiateSep24Session, SEP24_DIRECTIONS, type Sep24Direction } from '@/lib/sep24'
 
 const SESSION_EXPIRY_MINUTES = parseInt(
   process.env.ANCHOR_SESSION_EXPIRY_MINUTES ?? '30'
@@ -102,7 +102,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse and validate request body
-    let body: { anchorId?: string }
+    let body: {
+      anchorId?: string
+      direction?: string
+      assetCode?: string
+      account?: string
+      amount?: string | number
+      memo?: string
+    }
     try {
       body = await request.json()
     } catch {
@@ -122,6 +129,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate direction when provided; these sessions are cash-out flows,
+    // so 'withdraw' is the default. 'deposit' is only for on-ramp sessions.
+    let direction: Sep24Direction = 'withdraw'
+    if (body.direction !== undefined) {
+      if (
+        typeof body.direction !== 'string' ||
+        !(SEP24_DIRECTIONS as readonly string[]).includes(body.direction)
+      ) {
+        return NextResponse.json(
+          {
+            error: 'Bad Request',
+            message: `Invalid direction: "${body.direction}". Supported directions: ${SEP24_DIRECTIONS.join(', ')}`,
+          },
+          { status: 400 }
+        )
+      }
+      direction = body.direction as Sep24Direction
+    }
+
     // Validate anchorId against supported list
     if (!isSupportedAnchor(anchorId)) {
       return NextResponse.json(
@@ -136,7 +162,15 @@ export async function POST(request: NextRequest) {
     // Initiate SEP-24 interactive flow with the anchor
     let sep24Result
     try {
-      sep24Result = await initiateSep24Session(anchorId, user.id)
+      sep24Result = await initiateSep24Session(anchorId, {
+        direction,
+        assetCode: body.assetCode,
+        // The user's id is the anchor-side account identifier unless the
+        // client supplies an explicit account.
+        account: body.account ?? user.id,
+        amount: body.amount,
+        memo: body.memo,
+      })
     } catch (error) {
       console.error('SEP-24 initiation error:', error instanceof Error ? error.message : 'Unknown error')
       return NextResponse.json(
