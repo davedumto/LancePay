@@ -256,3 +256,66 @@ describe("Audit Log Security", () => {
     });
   });
 });
+
+describe("Audit metadata masking edge cases (#1834)", () => {
+  it("masks IPv6 addresses keeping the first two hextets", () => {
+    const masked = maskSensitiveData({ ip: "2001:db8:85a3::8a2e:370:7334" }, false);
+    expect(masked?.ip).toBe("2001:db8:****");
+  });
+
+  it("masks IPv4-mapped IPv6 addresses as IPv4", () => {
+    const masked = maskSensitiveData({ ip: "::ffff:192.168.1.100" }, false);
+    expect(masked?.ip).toBe("192.168.***.***");
+  });
+
+  it("fully masks unrecognized ip values instead of dropping them", () => {
+    const masked = maskSensitiveData({ ip: "not-an-ip" }, false);
+    expect(masked?.ip).toBe("****");
+  });
+
+  it("masks email-like strings nested inside objects", () => {
+    const metadata = {
+      client: { email: "client@example.com", name: "Acme" },
+      invoiceId: "inv_1",
+    };
+    const masked = maskSensitiveData(metadata, false);
+    expect(masked?.client).toEqual({ email: "c***@example.com", name: "Acme" });
+    expect(masked?.invoiceId).toBe("inv_1");
+  });
+
+  it("masks email-like strings inside arrays", () => {
+    const metadata = { attendees: ["a@x.com", "plain-string", { contact: "b@y.org" }] };
+    const masked = maskSensitiveData(metadata, false);
+    expect(masked?.attendees).toEqual(["a***@x.com", "plain-string", { contact: "b***@y.org" }]);
+  });
+
+  it("masks nested ip and userAgent fields at any level", () => {
+    const metadata = { request: { ip: "10.1.2.3", userAgent: "curl/8" } };
+    const masked = maskSensitiveData(metadata, false);
+    expect(masked?.request).toEqual({ ip: "10.1.***.***", userAgent: "***" });
+  });
+
+  it("returns values beyond the depth limit unchanged instead of recursing forever", () => {
+    const metadata = { a: { b: { c: { d: { e: { f: { email: "deep@example.com" } } } } } } };
+    const masked = maskSensitiveData(metadata, false) as Record<string, unknown>;
+    // Levels a-e are masked copies; f sits beyond MAX_MASK_DEPTH and is
+    // returned as the original (unmasked) subtree.
+    const e = (masked.a as Record<string, unknown>).b as Record<string, unknown>;
+    expect(e).toBeDefined();
+    const deepEmail = JSON.stringify(masked);
+    expect(deepEmail).toContain("deep@example.com");
+  });
+
+  it("terminates on cyclic metadata via the depth cap", () => {
+    const cyclic: Record<string, unknown> = { ip: "1.2.3.4" };
+    cyclic.self = cyclic;
+    const masked = maskSensitiveData(cyclic, false) as Record<string, unknown>;
+    expect(masked.ip).toBe("1.2.***.***");
+  });
+
+  it("does not mutate the original metadata object", () => {
+    const metadata = { client: { email: "client@example.com" } };
+    maskSensitiveData(metadata, false);
+    expect(metadata.client.email).toBe("client@example.com");
+  });
+});

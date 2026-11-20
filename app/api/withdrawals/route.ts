@@ -234,20 +234,12 @@ export async function POST(request: NextRequest) {
           { status: 401 },
         );
       }
-      if (user.twoFactorSecret) {
-        const secret = decrypt(user.twoFactorSecret);
-        const verified = speakeasy.totp.verify({
-          secret,
-          encoding: "base32",
-          token: code,
-          window: 1,
-        });
-        if (!verified) {
-          return NextResponse.json(
-            { error: "Invalid 2FA code" },
-            { status: 401 },
-          );
-        }
+      const twoFactor = await verifyTwoFactorForRequest(user, code);
+      if (!twoFactor.ok) {
+        return NextResponse.json(
+          { error: twoFactor.error },
+          { status: twoFactor.status },
+        );
       }
     }
 
