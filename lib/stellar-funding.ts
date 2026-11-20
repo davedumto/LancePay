@@ -3,13 +3,13 @@ import {
   BASE_FEE,
   Horizon,
   Keypair,
-  Networks,
   Operation,
   StrKey,
   TransactionBuilder,
   FeeBumpTransaction,
   Transaction,
 } from '@stellar/stellar-sdk'
+import { STELLAR_NETWORK_CONFIG } from '@/lib/stellar-network'
 
 /**
  * Runtime config for Stellar network operations.
@@ -79,8 +79,9 @@ const RETRY_POLICY = {
  * Avoids non-null assertions and prevents import-time crashes.
  */
 function getConfig(): StellarRuntimeConfig {
-  const network = (process.env.STELLAR_NETWORK || 'testnet').toLowerCase()
-  const isMainnet = network === 'mainnet' || network === 'public'
+  // Network, Horizon URL and passphrase come from the shared resolver in
+  // lib/stellar-network.ts so funding can never disagree with payment signing.
+  const networkConfig = STELLAR_NETWORK_CONFIG
 
   const fundingSecret = process.env.STELLAR_FUNDING_WALLET_SECRET
   if (!fundingSecret) {
@@ -98,10 +99,8 @@ function getConfig(): StellarRuntimeConfig {
   }
 
   return {
-    horizonUrl: isMainnet
-      ? 'https://horizon.stellar.org'
-      : 'https://horizon-testnet.stellar.org',
-    networkPassphrase: isMainnet ? Networks.PUBLIC : Networks.TESTNET,
+    horizonUrl: networkConfig.horizonUrl,
+    networkPassphrase: networkConfig.networkPassphrase,
     fundingSecret,
     startingBalanceXlm: '2.0',
     lowBalanceThresholdXlm: '100.0',
@@ -309,11 +308,7 @@ async function submitCreateAccountWithRetry(params: {
  * Get the USDC asset from environment variables.
  */
 function getUsdcAsset(): Asset {
-  const code = process.env.NEXT_PUBLIC_USDC_CODE || 'USDC'
-  const issuer =
-    process.env.NEXT_PUBLIC_USDC_ISSUER ||
-    'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
-  return new Asset(code, issuer)
+  return new Asset(STELLAR_NETWORK_CONFIG.usdcCode, STELLAR_NETWORK_CONFIG.usdcIssuer)
 }
 
 /**

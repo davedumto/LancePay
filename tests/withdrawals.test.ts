@@ -34,7 +34,7 @@ vi.mock('@/lib/crypto', () => ({
 }))
 
 vi.mock('@/lib/rate-limit', () => ({
-  twoFactorLimiter: { check: vi.fn().mockReturnValue({ allowed: true }) },
+  twoFactorLimiter: { check: vi.fn().mockResolvedValue({ allowed: true }) },
   buildRateLimitResponse: vi.fn(),
 }))
 
@@ -233,7 +233,7 @@ describe('Withdrawal API', () => {
 
   it('returns 429 when 2FA rate limit is exceeded', async () => {
     const { twoFactorLimiter } = await import('@/lib/rate-limit')
-    vi.mocked(twoFactorLimiter.check).mockReturnValue({ allowed: false, limit: 5, remaining: 0, resetAt: Date.now() + 15 * 60 * 1000, policyId: '2fa-verify' })
+    vi.mocked(twoFactorLimiter.check).mockResolvedValue({ allowed: false, limit: 5, remaining: 0, resetAt: Date.now() + 15 * 60 * 1000, policyId: '2fa-verify' })
     
     const { buildRateLimitResponse } = await import('@/lib/rate-limit')
     vi.mocked(buildRateLimitResponse).mockImplementation((result) => 

@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Verification code has already been used' }, { status: 409 })
     }
 
-    const rateLimitResult = phoneRecoveryVerifyLimiter.check(verification.id)
+    const rateLimitResult = await phoneRecoveryVerifyLimiter.check(verification.id)
     if (!rateLimitResult.allowed) return buildRateLimitResponse(rateLimitResult)
 
     if (rawCode.trim() !== verification.code) {

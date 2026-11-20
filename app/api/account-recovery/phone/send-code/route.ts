@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     const rateLimitKey = `${user.id}:${phone}`
-    const rateLimitResult = phoneRecoverySendLimiter.check(rateLimitKey)
+    const rateLimitResult = await phoneRecoverySendLimiter.check(rateLimitKey)
     if (!rateLimitResult.allowed) {
       return buildRateLimitResponse(rateLimitResult)
     }

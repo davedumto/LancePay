@@ -1,6 +1,5 @@
 import {
   Horizon,
-  Networks,
   Asset,
   Keypair,
   TransactionBuilder,
@@ -12,27 +11,24 @@ import {
   BASE_FEE,
 } from "@stellar/stellar-sdk";
 
+import { STELLAR_NETWORK_CONFIG } from "@/lib/stellar-network";
+
 /**
  * Stellar Network Configuration
+ * Resolved once by lib/stellar-network.ts — the single source of truth shared
+ * with lib/stellar-funding.ts. Throws at module load on unsafe mainnet config.
  */
-export const STELLAR_NETWORK: string =
-  process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet"
-    ? Networks.PUBLIC
-    : Networks.TESTNET;
+export const STELLAR_NETWORK: string = STELLAR_NETWORK_CONFIG.networkPassphrase;
 
-export const HORIZON_URL: string =
-  process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
-  "https://horizon-testnet.stellar.org";
+export const HORIZON_URL: string = STELLAR_NETWORK_CONFIG.horizonUrl;
 
 export const server = new Horizon.Server(HORIZON_URL);
 
 /**
- * USDC Asset
- * Fallback to testnet USDC issuer if not configured
+ * USDC Asset issuer, resolved by lib/stellar-network.ts. On testnet it falls
+ * back to the well-known testnet issuer; on mainnet the env var is required.
  */
-const USDC_ISSUER =
-  process.env.NEXT_PUBLIC_USDC_ISSUER ||
-  "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet USDC issuer
+const USDC_ISSUER = STELLAR_NETWORK_CONFIG.usdcIssuer;
 
 /**
  * Type definition for account balances
@@ -71,7 +67,7 @@ interface StellarErrorResponse {
  * USDC Asset
  */
 export const USDC_ASSET = new Asset(
-  process.env.NEXT_PUBLIC_USDC_CODE || "USDC",
+  STELLAR_NETWORK_CONFIG.usdcCode,
   USDC_ISSUER,
 );
 

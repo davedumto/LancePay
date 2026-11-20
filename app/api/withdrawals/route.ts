@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
   let responseStatus = 201;
   try {
     if (user.twoFactorEnabled) {
-      const rateLimitResult = twoFactorLimiter.check(user.id);
+      const rateLimitResult = await twoFactorLimiter.check(user.id);
       if (!rateLimitResult.allowed) {
         return buildRateLimitResponse(rateLimitResult);
       }
