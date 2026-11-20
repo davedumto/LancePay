@@ -1,6 +1,30 @@
 import { PrivyClient, type AuthTokenClaims } from '@privy-io/server-auth'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { hashToken } from '@/lib/crypto'
+
+/**
+ * Minimum age of the stored lastUsedAt before verifyApiKey rewrites it.
+ * Writing on every request caused one UPDATE per call on hot keys; a
+ * coarse timestamp is enough for the stale-key report, which works on a
+ * multi-day threshold. Override with API_KEY_LAST_USED_WRITE_INTERVAL_MS.
+ */
+const API_KEY_LAST_USED_WRITE_INTERVAL_MS = (() => {
+  const parsed = Number(process.env.API_KEY_LAST_USED_WRITE_INTERVAL_MS ?? 60_000)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60_000
+})()
+
+const verifiedApiKeySelect = {
+  id: true,
+  userId: true,
+  name: true,
+  isActive: true,
+  deactivatesAt: true,
+  lastUsedAt: true,
+  createdAt: true,
+} satisfies Prisma.ApiKeySelect
+
+type VerifiedApiKey = Prisma.ApiKeyGetPayload<{ select: typeof verifiedApiKeySelect }>
 
 const privy = new PrivyClient(
   process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
@@ -61,7 +85,7 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenClaims | 
  */
 export async function verifyApiKey(
   rawApiKey: string | null | undefined
-): Promise<{ userId: string; apiKey: any } | null> {
+): Promise<{ userId: string; apiKey: VerifiedApiKey } | null> {
   if (!rawApiKey) return null
 
   try {
@@ -69,15 +93,7 @@ export async function verifyApiKey(
 
     const apiKey = await prisma.apiKey.findUnique({
       where: { hashedKey },
-      select: {
-        id: true,
-        userId: true,
-        name: true,
-        isActive: true,
-        deactivatesAt: true,
-        lastUsedAt: true,
-        createdAt: true,
-      },
+      select: verifiedApiKeySelect,
     })
 
     if (!apiKey) return null
@@ -91,15 +107,21 @@ export async function verifyApiKey(
       return null
     }
 
-    // Key is valid - update lastUsedAt
-    await prisma.apiKey.update(
-      {
-        where: { id: apiKey.id },
-        data: { lastUsedAt: now },
-      }
-    ).catch(() => {
-      // Silently fail on lastUsedAt update - don't block request on this
-    })
+    // Key is valid - refresh lastUsedAt at most once per interval so hot
+    // keys don't issue one UPDATE per request.
+    const lastUsedStale =
+      !apiKey.lastUsedAt ||
+      now.getTime() - apiKey.lastUsedAt.getTime() >= API_KEY_LAST_USED_WRITE_INTERVAL_MS
+    if (lastUsedStale) {
+      await prisma.apiKey.update(
+        {
+          where: { id: apiKey.id },
+          data: { lastUsedAt: now },
+        }
+      ).catch(() => {
+        // Silently fail on lastUsedAt update - don't block request on this
+      })
+    }
 
     return { userId: apiKey.userId, apiKey }
   } catch (error) {
