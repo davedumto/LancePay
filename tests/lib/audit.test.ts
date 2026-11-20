@@ -1,13 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import crypto from 'crypto'
+
+const createMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/db', () => ({
   prisma: {
-    auditEvent: { create: vi.fn() },
+    auditEvent: { create: createMock },
   },
 }))
 
-import { generateSignature, verifySignature } from '@/lib/audit'
+import { generateSignature, logAuditEvent, verifySignature } from '@/lib/audit'
 
 describe('lib/audit verifySignature helper (#1521)', () => {
   const invoiceId = 'inv_123'
@@ -62,5 +64,59 @@ describe('lib/audit verifySignature helper (#1521)', () => {
     const sig = generateSignature(invoiceId, eventType, timestamp, null)
     expect(verifySignature(invoiceId, eventType, timestamp, null, sig)).toBe(true)
     expect(verifySignature(invoiceId, eventType, timestamp, { different: true }, sig)).toBe(false)
+  })
+})
+
+describe('lib/audit logAuditEvent signature persistence (#1833)', () => {
+  beforeEach(() => {
+    createMock.mockReset()
+    // Simulate prisma returning the created row, including the explicit
+    // createdAt that was signed.
+    createMock.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'evt_1',
+      ...data,
+    }))
+  })
+
+  it('persists the signed timestamp as createdAt so the signature verifies', async () => {
+    const metadata = { ip: '10.0.0.1', userAgent: 'vitest' }
+    const row = await logAuditEvent('inv_1', 'invoice.paid', 'user_1', metadata)
+
+    expect(createMock).toHaveBeenCalledTimes(1)
+    const storedTimestamp = (row.createdAt as Date).toISOString()
+
+    expect(
+      verifySignature('inv_1', 'invoice.paid', storedTimestamp, metadata, row.signature as string)
+    ).toBe(true)
+  })
+
+  it('verifies regardless of metadata key order', async () => {
+    const row = await logAuditEvent('inv_2', 'invoice.created', null, {
+      zebra: 1,
+      alpha: { nested: true, a: 1 },
+    })
+
+    const reordered = { alpha: { a: 1, nested: true }, zebra: 1 }
+    expect(
+      verifySignature(
+        'inv_2',
+        'invoice.created',
+        (row.createdAt as Date).toISOString(),
+        reordered,
+        row.signature as string
+      )
+    ).toBe(true)
+  })
+
+  it('fails verification when the timestamp or metadata is altered', async () => {
+    const row = await logAuditEvent('inv_3', 'invoice.paid', 'user_1', { ip: '10.0.0.1' })
+    const ts = (row.createdAt as Date).toISOString()
+
+    expect(
+      verifySignature('inv_3', 'invoice.paid', new Date(Date.now() + 1000).toISOString(), { ip: '10.0.0.1' }, row.signature as string)
+    ).toBe(false)
+    expect(
+      verifySignature('inv_3', 'invoice.paid', ts, { ip: '10.0.0.2' }, row.signature as string)
+    ).toBe(false)
   })
 })

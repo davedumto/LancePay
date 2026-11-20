@@ -1,5 +1,5 @@
 import speakeasy from 'speakeasy'
-import { decrypt } from '@/lib/crypto'
+import { decrypt, DecryptionError } from '@/lib/crypto'
 
 export type TwoFactorUser = {
   twoFactorEnabled: boolean
@@ -26,7 +26,15 @@ export function verifyTwoFactorForRequest(
     return { ok: false, status: 401, error: '2FA is misconfigured; contact support' }
   }
 
-  const secret = decrypt(user.twoFactorSecret)
+  let secret: string
+  try {
+    secret = decrypt(user.twoFactorSecret)
+  } catch (error) {
+    if (error instanceof DecryptionError) {
+      return { ok: false, status: 401, error: '2FA is misconfigured; contact support' }
+    }
+    throw error
+  }
   const verified = speakeasy.totp.verify({
     secret,
     encoding: 'base32',

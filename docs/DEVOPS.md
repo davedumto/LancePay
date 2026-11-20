@@ -453,6 +453,37 @@ export async function POST(request: Request) {
 | **HTTPS** | Enforced by Vercel |
 | **Webhook Auth** | HMAC signature verification |
 
+### Encryption at Rest (`lib/crypto.ts`)
+
+Secrets such as TOTP seeds (`User.twoFactorSecret`) and collective wallet
+keys (`encryptedSecretKey`) are encrypted with AES-256. Key material is
+`sha256(ENCRYPTION_KEY)`; set `ENCRYPTION_KEY` to at least 32 bytes of
+random entropy (e.g. `openssl rand -base64 32`). The app refuses to start
+encrypting in production without it — a development-only fallback exists
+for local/test environments and logs a warning.
+
+**Envelope formats**
+
+- `v2:` (current) — `v2:<nonce_hex>:<ciphertext_hex>:<auth_tag_hex>` using
+  AES-256-GCM with a random 12-byte nonce and 16-byte auth tag.
+- legacy (read-only) — `<iv_hex>:<ciphertext_hex>` using AES-256-CBC with a
+  16-byte IV and no MAC. `decrypt` still reads these rows; the next `encrypt`
+  call rewrites them in the v2 envelope.
+
+`decrypt` throws `DecryptionError` for malformed input, unknown version
+prefixes, wrong keys, or failed authentication instead of returning the
+input unchanged.
+
+**Key rotation procedure**
+
+1. Generate a new key: `openssl rand -base64 32`.
+2. Write a one-off script that decrypts each stored secret with the old key
+   and re-encrypts it with the new key (or temporarily support both keys in
+   `resolveSecretKey`/`getKey` during the migration window).
+3. Deploy the new `ENCRYPTION_KEY`; rows migrate to the v2 envelope
+   automatically on their next write.
+4. Remove the old key once all rows are re-encrypted.
+
 ---
 
 ## 5. Deployment Pipeline
