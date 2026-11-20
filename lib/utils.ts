@@ -5,15 +5,57 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
+function resolveCurrency(
+  currency: string,
+  locale: string,
+): { locale: string; currency: string; fractionDigits: number } {
+  try {
+    // Intl derives the correct fraction digits for the currency (USD/NGN=2,
+    // JPY=0, etc.) — do not hardcode them per call site.
+    const fractionDigits = new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+    }).resolvedOptions().maximumFractionDigits
+    return { locale, currency, fractionDigits }
+  } catch {
+    throw new Error(`Invalid currency code: "${currency}"`)
+  }
 }
 
-export function formatNaira(amount: number) {
-  return new Intl.NumberFormat('en-NG', { 
-    style: 'currency', 
-    currency: 'NGN', 
-    maximumFractionDigits: 0 
+export function formatCurrency(
+  amount: number,
+  currency = 'USD',
+  locale = 'en-US',
+) {
+  const { locale: resolvedLocale, currency: code, fractionDigits } =
+    resolveCurrency(currency, locale)
+  return new Intl.NumberFormat(resolvedLocale, {
+    style: 'currency',
+    currency: code,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(amount)
+}
+
+export interface FormatNairaOptions {
+  locale?: string
+  /**
+   * Show kobo (the currency's full fraction digits) instead of rounding to
+   * whole naira. Withdrawal confirmations and any amount that feeds fee
+   * math must pass `exact: true`.
+   */
+  exact?: boolean
+}
+
+export function formatNaira(amount: number, options: FormatNairaOptions = {}) {
+  const locale = options.locale ?? 'en-NG'
+  if (options.exact) {
+    return formatCurrency(amount, 'NGN', locale)
+  }
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
   }).format(amount)
 }
 

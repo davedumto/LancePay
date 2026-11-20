@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  formatCurrency,
+  formatNaira,
   generateInvoiceNumber,
   isInvoiceNumberCollision,
   withInvoiceNumberRetry,
@@ -13,6 +15,47 @@ function p2002(target?: unknown) {
     message: 'Unique constraint failed',
   }
 }
+
+describe('formatCurrency', () => {
+  it('formats USD with the en-US locale by default', () => {
+    expect(formatCurrency(1234.5)).toBe('$1,234.50')
+  })
+
+  it('derives fraction digits from the currency, not a hardcoded value', () => {
+    // NGN has 2 fraction digits like USD, but the point is they come from
+    // Intl — JPY (zero-decimal) must not show .00.
+    expect(formatCurrency(1500.5, 'NGN')).toContain('1,500.50')
+    expect(formatCurrency(1500, 'JPY', 'ja-JP')).not.toContain('.00')
+  })
+
+  it('honours an explicit locale', () => {
+    const formatted = formatCurrency(1234.5, 'EUR', 'de-DE')
+    expect(formatted).toContain('1.234,50')
+  })
+
+  it('throws a clear error for an invalid currency code', () => {
+    expect(() => formatCurrency(10, 'NOT_A_CURRENCY')).toThrow(
+      'Invalid currency code',
+    )
+  })
+})
+
+describe('formatNaira', () => {
+  it('rounds to whole naira by default for display', () => {
+    expect(formatNaira(1500.75)).not.toContain('.75')
+    expect(formatNaira(1500.75)).toContain('1,501')
+  })
+
+  it('shows kobo when exact is requested for withdrawal confirmations', () => {
+    expect(formatNaira(1500.75, { exact: true })).toContain('1,500.75')
+  })
+
+  it('accepts a custom locale', () => {
+    // Intl separates the currency code from the amount with a
+    // non-breaking space.
+    expect(formatNaira(1000, { locale: 'en-US' })).toMatch(/NGN\s1,000/)
+  })
+})
 
 describe('generateInvoiceNumber', () => {
   it('returns the documented INV-<timestamp>-<random> format', () => {

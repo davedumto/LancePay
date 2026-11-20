@@ -240,6 +240,22 @@ If you hit the limit, split the file.
 
 ---
 
+## Currency & Number Formatting
+
+Use `formatCurrency` / `formatNaira` from `lib/utils.ts` — never hand-roll
+`Intl.NumberFormat` calls or `toFixed` for money display.
+
+- `formatCurrency(amount, currency, locale)` derives fraction digits from
+  `Intl` for the currency (USD/NGN → 2, JPY → 0). Pass the user's locale;
+  the default is `en-US`/`USD`.
+- `formatNaira(amount)` rounds to whole naira for display. Pass
+  `{ exact: true }` wherever the amount feeds fee math or is shown in a
+  withdrawal/payment confirmation — kobo must not be hidden there.
+- Locale and currency are display-only concerns; never format a value and
+  then parse it back for calculations.
+
+---
+
 ## Remember
 
 > "The best code is no code at all."
