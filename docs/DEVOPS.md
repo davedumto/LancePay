@@ -323,6 +323,26 @@ export function AuthButton() {
 }
 ```
 
+### Client IP resolution and trusted proxies
+
+`lib/client-ip.ts` is the single resolver used by both the rate limiter
+(`lib/rate-limit.ts`) and audit metadata (`lib/audit.ts`). Resolution order:
+
+1. `x-real-ip` — set by the hosting platform edge; not client-spoofable on
+   Vercel.
+2. `cf-connecting-ip` — set by Cloudflare; trusted only when the request
+   actually arrives through Cloudflare.
+3. `x-vercel-forwarded-for`, then `x-forwarded-for` — only the hop at index
+   `hops.length - TRUSTED_PROXY_HOPS` is trusted, because every proxy in front
+   of the app appends the address it observed. The left-most entries are
+   client-controlled and must never be used directly.
+
+**Deployment assumption:** set `TRUSTED_PROXY_HOPS` to the number of trusted
+reverse proxies in front of the Next.js server (e.g. `1` for a single
+load balancer, `2` for Cloudflare + load balancer). If your platform injects a
+dedicated client-IP header (Cloudflare, Vercel), steps 1–2 already cover it and
+`TRUSTED_PROXY_HOPS` only matters for generic `x-forwarded-for` setups.
+
 ### Upstash Redis Usage
 
 ```typescript

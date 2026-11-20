@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const VALID_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const
 type LogLevel = typeof VALID_LEVELS[number]
@@ -18,7 +19,7 @@ export async function PATCH(request: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 

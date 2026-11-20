@@ -1,5 +1,6 @@
 import crypto, { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
+import { resolveClientIp } from "@/lib/client-ip";
 
 const AUDIT_SECRET =
   process.env.AUDIT_SECRET || "default-audit-secret-change-in-production";
@@ -145,11 +146,9 @@ export function maskSensitiveData(
 }
 
 export function extractRequestMetadata(headers: Headers): AuditMetadata {
+  const ip = resolveClientIp(headers);
   return {
-    ip:
-      headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      headers.get("x-real-ip") ||
-      undefined,
+    ip: ip === 'anonymous' ? undefined : ip,
     userAgent: headers.get("user-agent") || undefined,
   };
 }

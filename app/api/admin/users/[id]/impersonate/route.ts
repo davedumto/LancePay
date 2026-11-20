@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 const DEFAULT_SESSION_DURATION_MINUTES = 30
 const IMPERSONATION_SECRET =
@@ -58,7 +59,7 @@ async function getAuthenticatedAdmin(
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || user.role !== 'admin') {
+  if (!user || !isAdmin(user)) {
     return null
   }
 

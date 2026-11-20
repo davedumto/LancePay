@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
 import { sharedCache } from '@/lib/shared-cache'
+import { isAdmin } from '@/lib/authorization'
 
 const disengageKillSwitchSchema = z.object({
   incidentRef: z.string().trim().min(1, 'incidentRef is required'),
@@ -24,7 +25,7 @@ async function getAuthenticatedAdmin(
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || user.role !== 'admin') {
+  if (!user || !isAdmin(user)) {
     return null
   }
 

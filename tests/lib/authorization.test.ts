@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   checkAuditLogAccess,
+  isAdmin,
   isAdminEmail,
   ADMIN_EMAILS,
 } from "@/lib/authorization";
@@ -254,5 +255,31 @@ describe("Audit Log Security", () => {
       // Verify pattern matches email domain
       expect(masked?.email).toMatch(/@example\.com$/);
     });
+  });
+});
+
+describe("isAdmin", () => {
+  it("accepts a role-only admin", () => {
+    vi.stubEnv("ADMIN_EMAILS", "");
+    expect(isAdmin({ role: "admin", email: "user@example.com" })).toBe(true);
+    expect(isAdmin({ role: "superadmin" })).toBe(true);
+    expect(isAdmin({ role: "super_admin" })).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
+  it("accepts an env-only admin with a non-admin role", () => {
+    vi.stubEnv("ADMIN_EMAILS", "bootstrap@lancepay.com");
+    expect(
+      isAdmin({ role: "client", email: "bootstrap@lancepay.com" }),
+    ).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects a user present in neither source", () => {
+    vi.stubEnv("ADMIN_EMAILS", "admin@lancepay.com");
+    expect(isAdmin({ role: "client", email: "user@example.com" })).toBe(false);
+    expect(isAdmin({ role: "compliance" })).toBe(false);
+    expect(isAdmin({})).toBe(false);
+    vi.unstubAllEnvs();
   });
 });

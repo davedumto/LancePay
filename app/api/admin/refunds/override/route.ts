@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import crypto from 'crypto'
+import { isAdmin } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     const admin = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!admin) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (admin.role !== 'admin') {
+    if (!isAdmin(admin)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 

@@ -20,6 +20,10 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/authorization", () => ({
   isAdminEmail: (email: string) => email.includes("superadmin@lancepay.com"),
+  isAdmin: (user: { role?: string; email?: string } | null | undefined) =>
+    !!user &&
+    (["admin", "superadmin", "super_admin"].includes(user.role ?? "") ||
+      (user.email ?? "").includes("superadmin@lancepay.com")),
 }));
 
 const BASE_URL = "http://localhost/api/admin/users/search";

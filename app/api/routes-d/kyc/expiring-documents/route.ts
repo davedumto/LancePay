@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { z } from 'zod'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * Document expiry windows (in days) by document type.
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check authorization: admin or compliance role only
-    if (user.role !== 'admin' && user.role !== 'compliance') {
+    if (!isAdmin(user) && user.role !== 'compliance') {
       return NextResponse.json(
         { error: 'Forbidden: admin or compliance access required' },
         { status: 403 }
