@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { generateInvoiceNumber } from '@/lib/utils'
+import { withInvoiceNumberRetry } from '@/lib/utils'
 import { logger } from '@/lib/logger'
 
 // POST /api/routes-b/quotes/[id]/convert — convert an accepted quote into a
@@ -52,9 +52,7 @@ export async function POST(
       )
     }
 
-    const invoiceNumber = generateInvoiceNumber()
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
-    const paymentLink = `${baseUrl}/pay/${invoiceNumber}`
 
     // Auto-link client if they have a LancePay account, matching the
     // convention in app/api/invoices POST.
@@ -63,25 +61,27 @@ export async function POST(
       select: { id: true },
     })
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        userId: user.id,
-        invoiceNumber,
-        clientEmail: quote.clientEmail.toLowerCase(),
-        clientName: quote.clientName,
-        description: quote.description,
-        amount: quote.amount,
-        currency: quote.currency,
-        paymentLink,
-        clientId: clientUser?.id || null,
-      },
-      select: {
-        id: true,
-        invoiceNumber: true,
-        paymentLink: true,
-        status: true,
-      },
-    })
+    const invoice = await withInvoiceNumberRetry((invoiceNumber) =>
+      prisma.invoice.create({
+        data: {
+          userId: user.id,
+          invoiceNumber,
+          clientEmail: quote.clientEmail.toLowerCase(),
+          clientName: quote.clientName,
+          description: quote.description,
+          amount: quote.amount,
+          currency: quote.currency,
+          paymentLink: `${baseUrl}/pay/${invoiceNumber}`,
+          clientId: clientUser?.id || null,
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          paymentLink: true,
+          status: true,
+        },
+      }),
+    )
 
     await prisma.quote.update({
       where: { id: quote.id },

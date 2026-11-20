@@ -69,7 +69,11 @@ export async function POST(request: NextRequest) {
         invoiceNumber = generateInvoiceNumber()
       } else {
         const ts = Date.now().toString(36).toUpperCase()
-        const rand = Math.random().toString(36).substring(2, 6).toUpperCase()
+        const bytes = new Uint8Array(2)
+        globalThis.crypto.getRandomValues(bytes)
+        const rand = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase()
         invoiceNumber = `${activePrefix}-${ts}-${rand}`
       }
 

@@ -10,7 +10,14 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 vi.mock('@/lib/auth', () => ({ verifyAuthToken: vi.fn() }))
-vi.mock('@/lib/utils', () => ({ generateInvoiceNumber: vi.fn() }))
+vi.mock('@/lib/utils', () => {
+  const generateInvoiceNumber = vi.fn()
+  return {
+    generateInvoiceNumber,
+    withInvoiceNumberRetry: (fn: (invoiceNumber: string) => unknown) =>
+      fn(generateInvoiceNumber()),
+  }
+})
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), error: vi.fn() } }))
 
 import { prisma } from '@/lib/db'
