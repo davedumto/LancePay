@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import {
+  computePersistedQueryHash,
+  normalizePersistedQuery,
+  registerPersistedQuery,
+} from '@/lib/persisted-queries'
 
 export type GatewayTier = 'free' | 'starter' | 'pro' | 'enterprise'
 
@@ -21,21 +25,14 @@ const registerPersistedQuerySchema = z.object({
   tier: z.enum(['free', 'starter', 'pro', 'enterprise']).optional(),
 })
 
+// Normalization + hashing live in lib/persisted-queries so registration
+// and lookup enforce the same rule: SHA-256 of the normalized query.
 export function normalizeQuery(query: string): string {
-  // Strip comments
-  const lines = query.split('\n')
-  const withoutComments = lines
-    .map((line) => {
-      const commentIdx = line.indexOf('#')
-      return commentIdx >= 0 ? line.slice(0, commentIdx) : line
-    })
-    .join(' ')
-  // Collapse whitespace
-  return withoutComments.replace(/\s+/g, ' ').trim()
+  return normalizePersistedQuery(query)
 }
 
 export function computeSha256(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf8').digest('hex')
+  return computePersistedQueryHash(content)
 }
 
 export function computeQueryMetrics(query: string): { depth: number; complexity: number } {
@@ -192,6 +189,14 @@ export async function POST(request: NextRequest) {
     })
 
     if (existing) {
+      // Populate the in-process lookup store so GET /api/graphql can
+      // resolve this hash without a restart. Best-effort: the Prisma row
+      // is authoritative, so a store conflict must not fail the request.
+      try {
+        registerPersistedQuery(appId, existing.hash, existing.query)
+      } catch (error) {
+        logger.warn({ err: error, appId, hash: existing.hash }, 'Failed to seed persisted query store')
+      }
       return NextResponse.json(
         {
           persistedQuery: existing,
@@ -212,6 +217,14 @@ export async function POST(request: NextRequest) {
         complexity,
       },
     })
+
+    // Populate the in-process lookup store (hash already verified above).
+    // Best-effort for the same reason as the existing-row path.
+    try {
+      registerPersistedQuery(appId, computedHash, query)
+    } catch (error) {
+      logger.warn({ err: error, appId, hash: computedHash }, 'Failed to seed persisted query store')
+    }
 
     logger.info(
       { appId, hash: computedHash, depth, complexity, tier },

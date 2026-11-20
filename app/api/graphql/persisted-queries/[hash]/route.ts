@@ -79,7 +79,8 @@ export async function GET(
       );
     }
 
-    // Resolve the hash scoped to caller's developer app
+    // Resolve the hash scoped to caller's developer app — getPersistedQuery
+    // increments accessCount and refreshes lastAccessedAt on each hit.
     const record = getPersistedQuery(apiKey.id, hash);
 
     // Indistinguishable 404 between not registered and not authorized
@@ -90,15 +91,12 @@ export async function GET(
       );
     }
 
-    // Record lightweight access count
-    record.accessCount += 1;
-    record.lastAccessedAt = new Date();
-
     return NextResponse.json(
       {
         hash: record.hash,
         query: record.query,
         accessCount: record.accessCount,
+        lastAccessedAt: record.lastAccessedAt,
         appId: apiKey.id,
       },
       { status: 200 },

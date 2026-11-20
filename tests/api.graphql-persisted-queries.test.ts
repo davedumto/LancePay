@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import {
+  computePersistedQueryHash,
   registerPersistedQuery,
   resetPersistedQueryStore,
 } from "@/lib/persisted-queries";
@@ -118,14 +119,16 @@ describe("GET /api/graphql/persisted-queries/[hash] (#1567)", () => {
     sandboxSessionFindFirst.mockResolvedValue(null);
 
     // Register query under a DIFFERENT app (app_2)
-    registerPersistedQuery("app_2", "hash_secret", "query { secretData }");
+    const secretQuery = "query { secretData }";
+    const secretHash = computePersistedQueryHash(secretQuery);
+    registerPersistedQuery("app_2", secretHash, secretQuery);
 
     const { GET } =
       await import("@/app/api/graphql/persisted-queries/[hash]/route");
 
     // Querying for app_2's query with app_1 key:
-    const unauthorizedRes = await GET(makeRequest("hash_secret"), {
-      params: Promise.resolve({ hash: "hash_secret" }),
+    const unauthorizedRes = await GET(makeRequest(secretHash), {
+      params: Promise.resolve({ hash: secretHash }),
     });
     expect(unauthorizedRes.status).toBe(404);
     expect(await unauthorizedRes.json()).toEqual({
@@ -149,29 +152,28 @@ describe("GET /api/graphql/persisted-queries/[hash] (#1567)", () => {
     });
     sandboxSessionFindFirst.mockResolvedValue(null);
 
-    registerPersistedQuery(
-      "app_1",
-      "hash_user_query",
-      "query GetUser { user { id name } }",
-    );
+    const userQuery = "query GetUser { user { id name } }";
+    const userHash = computePersistedQueryHash(userQuery);
+    registerPersistedQuery("app_1", userHash, userQuery);
 
     const { GET } =
       await import("@/app/api/graphql/persisted-queries/[hash]/route");
 
     // First request
-    const res1 = await GET(makeRequest("hash_user_query"), {
-      params: Promise.resolve({ hash: "hash_user_query" }),
+    const res1 = await GET(makeRequest(userHash), {
+      params: Promise.resolve({ hash: userHash }),
     });
     expect(res1.status).toBe(200);
     const body1 = await res1.json();
-    expect(body1.hash).toBe("hash_user_query");
-    expect(body1.query).toBe("query GetUser { user { id name } }");
+    expect(body1.hash).toBe(userHash);
+    expect(body1.query).toBe(userQuery);
     expect(body1.accessCount).toBe(1);
     expect(body1.appId).toBe("app_1");
+    expect(body1.lastAccessedAt).toBeTruthy();
 
     // Second request
-    const res2 = await GET(makeRequest("hash_user_query"), {
-      params: Promise.resolve({ hash: "hash_user_query" }),
+    const res2 = await GET(makeRequest(userHash), {
+      params: Promise.resolve({ hash: userHash }),
     });
     expect(res2.status).toBe(200);
     const body2 = await res2.json();
