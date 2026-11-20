@@ -19,6 +19,15 @@ jobs:
           node-version: 22
           cache: "npm"
 
+      - name: Verify single package manager
+        run: |
+          for f in pnpm-lock.yaml yarn.lock bun.lock bun.lockb; do
+            if [ -f "$f" ]; then
+              echo "Foreign lockfile $f committed — this repo uses npm (package-lock.json only)"
+              exit 1
+            fi
+          done
+
       - name: Install dependencies
         run: npm ci
 

@@ -145,15 +145,19 @@ Add screenshots for UI changes
 ## 🛠️ Development Setup
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 20+ (see `engines` in package.json)
+- npm 10+ — this repo is **npm-only**: `packageManager` is pinned and CI
+  installs with `npm ci`. Do not commit `pnpm-lock.yaml`, `yarn.lock` or
+  `bun.lock*`; a CI check rejects them. If you use corepack,
+  `corepack enable` will pick up the pinned npm automatically.
 - PostgreSQL (or Neon account)
 - Git
 
 ### Installation
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (use npm ci for a CI-identical install)
+npm ci
 
 # Set up environment variables
 cp .env.example .env.local
