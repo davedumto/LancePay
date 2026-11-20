@@ -28,14 +28,30 @@ export const KNOWN_ASSETS: AssetMetadata[] = [
 ];
 
 /**
- * Resolve metadata for a given asset
+ * Resolve metadata for a given asset.
+ *
+ * Verification rule: an entry is only returned as verified when it matches a
+ * curated asset on BOTH code and issuer. The native XLM asset has no issuer
+ * and is identified by the `XLM` code alone. A non-native code without an
+ * issuer, or a code that matches a known asset but carries a different
+ * issuer, resolves to an unverified fallback entry — never to the XLM or
+ * verified metadata of a different asset.
+ *
  * @param code Asset code
- * @param issuer Asset issuer (optional for native)
+ * @param issuer Asset issuer (required for non-native assets)
  * @returns AssetMetadata
  */
 export function resolveAssetMetadata(code: string, issuer?: string): AssetMetadata {
-    if (code === "XLM" || !issuer) {
+    if (code === "XLM") {
         return KNOWN_ASSETS.find(a => a.code === "XLM")!;
+    }
+
+    if (!issuer) {
+        return {
+            code,
+            name: code,
+            isVerified: false
+        };
     }
 
     const known = KNOWN_ASSETS.find(

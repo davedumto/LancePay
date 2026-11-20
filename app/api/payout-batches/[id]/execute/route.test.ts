@@ -74,7 +74,7 @@ beforeEach(() => {
   vi.mocked(prisma.payoutBatch.findFirst).mockResolvedValue(mockPendingBatch as any)
   vi.mocked(prisma.payoutItem.findMany).mockResolvedValue(mockPendingItems as any)
   vi.mocked(prisma.payoutBatch.updateMany).mockResolvedValue({ count: 1 })
-  vi.mocked(debitDelegatedUSDC).mockResolvedValue('tx-hash-ok')
+  vi.mocked(debitDelegatedUSDC).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-ok' })
   vi.mocked(prisma.payoutItem.count).mockResolvedValue(0)
   vi.mocked(prisma.payoutBatch.update).mockImplementation(async (args: any) => ({
     ...mockPendingBatch,
@@ -131,7 +131,7 @@ describe('POST /api/payout-batches/[id]/execute', () => {
   it('processes items independently so failure of one item does not abort remaining items', async () => {
     vi.mocked(debitDelegatedUSDC)
       .mockRejectedValueOnce(new Error('op_underfunded'))
-      .mockResolvedValueOnce('tx-hash-item-2')
+      .mockResolvedValueOnce({ status: 'confirmed', hash: 'tx-hash-item-2' })
 
     const res = await POST(postRequest(), context())
 

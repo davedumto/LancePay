@@ -39,7 +39,7 @@ async function sendPayout(fromAddress: string, toAddress: string, amount: string
   if (!delegateSecretKey) {
     throw new Error('Payout delegate signer is not configured')
   }
-  return debitDelegatedUSDC(delegateSecretKey, fromAddress, toAddress, amount, `payout:${itemId.slice(0, 20)}`)
+  return (await debitDelegatedUSDC(delegateSecretKey, fromAddress, toAddress, amount, `payout:${itemId.slice(0, 20)}`)).hash
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {

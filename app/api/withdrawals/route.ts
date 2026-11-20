@@ -42,14 +42,14 @@ async function deductStellarUSDC(
     throw new Error("Withdrawal delegate signer is not configured");
   }
 
-  const txHash = await debitDelegatedUSDC(
+  const result = await debitDelegatedUSDC(
     delegateSecretKey,
     userAddress,
     treasuryAddress,
     amount.toString(),
     reference,
   );
-  return { success: true, txHash };
+  return { success: true, txHash: result.hash, status: result.status };
 }
 
 export async function GET(request: NextRequest) {

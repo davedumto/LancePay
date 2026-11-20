@@ -67,7 +67,7 @@ beforeEach(() => {
     stellarTxHash: 'tx-hash-final',
     executedAt: new Date(),
   } as any)
-  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue('tx-hash-final')
+  vi.mocked(submitMultisigPaymentWithRetry).mockResolvedValue({ status: 'confirmed', hash: 'tx-hash-final' })
 })
 
 describe('POST /api/onchain/multisig-broadcasts', () => {
