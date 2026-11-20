@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { envNumber } from '@/lib/env'
 
 // Cooldown status response type
 export interface CooldownStatusResponse {
@@ -68,7 +69,9 @@ export async function GET(
     }
 
     // 5. Compute cooldown status
-    const COOLDOWN_HOURS = parseInt(process.env.WHITELIST_COOLDOWN_HOURS ?? '24')
+    const COOLDOWN_HOURS = envNumber('WHITELIST_COOLDOWN_HOURS', 24, {
+      integer: true,
+    })
     const COOLDOWN_MS = COOLDOWN_HOURS * 60 * 60 * 1000
 
     const now = new Date()

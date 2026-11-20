@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { envNumber } from '@/lib/env'
 
 /**
  * Detection heuristic
@@ -29,10 +30,10 @@ import { logger } from '@/lib/logger'
  * responses - only relative signal (how close to it, and how many hits).
  */
 
-const REPORTING_THRESHOLD_USD = Number(process.env.STRUCTURING_REPORTING_THRESHOLD_USD || 10000)
-const NEAR_THRESHOLD_RATIO = Number(process.env.STRUCTURING_NEAR_THRESHOLD_RATIO || 0.8)
-const WINDOW_DAYS = Number(process.env.STRUCTURING_WINDOW_DAYS || 7)
-const MIN_CLUSTER_SIZE = Number(process.env.STRUCTURING_MIN_CLUSTER_SIZE || 3)
+const REPORTING_THRESHOLD_USD = envNumber('STRUCTURING_REPORTING_THRESHOLD_USD', 10000)
+const NEAR_THRESHOLD_RATIO = envNumber('STRUCTURING_NEAR_THRESHOLD_RATIO', 0.8)
+const WINDOW_DAYS = envNumber('STRUCTURING_WINDOW_DAYS', 7, { integer: true })
+const MIN_CLUSTER_SIZE = envNumber('STRUCTURING_MIN_CLUSTER_SIZE', 3, { integer: true })
 
 const ALLOWED_ROLES = new Set(['admin', 'compliance'])
 

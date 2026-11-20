@@ -6,16 +6,21 @@
  * based on time elapsed since submission.
  */
 
+import { envNumber } from './env'
+
 /**
  * SLA window for KYC application review (in milliseconds).
  * Applications are considered urgent based on proximity to this deadline.
  * Default: 5 days (5 * 24 * 60 * 60 * 1000 = 432,000,000 ms)
  *
- * Can be overridden via KYC_REVIEW_SLA_WINDOW_MS environment variable.
+ * Can be overridden via KYC_REVIEW_SLA_WINDOW_MS environment variable —
+ * must be a positive integer count of milliseconds (e.g. "432000000").
+ * Invalid values fall back to the default with a logged warning.
  */
-export const KYC_REVIEW_SLA_WINDOW_MS = parseInt(
-  process.env.KYC_REVIEW_SLA_WINDOW_MS ?? String(5 * 24 * 60 * 60 * 1000),
-  10
+export const KYC_REVIEW_SLA_WINDOW_MS = envNumber(
+  'KYC_REVIEW_SLA_WINDOW_MS',
+  5 * 24 * 60 * 60 * 1000,
+  { integer: true },
 )
 
 /**

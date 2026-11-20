@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       body.extensions?.persistedQuery?.sha256Hash || body.persistedQueryHash;
 
     if (!queryText && persistedHash) {
-      const persisted = getPersistedQuery(apiKey.id, persistedHash);
+      const persisted = await getPersistedQuery(apiKey.id, persistedHash);
       if (!persisted) {
         return NextResponse.json(
           { errors: [{ message: "PersistedQueryNotFound" }] },

@@ -7,6 +7,8 @@ import {
 
 const verifyApiKey = vi.fn();
 const sandboxSessionFindFirst = vi.fn();
+const persistedQueryFindUnique = vi.fn();
+const persistedQueryUpsert = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   verifyApiKey: (...args: any[]) => verifyApiKey(...args),
@@ -16,6 +18,10 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     sandboxSession: {
       findFirst: (...args: any[]) => sandboxSessionFindFirst(...args),
+    },
+    persistedQuery: {
+      findUnique: (...args: any[]) => persistedQueryFindUnique(...args),
+      upsert: (...args: any[]) => persistedQueryUpsert(...args),
     },
   },
 }));
@@ -41,6 +47,18 @@ describe("GET /api/graphql/persisted-queries/[hash] (#1567)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetPersistedQueryStore();
+    persistedQueryFindUnique.mockResolvedValue(null);
+    persistedQueryUpsert.mockImplementation(
+      async ({ create }: { create: Record<string, any> }) => {
+        const now = new Date();
+        return {
+          id: "pq_1",
+          ...create,
+          createdAt: now,
+          updatedAt: now,
+        };
+      },
+    );
   });
 
   it("returns 401 when API key is missing or invalid", async () => {
@@ -118,7 +136,7 @@ describe("GET /api/graphql/persisted-queries/[hash] (#1567)", () => {
     sandboxSessionFindFirst.mockResolvedValue(null);
 
     // Register query under a DIFFERENT app (app_2)
-    registerPersistedQuery("app_2", "hash_secret", "query { secretData }");
+    await registerPersistedQuery("app_2", "hash_secret", "query { secretData }");
 
     const { GET } =
       await import("@/app/api/graphql/persisted-queries/[hash]/route");
@@ -149,7 +167,7 @@ describe("GET /api/graphql/persisted-queries/[hash] (#1567)", () => {
     });
     sandboxSessionFindFirst.mockResolvedValue(null);
 
-    registerPersistedQuery(
+    await registerPersistedQuery(
       "app_1",
       "hash_user_query",
       "query GetUser { user { id name } }",
