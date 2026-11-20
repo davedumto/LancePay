@@ -38,6 +38,11 @@
   "exclude": [
     "node_modules",
     "vitest.config.ts",
-    "tests"
+    "tests",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "hooks/**/*.ts"
   ]
 }

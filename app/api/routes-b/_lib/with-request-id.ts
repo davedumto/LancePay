@@ -6,11 +6,11 @@ import { randomUUID } from 'crypto'
  * for tracing and debugging purposes.
  */
 export function withRequestId(
-  handler: (request: NextRequest) => Promise<NextResponse>
+  handler: (request: NextRequest, context?: any) => Promise<NextResponse>
 ) {
-  return async (request: NextRequest): Promise<NextResponse> => {
+  return async (request: NextRequest, context?: any): Promise<NextResponse> => {
     const requestId = request.headers.get('x-request-id') ?? randomUUID()
-    const response = await handler(request)
+    const response = await handler(request, context)
     response.headers.set('x-request-id', requestId)
     return response
   }

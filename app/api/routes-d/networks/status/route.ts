@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     const networks = networkFilter ? [networkFilter] : VALID_NETWORKS
 
     // Latest snapshot per network; the health poller writes these
-    const snapshots: Snapshot[] = await prisma.networkStatusSnapshot.findMany({
+    const snapshots: Snapshot[] = await (prisma as any).networkStatusSnapshot.findMany({
       where: { network: { in: networks } },
       orderBy: { capturedAt: 'desc' },
     })

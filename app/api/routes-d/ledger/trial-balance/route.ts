@@ -40,8 +40,9 @@ export async function GET(request: NextRequest) {
       if (!accounts[entry.creditAccount]) {
         accounts[entry.creditAccount] = { debits: 0, credits: 0 }
       }
-      accounts[entry.debitAccount].debits += entry.amount
-      accounts[entry.creditAccount].credits += entry.amount
+      const amount = entry.amount ? Number(entry.amount) : 0
+      accounts[entry.debitAccount].debits += amount
+      accounts[entry.creditAccount].credits += amount
     }
 
     const lines = Object.entries(accounts).map(([account, { debits, credits }]) => ({

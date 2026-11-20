@@ -14,7 +14,13 @@ export async function POST(
 ) {
   try {
     // Auth Check
-    const user = await getCurrentUser();
+    const authToken = request.headers.get('authorization')?.replace('Bearer ', '')
+    if (!authToken) return NextResponse.json({ error: 'Unauthorized', message: 'You must be logged in to perform this action.' }, { status: 401 })
+    
+    const claims = await verifyAuthToken(authToken)
+    if (!claims) return NextResponse.json({ error: 'Unauthorized', message: 'You must be logged in to perform this action.' }, { status: 401 })
+
+    const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized', message: 'You must be logged in to perform this action.' },
@@ -38,7 +44,7 @@ export async function POST(
     }
 
     // Fetch Template & Ownership Check
-    const template = await prisma.emailTemplate.findUnique({
+    const template = await (prisma as any).emailTemplate.findUnique({
       where: { id: (await params).id },
     });
 

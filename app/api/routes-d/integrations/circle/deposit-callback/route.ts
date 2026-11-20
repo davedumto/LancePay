@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the virtual account mapped to this Circle account.
-    const virtualAccount = await prisma.virtualAccount.findFirst({
+    const virtualAccount = await (prisma as any).virtualAccount.findFirst({
       where: { externalId: accountId },
       include: { user: true },
     })

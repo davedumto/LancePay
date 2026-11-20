@@ -34,7 +34,7 @@ export async function GET(
       );
     }
 
-    const template = await prisma.emailTemplate.findUnique({
+    const template = await (prisma as any).emailTemplate.findUnique({
       where: { id: (await params).id },
     });
 
@@ -53,7 +53,7 @@ export async function GET(
       );
     }
 
-    const versions = await prisma.emailTemplateVersion.findMany({
+    const versions = await (prisma as any).emailTemplateVersion.findMany({
       where: { templateId: (await params).id },
       orderBy: { createdAt: 'desc' },
     });
@@ -107,7 +107,7 @@ export async function POST(
       );
     }
 
-    const template = await prisma.emailTemplate.findUnique({
+    const template = await (prisma as any).emailTemplate.findUnique({
       where: { id: (await params).id },
     });
 
@@ -125,7 +125,7 @@ export async function POST(
       );
     }
 
-    const newVersion = await prisma.emailTemplateVersion.create({
+    const newVersion = await (prisma as any).emailTemplateVersion.create({
       data: {
         templateId: (await params).id,
         subject: validation.data.subject,

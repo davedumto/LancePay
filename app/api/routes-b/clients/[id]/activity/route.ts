@@ -36,7 +36,7 @@ export async function GET(
     });
 
     const totalInvoices = invoices.length;
-    const totalAmount = invoices.reduce((acc, inv) => acc + (inv.amount || 0), 0);
+    const totalAmount = invoices.reduce((acc, inv) => acc + (inv.amount ? Number(inv.amount) : 0), 0);
     const paidInvoices = invoices.filter((inv) => inv.status === "PAID").length;
 
     return NextResponse.json({

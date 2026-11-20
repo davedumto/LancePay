@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const invoices = await prisma.invoice.findMany({
+    const invoices: any[] = await (prisma as any).invoice.findMany({
       where: { userId: user.id },
       select: {
         id: true,

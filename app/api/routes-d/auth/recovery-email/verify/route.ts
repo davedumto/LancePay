@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Verification code is required' }, { status: 400 })
     }
 
-    const pending = await prisma.recoveryEmailVerification.findFirst({
+    const pending = await (prisma as any).recoveryEmailVerification.findFirst({
       where: {
         userId: user.id,
         code: code.trim(),
@@ -35,11 +35,11 @@ export async function POST(request: NextRequest) {
     }
 
     await prisma.$transaction([
-      prisma.recoveryEmailVerification.update({
+      (prisma as any).recoveryEmailVerification.update({
         where: { id: pending.id },
         data: { verified: true },
       }),
-      prisma.user.update({
+      (prisma as any).user.update({
         where: { id: user.id },
         data: { recoveryEmail: pending.email, recoveryEmailVerified: true },
       }),

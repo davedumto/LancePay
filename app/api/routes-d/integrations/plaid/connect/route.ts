@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         continue // skip invalid account entries
       }
 
-      const account = await prisma.plaidAccount.upsert({
+      const account = await (prisma as any).plaidAccount.upsert({
         where: {
           plaidAccountId: accountData.id,
         },

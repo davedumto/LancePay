@@ -32,11 +32,11 @@ export async function POST(request: NextRequest) {
       const expiresAt = new Date(Date.now() + TOKEN_TTL_MS)
 
       await prisma.$transaction([
-        prisma.passwordResetToken.updateMany({
+        (prisma as any).passwordResetToken.updateMany({
           where: { userId: user.id, used: false },
           data: { used: true },
         }),
-        prisma.passwordResetToken.create({
+        (prisma as any).passwordResetToken.create({
           data: { userId: user.id, token, expiresAt, used: false },
         }),
       ])

@@ -33,7 +33,7 @@ export async function POST(
     const user = await getAuthenticatedUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const {} = await params
+    const { id } = await params
     if (!id || !id.trim()) {
       return NextResponse.json({ error: 'Invoice ID is required' }, { status: 400 })
     }

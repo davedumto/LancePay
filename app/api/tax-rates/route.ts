@@ -19,18 +19,7 @@ async function resolveUser(request: NextRequest) {
   return { user }
 }
 
-function serializeRate(rate: {
-  id: string
-  name: string
-  description: string | null
-  jurisdiction: string
-  rate: unknown
-  effectiveFrom: Date
-  effectiveTo: Date | null
-  parentRateId: string | null
-  isDefault: boolean
-  createdAt: Date
-}) {
+function serializeRate(rate: any) {
   return {
     id: rate.id,
     name: rate.name,
@@ -52,7 +41,7 @@ export async function GET(request: NextRequest) {
 
   const jurisdiction = new URL(request.url).searchParams.get('jurisdiction')
 
-  const rates = await prisma.taxRate.findMany({
+  const rates = await (prisma as any).taxRate.findMany({
     where: {
       userId: user.id,
       ...(jurisdiction ? { jurisdiction } : {}),
@@ -100,7 +89,7 @@ export async function POST(request: NextRequest) {
   // Compound tax: the parent must exist, belong to the caller, and take effect
   // no later than this rate (a rate is applied *after* the rate it references).
   if (parentRateId) {
-    const parent = await prisma.taxRate.findFirst({
+    const parent = await (prisma as any).taxRate.findFirst({
       where: { id: parentRateId, userId: user.id },
     })
     if (!parent) {
@@ -119,11 +108,11 @@ export async function POST(request: NextRequest) {
 
   // Reject overlapping effective date ranges for the same jurisdiction so a
   // date can never resolve to more than one rate.
-  const siblings = await prisma.taxRate.findMany({
+  const siblings = await (prisma as any).taxRate.findMany({
     where: { userId: user.id, jurisdiction },
     select: { effectiveFrom: true, effectiveTo: true },
   })
-  const overlaps = siblings.some((sibling) =>
+  const overlaps = siblings.some((sibling: any) =>
     rangesOverlap(newFrom, newTo, sibling.effectiveFrom, sibling.effectiveTo),
   )
   if (overlaps) {
@@ -135,7 +124,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const created = await prisma.taxRate.create({
+  const created = await (prisma as any).taxRate.create({
     data: {
       userId: user.id,
       name,

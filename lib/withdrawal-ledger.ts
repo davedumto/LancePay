@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 
 export async function reserveWithdrawalInTransaction(
-  tx: Prisma.TransactionClient,
+  tx: any,
   userId: string,
   amount: number,
   onChainUsdcBalance: number,

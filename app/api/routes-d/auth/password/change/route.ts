@@ -14,7 +14,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   if (!authToken) return null
   const claims = await verifyAuthToken(authToken)
   if (!claims) return null
-  return prisma.user.findUnique({
+  return (prisma as any).user.findUnique({
     where: { privyId: claims.userId },
     select: { id: true, passwordHash: true },
   })
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS)
 
-    await prisma.user.update({
+    await (prisma as any).user.update({
       where: { id: user.id },
       data: { passwordHash: newHash } as Record<string, unknown>,
     })

@@ -17,13 +17,13 @@ export async function DELETE(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const {} = await params
+    const { id } = await params
     if (!id || id.trim() === '') {
       return NextResponse.json({ error: 'Entry ID is required' }, { status: 400 })
     }
 
     // Ownership check: only the entry's owner may remove it
-    const entry = await prisma.ipAllowlistEntry.findFirst({
+    const entry = await (prisma as any).ipAllowlistEntry.findFirst({
       where: { id, userId: user.id },
     })
     if (!entry) {
@@ -33,11 +33,11 @@ export async function DELETE(
     // Removing the last entry while enforcement is on would lock the user
     // out of nothing (an empty allowlist means "allow all"), but it is a
     // meaningful security downgrade — surface it in the response.
-    const remaining = await prisma.ipAllowlistEntry.count({
+    const remaining = await (prisma as any).ipAllowlistEntry.count({
       where: { userId: user.id, id: { not: id } },
     })
 
-    await prisma.ipAllowlistEntry.delete({ where: { id } })
+    await (prisma as any).ipAllowlistEntry.delete({ where: { id } })
 
     return NextResponse.json({
       removed: {

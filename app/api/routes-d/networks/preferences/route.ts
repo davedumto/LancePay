@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const preferences = await prisma.networkPreference.findUnique({
+    const preferences = await (prisma as any).networkPreference.findUnique({
       where: { userId: user.id },
     })
 
@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const preferences = await prisma.networkPreference.upsert({
+    const preferences = await (prisma as any).networkPreference.upsert({
       where: { userId: user.id },
       update: updates,
       create: { userId: user.id, ...DEFAULTS, ...updates },

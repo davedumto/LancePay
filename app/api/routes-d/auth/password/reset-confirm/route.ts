@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'newPassword must be at least 8 characters' }, { status: 400 })
     }
 
-    const resetRequest = await prisma.passwordResetToken.findFirst({
+    const resetRequest = await (prisma as any).passwordResetToken.findFirst({
       where: {
         userId: user.id,
         token: token.trim(),
@@ -41,11 +41,11 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(newPassword, 12)
 
     await prisma.$transaction([
-      prisma.passwordResetToken.update({
+      (prisma as any).passwordResetToken.update({
         where: { id: resetRequest.id },
         data: { used: true },
       }),
-      prisma.user.update({
+      (prisma as any).user.update({
         where: { id: user.id },
         data: { passwordHash: hashedPassword },
       }),

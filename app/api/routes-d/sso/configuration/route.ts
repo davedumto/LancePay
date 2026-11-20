@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const ssoConfig = await prisma.userSSOConfiguration.findUnique({
+    const ssoConfig = await (prisma as any).userSSOConfiguration.findUnique({
       where: { userId: user.id },
       select: {
         id: true,
@@ -80,14 +80,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'callbackUrl is required' }, { status: 400 })
     }
 
-    const existingConfig = await prisma.userSSOConfiguration.findUnique({
+    const existingConfig = await (prisma as any).userSSOConfiguration.findUnique({
       where: { userId: user.id },
     })
 
     let config
 
     if (existingConfig) {
-      config = await prisma.userSSOConfiguration.update({
+      config = await (prisma as any).userSSOConfiguration.update({
         where: { id: existingConfig.id },
         data: {
           provider: provider.trim(),
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
         },
       })
     } else {
-      config = await prisma.userSSOConfiguration.create({
+      config = await (prisma as any).userSSOConfiguration.create({
         data: {
           userId: user.id,
           provider: provider.trim(),

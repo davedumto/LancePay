@@ -27,7 +27,7 @@ export async function POST(
     }
 
     // 2. Verify template existence and ownership
-    const template = await prisma.emailTemplate.findUnique({
+    const template = await (prisma as any).emailTemplate.findUnique({
       where: { id: (await params).id },
     });
 
@@ -46,7 +46,7 @@ export async function POST(
     }
 
     // 3. Verify the target version exists and belongs to this template
-    const targetVersion = await prisma.emailTemplateVersion.findUnique({
+    const targetVersion = await (prisma as any).emailTemplateVersion.findUnique({
       where: { id: (await params).v },
     });
 
@@ -59,7 +59,7 @@ export async function POST(
 
     // 4. Activate the version
     // NOTE: Adjust 'activeVersionId' to match your exact Prisma schema field name
-    const updatedTemplate = await prisma.emailTemplate.update({
+    const updatedTemplate = await (prisma as any).emailTemplate.update({
       where: { id: (await params).id },
       data: { activeVersionId: (await params).v }, 
     });

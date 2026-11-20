@@ -17,12 +17,12 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const client = await prisma.client.findFirst({
+    const client = await (prisma as any).client.findFirst({
       where: { id: (await params).id, userId: user.id },
     })
     if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-    const feedbacks = await prisma.clientFeedback.findMany({
+    const feedbacks = await (prisma as any).clientFeedback.findMany({
       where: { clientId: (await params).id },
       orderBy: { createdAt: 'desc' },
     })

@@ -66,13 +66,13 @@ export async function GET(request: NextRequest) {
     }
 
     const [groups, totalResults] = await Promise.all([
-      prisma.scimGroup.findMany({
+      (prisma as any).scimGroup.findMany({
         where,
         orderBy: { createdAt: 'asc' },
         skip: startIndex - 1,
         take: count,
       }),
-      prisma.scimGroup.count({ where }),
+      (prisma as any).scimGroup.count({ where }),
     ])
 
     return NextResponse.json({
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       }))
     }
 
-    const existing = await prisma.scimGroup.findFirst({
+    const existing = await (prisma as any).scimGroup.findFirst({
       where: { userId: user.id, displayName: displayName.trim() },
     })
     if (existing) {
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const group = await prisma.scimGroup.create({
+    const group = await (prisma as any).scimGroup.create({
       data: {
         userId: user.id,
         displayName: displayName.trim(),

@@ -28,7 +28,7 @@ export async function DELETE(
     const user = await getAuthenticatedUser(request)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const {} = await params
+    const { id } = await params
     if (!id || typeof id !== 'string' || !id.trim()) {
       return NextResponse.json({ error: 'Address ID is required' }, { status: 400 })
     }

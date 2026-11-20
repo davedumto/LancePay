@@ -4,6 +4,8 @@ import { verifyAuthToken } from '@/lib/auth'
 import { verifyTwoFactorForRequest } from '@/lib/two-factor'
 import { logger } from '@/lib/logger'
 import { twoFactorLimiter, buildRateLimitResponse } from '@/lib/rate-limit'
+import { decrypt } from '@/lib/crypto'
+import speakeasy from 'speakeasy'
 
 export async function GET(request: NextRequest) {
   try {
