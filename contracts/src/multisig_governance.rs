@@ -1,4 +1,11 @@
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
+
+#[contracttype]
+#[derive(Clone)]
+enum DataKey {
+    Admin,
+    Signer(Address),
+}
 
 /// MultisigGovernance contract for managing 2-of-3 multi-signature authorization.
 ///
@@ -32,7 +39,15 @@ impl MultisigGovernance {
         additional_signer_1: Address,
         additional_signer_2: Address,
     ) {
-        contract_owner.require_auth();
+        // The first configuration establishes the immutable governance admin.
+        // Later signer rotations must be approved by that stored identity, not
+        // by a caller-controlled `contract_owner` argument.
+        if let Some(admin) = env.storage().instance().get::<DataKey, Address>(&DataKey::Admin) {
+            admin.require_auth();
+        } else {
+            contract_owner.require_auth();
+            env.storage().instance().set(&DataKey::Admin, &contract_owner);
+        }
 
         // Note: In production, this would execute Stellar SetOptions operations:
         // 1. Set Master Weight = 1
@@ -47,16 +62,16 @@ impl MultisigGovernance {
         // Publish configuration event (for indexing/monitoring)
         env.storage()
             .instance()
-            .set::<Address, bool>(&contract_owner, &true);
+            .set::<DataKey, bool>(&DataKey::Signer(contract_owner), &true);
 
         // Record additional signers
         env.storage()
             .instance()
-            .set::<Address, bool>(&additional_signer_1, &true);
+            .set::<DataKey, bool>(&DataKey::Signer(additional_signer_1), &true);
 
         env.storage()
             .instance()
-            .set::<Address, bool>(&additional_signer_2, &true);
+            .set::<DataKey, bool>(&DataKey::Signer(additional_signer_2), &true);
     }
 
     /// Proposes a sensitive transaction requiring multi-signature approval.
@@ -110,7 +125,7 @@ impl MultisigGovernance {
         let is_authorized = env
             .storage()
             .instance()
-            .get::<Address, bool>(&co_signer)
+            .get::<DataKey, bool>(&DataKey::Signer(co_signer))
             .unwrap_or(false);
 
         if !is_authorized {
