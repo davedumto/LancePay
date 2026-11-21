@@ -11,7 +11,7 @@ pub mod rebalancer;
 pub mod trustline;
 pub mod upgrade_utils;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum Status {
     Pending = 0,
