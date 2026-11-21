@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const RELOADABLE_KEYS = [
   'feature_flags',
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 

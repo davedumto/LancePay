@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const PURGE_TARGETS = ['sessions', 'notifications', 'all'] as const
 type PurgeTarget = typeof PURGE_TARGETS[number]
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (actor.role !== 'admin') {
+    if (!isAdmin(actor)) {
       return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
     }
 

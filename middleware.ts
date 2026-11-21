@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkRequestRateLimit } from '@/lib/rate-limit';
+import { checkRequestRateLimit, rateLimitExceededBody, rateLimitHeaders } from '@/lib/rate-limit';
 
 function applySecurityHeaders(response: NextResponse, nonce: string) {
   const csp = [
@@ -23,35 +23,16 @@ function applySecurityHeaders(response: NextResponse, nonce: string) {
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 }
 
-function applyRateLimitHeaders(response: NextResponse, params: {
-  limit: number
-  remaining: number
-  resetAt: number
-  policyId: string
-}) {
-  response.headers.set('X-RateLimit-Limit', String(params.limit));
-  response.headers.set('X-RateLimit-Remaining', String(params.remaining));
-  response.headers.set('X-RateLimit-Reset', String(Math.floor(params.resetAt / 1000)));
-  response.headers.set('X-RateLimit-Policy', params.policyId);
-}
-
 export function middleware(request: NextRequest) {
 
   const nonce = crypto.randomUUID();
   const rateLimit = checkRequestRateLimit(request);
 
   if (rateLimit && !rateLimit.allowed) {
-    const retryAfterSeconds = Math.max(
-      1,
-      Math.ceil((rateLimit.resetAt - Date.now()) / 1000),
-    );
-
-    const blocked = NextResponse.json(
-      { error: 'Rate limit exceeded. Please try again shortly.' },
-      { status: 429 },
-    );
-    blocked.headers.set('Retry-After', String(retryAfterSeconds));
-    applyRateLimitHeaders(blocked, rateLimit);
+    const blocked = NextResponse.json(rateLimitExceededBody(rateLimit), {
+      status: 429,
+      headers: rateLimitHeaders(rateLimit),
+    });
     applySecurityHeaders(blocked, nonce);
     return blocked;
   }
@@ -64,7 +45,10 @@ export function middleware(request: NextRequest) {
   });
 
   if (rateLimit) {
-    applyRateLimitHeaders(response, rateLimit);
+    const { 'Retry-After': _retryAfter, ...headers } = rateLimitHeaders(rateLimit);
+    for (const [key, value] of Object.entries(headers)) {
+      response.headers.set(key, value);
+    }
   }
   applySecurityHeaders(response, nonce);
 

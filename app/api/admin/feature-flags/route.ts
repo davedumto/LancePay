@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 export const EVALUATOR_SUPPORTED_FIELDS = new Set([
   'id',
@@ -67,7 +68,7 @@ async function getAuthenticatedAdmin(request: NextRequest): Promise<{ id: string
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || user.role !== 'admin') {
+  if (!user || !isAdmin(user)) {
     return null
   }
 

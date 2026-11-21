@@ -3,8 +3,25 @@
 Reference documentation for the admin/system-level `routes-d` endpoints: webhook
 observability, runtime log-level control, and job cancellation. All four require
 a valid Bearer token (`Authorization: Bearer <token>`) resolved via
-`verifyAuthToken`, and (except job cancel) require the caller's `role` to be
-`admin`.
+`verifyAuthToken`, and (except job cancel) require the caller to pass the shared
+`isAdmin` check in `lib/authorization.ts`.
+
+## Admin identity model
+
+Admin identity has a single source of truth: the `isAdmin(user)` helper in
+`lib/authorization.ts`. A user is an admin when **either**:
+
+- their `User.role` is one of `admin`, `superadmin`, or `super_admin`
+  (`ADMIN_ROLES` — the primary, revocable source of truth), **or**
+- their email appears in the `ADMIN_EMAILS` environment variable, which is kept
+  as a break-glass bootstrap list for accounts that have not been provisioned a
+  role yet.
+
+`compliance`, `compliance_admin`, `support_admin`, and similar elevated roles
+are **not** admin roles; endpoints that intentionally serve them check for
+those roles explicitly alongside `isAdmin`. Removing a user from `ADMIN_EMAILS`
+does not revoke an admin `User.role`, and vice versa — update the role column
+to revoke admin access.
 
 ## GET /api/routes-d/admin/webhooks/debugger
 

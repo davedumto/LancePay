@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * Type definitions for verification status response
@@ -94,9 +95,9 @@ export async function GET(
     // 1. Requesting their own status (userId matches their id), OR
     // 2. An admin user
     const isOwner = currentUser.id === userId
-    const isAdmin = currentUser.role === 'admin'
+    const isAdminUser = isAdmin(currentUser)
 
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isAdminUser) {
       return NextResponse.json(
         {
           error: 'Forbidden',
@@ -156,7 +157,7 @@ export async function GET(
         targetUserId: userId,
         status: apiStatus,
         isOwner,
-        isAdmin,
+        isAdmin: isAdminUser,
       },
       'Verification status retrieved',
     )

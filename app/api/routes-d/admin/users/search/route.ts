@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const MAX_LIMIT = 50
 const DEFAULT_LIMIT = 20
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const actor = await prisma.user.findUnique({ where: { privyId: claims.userId }, select: { id: true, role: true } })
     if (!actor) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    if (actor.role !== 'admin') {
+    if (!isAdmin(actor)) {
       return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
     }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const CANCELLABLE_STATUSES = ['pending', 'queued', 'scheduled']
 
@@ -29,7 +30,7 @@ export async function POST(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    if (job.userId !== user.id && user.role !== 'admin') {
+    if (job.userId !== user.id && !isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: you do not own this job' }, { status: 403 })
     }
 

@@ -323,6 +323,26 @@ export function AuthButton() {
 }
 ```
 
+### Client IP resolution and trusted proxies
+
+`lib/client-ip.ts` is the single resolver used by both the rate limiter
+(`lib/rate-limit.ts`) and audit metadata (`lib/audit.ts`). Resolution order:
+
+1. `x-real-ip` — set by the hosting platform edge; not client-spoofable on
+   Vercel.
+2. `cf-connecting-ip` — set by Cloudflare; trusted only when the request
+   actually arrives through Cloudflare.
+3. `x-vercel-forwarded-for`, then `x-forwarded-for` — only the hop at index
+   `hops.length - TRUSTED_PROXY_HOPS` is trusted, because every proxy in front
+   of the app appends the address it observed. The left-most entries are
+   client-controlled and must never be used directly.
+
+**Deployment assumption:** set `TRUSTED_PROXY_HOPS` to the number of trusted
+reverse proxies in front of the Next.js server (e.g. `1` for a single
+load balancer, `2` for Cloudflare + load balancer). If your platform injects a
+dedicated client-IP header (Cloudflare, Vercel), steps 1–2 already cover it and
+`TRUSTED_PROXY_HOPS` only matters for generic `x-forwarded-for` setups.
+
 ### Upstash Redis Usage
 
 ```typescript
@@ -452,6 +472,37 @@ export async function POST(request: Request) {
 | **Secrets** | Vercel encrypted env vars |
 | **HTTPS** | Enforced by Vercel |
 | **Webhook Auth** | HMAC signature verification |
+
+### Encryption at Rest (`lib/crypto.ts`)
+
+Secrets such as TOTP seeds (`User.twoFactorSecret`) and collective wallet
+keys (`encryptedSecretKey`) are encrypted with AES-256. Key material is
+`sha256(ENCRYPTION_KEY)`; set `ENCRYPTION_KEY` to at least 32 bytes of
+random entropy (e.g. `openssl rand -base64 32`). The app refuses to start
+encrypting in production without it — a development-only fallback exists
+for local/test environments and logs a warning.
+
+**Envelope formats**
+
+- `v2:` (current) — `v2:<nonce_hex>:<ciphertext_hex>:<auth_tag_hex>` using
+  AES-256-GCM with a random 12-byte nonce and 16-byte auth tag.
+- legacy (read-only) — `<iv_hex>:<ciphertext_hex>` using AES-256-CBC with a
+  16-byte IV and no MAC. `decrypt` still reads these rows; the next `encrypt`
+  call rewrites them in the v2 envelope.
+
+`decrypt` throws `DecryptionError` for malformed input, unknown version
+prefixes, wrong keys, or failed authentication instead of returning the
+input unchanged.
+
+**Key rotation procedure**
+
+1. Generate a new key: `openssl rand -base64 32`.
+2. Write a one-off script that decrypts each stored secret with the old key
+   and re-encrypts it with the new key (or temporarily support both keys in
+   `resolveSecretKey`/`getKey` during the migration window).
+3. Deploy the new `ENCRYPTION_KEY`; rows migrate to the v2 envelope
+   automatically on their next write.
+4. Remove the old key once all rows are re-encrypted.
 
 ---
 

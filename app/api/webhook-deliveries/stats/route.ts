@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * GET /api/webhook-deliveries/stats
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
     // narrow to a single account with the userId filter.
     const requestedUserId = searchParams.get('userId')
     let scopedUserId: string
-    if (user.role === 'admin') {
+    if (isAdmin(user)) {
       scopedUserId = requestedUserId ?? ''
     } else {
       if (requestedUserId && requestedUserId !== user.id) {
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
         minDeliveries,
         scope: {
           userId: scopedUserId !== '' ? scopedUserId : null,
-          admin: user.role === 'admin',
+          admin: isAdmin(user),
         },
       },
       { status: 200 },
