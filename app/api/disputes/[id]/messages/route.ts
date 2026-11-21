@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const ALLOWED_SENDER_TYPES = new Set(['client', 'freelancer', 'admin'])
 
@@ -40,7 +41,7 @@ export async function GET(
     }
 
     const isParty =
-      user.role === 'admin' ||
+      isAdmin(user) ||
       dispute.initiatedBy === user.id ||
       dispute.initiatorEmail === user.email ||
       dispute.invoice.userId === user.id ||
@@ -163,7 +164,7 @@ export async function POST(
 
     const normalizedSenderEmail = senderEmail.trim().toLowerCase()
     const isAuthorizedParty =
-      user.role === 'admin' ||
+      isAdmin(user) ||
       partyEmails.has(normalizedSenderEmail)
 
     if (!isAuthorizedParty) {

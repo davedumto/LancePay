@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 export type AdminTier = 'tier1' | 'tier2' | 'superadmin'
 
@@ -79,7 +80,7 @@ async function getAuthenticatedAdmin(
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+  if (!user || (!isAdmin(user))) {
     return null
   }
 

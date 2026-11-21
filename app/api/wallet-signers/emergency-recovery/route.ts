@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
     // ── 2. Admin-only gate ────────────────────────────────────────────────────
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
     }
 

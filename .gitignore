@@ -142,6 +142,7 @@ generated/
 target/
 Cargo.lock
 **/*.rs.bk
+test_snapshots/
 
 # ═══════════════════════════════════════════════════════════════
 # MISC

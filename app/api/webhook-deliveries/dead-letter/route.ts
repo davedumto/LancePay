@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * GET /api/webhook-deliveries/dead-letter
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Admin-only access control
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 

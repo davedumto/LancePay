@@ -1,7 +1,7 @@
 use soroban_sdk::{contract, contractimpl, contracttype, Env, String};
 
 #[contracttype]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TxStatus {
     Pending = 0,
     Processed = 1,

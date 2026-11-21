@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     const adminUser = await prisma.user.findUnique({ where: { privyId: claims.userId } })
     if (!adminUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    if (adminUser.role !== 'admin') {
+    if (!isAdmin(adminUser)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 

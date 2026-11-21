@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 export type GatewayTier = 'free' | 'starter' | 'pro' | 'enterprise'
 
@@ -99,7 +100,7 @@ async function resolveCallerTier(request: NextRequest, bodyTier?: string): Promi
           role: true,
         },
       })
-      if (user?.role === 'admin') return 'enterprise'
+      if (user ? isAdmin(user) : false) return 'enterprise'
     }
   }
 

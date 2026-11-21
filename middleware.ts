@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { checkRequestRateLimit } from '@/lib/rate-limit';
+import { checkRequestRateLimit, rateLimitExceededBody, rateLimitHeaders } from '@/lib/rate-limit';
 
 const PRIVY_AUTH_ORIGINS = [
   'https://auth.privy.io',
@@ -134,6 +134,11 @@ export function middleware(request: NextRequest) {
       const nonce = crypto.randomUUID();
       applyPageSecurityHeaders(blocked, nonce);
     }
+    const blocked = NextResponse.json(rateLimitExceededBody(rateLimit), {
+      status: 429,
+      headers: rateLimitHeaders(rateLimit),
+    });
+    applySecurityHeaders(blocked, nonce);
     return blocked;
   }
 
@@ -155,7 +160,10 @@ export function middleware(request: NextRequest) {
   });
 
   if (rateLimit) {
-    applyRateLimitHeaders(response, rateLimit);
+    const { 'Retry-After': _retryAfter, ...headers } = rateLimitHeaders(rateLimit);
+    for (const [key, value] of Object.entries(headers)) {
+      response.headers.set(key, value);
+    }
   }
   applyPageSecurityHeaders(response, nonce);
 

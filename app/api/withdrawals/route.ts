@@ -8,6 +8,7 @@ import { twoFactorLimiter, buildRateLimitResponse } from "@/lib/rate-limit";
 import { initiateOfframp } from "@/lib/offramp";
 import { debitDelegatedUSDC, getAccountBalance } from "@/lib/stellar";
 import { reserveWithdrawalInTransaction } from "@/lib/withdrawal-ledger";
+import { parsePositiveMoney } from "@/lib/money";
 
 // Idempotency cache: a duplicate submission with the same key is a no-op.
 // The primary guard is the `idempotencyKey` unique column on Transaction
@@ -42,14 +43,16 @@ async function deductStellarUSDC(
     throw new Error("Withdrawal delegate signer is not configured");
   }
 
-  const txHash = await debitDelegatedUSDC(
+  // debitDelegatedUSDC returns a StellarPaymentResult; keep the hash and
+  // surface pending_confirmation so callers can reconcile later.
+  const result = await debitDelegatedUSDC(
     delegateSecretKey,
     userAddress,
     treasuryAddress,
     amount.toString(),
     reference,
   );
-  return { success: true, txHash };
+  return { success: true, txHash: result.hash, status: result.status };
 }
 
 export async function GET(request: NextRequest) {
@@ -234,20 +237,12 @@ export async function POST(request: NextRequest) {
           { status: 401 },
         );
       }
-      if (user.twoFactorSecret) {
-        const secret = decrypt(user.twoFactorSecret);
-        const verified = speakeasy.totp.verify({
-          secret,
-          encoding: "base32",
-          token: code,
-          window: 1,
-        });
-        if (!verified) {
-          return NextResponse.json(
-            { error: "Invalid 2FA code" },
-            { status: 401 },
-          );
-        }
+      const twoFactor = verifyTwoFactorForRequest(user, code);
+      if (!twoFactor.ok) {
+        return NextResponse.json(
+          { error: twoFactor.error },
+          { status: twoFactor.status },
+        );
       }
     }
 
@@ -269,20 +264,26 @@ export async function POST(request: NextRequest) {
     const usdcBalanceObj = (balances as any[]).find(
       (b: any) => b.asset_code === "USDC",
     );
-    const currentBalance = usdcBalanceObj
-      ? parseFloat(usdcBalanceObj.balance)
-      : 0;
+    // Keep the raw Horizon decimal string — the ledger compares and decrements
+    // in Decimal, so a parseFloat here would reintroduce float error.
+    const onChainUsdcBalance = usdcBalanceObj?.balance ?? "0";
+
+    // Validate once as money; the ledger reservation re-validates the Decimal.
+    const ledgerAmount = parsePositiveMoney(amount);
+    if (!ledgerAmount) {
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    }
 
     const reference = `wd_${nanoid(10)}`;
 
     const transaction = await prisma.$transaction(async (tx) => {
-      const reserved = await reserveWithdrawalInTransaction(
+      const reservation = await reserveWithdrawalInTransaction(
         tx,
         user.id,
-        amount,
-        currentBalance,
+        ledgerAmount,
+        onChainUsdcBalance,
       );
-      if (!reserved) {
+      if (reservation.status !== "reserved") {
         return null;
       }
 

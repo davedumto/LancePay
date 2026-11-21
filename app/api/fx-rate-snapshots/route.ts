@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 const SUPPORTED_CURRENCIES = new Set([
   'USD',
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
     })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    if (user.role !== 'admin' && user.role !== 'compliance') {
+    if (!isAdmin(user) && user.role !== 'compliance') {
       return NextResponse.json(
         { error: 'Forbidden: admin or internal access required' },
         { status: 403 },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 async function getAdmin(request: NextRequest) {
   const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
@@ -15,7 +16,7 @@ async function getAdmin(request: NextRequest) {
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) return null
+  if (!user || (!isAdmin(user))) return null
   return user
 }
 

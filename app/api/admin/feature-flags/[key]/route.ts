@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 const updateFeatureFlagSchema = z.object({
   concurrencyToken: z.union([z.string(), z.number()]).optional(),
@@ -27,7 +28,7 @@ async function getAuthenticatedAdmin(
     select: { id: true, email: true, role: true },
   })
 
-  if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+  if (!user || (!isAdmin(user))) {
     return null
   }
 

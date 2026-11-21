@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { computeWebhookSignature, signaturesMatch } from '@/lib/webhook-signature'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * GET /api/user-webhooks/[id]/deliveries/verify-signature
@@ -52,7 +53,7 @@ export async function GET(
     if (!webhook) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
 
     // Only the webhook owner or an admin may verify signatures.
-    if (webhook.userId !== user.id && user.role !== 'admin') {
+    if (webhook.userId !== user.id && !isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

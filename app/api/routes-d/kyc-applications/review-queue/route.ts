@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
 import { KYC_REVIEW_SLA_WINDOW_MS, KYC_STATUS_PENDING, getTimeRemainingMs } from '@/lib/kyc-config'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * GET /api/routes-d/kyc-applications/review-queue
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Restrict to admin and compliance roles
-    if (actor.role !== 'admin' && actor.role !== 'compliance') {
+    if (!isAdmin(actor) && actor.role !== 'compliance') {
       return NextResponse.json(
         { error: 'Forbidden: admin or compliance role required' },
         { status: 403 }

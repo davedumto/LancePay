@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 /**
  * Derives a user-facing status from the stored request status plus how many
@@ -53,9 +54,9 @@ export async function GET(
     // Visibility is restricted to admins in the approval chain: those who are
     // eligible to approve (admin signers on the wallet) or who already cast a
     // decision on this specific request.
-    const isAdmin = actor.role === 'admin'
+    const isAdminActor = isAdmin(actor)
     const isEligibleApprover =
-      isAdmin && recoveryRequest.wallet.signers.some((s) => s.userId === actor.id)
+      isAdminActor && recoveryRequest.wallet.signers.some((s) => s.userId === actor.id)
     const hasApproved = recoveryRequest.approvals.some((a) => a.adminId === actor.id)
 
     if (!isEligibleApprover && !hasApproved) {

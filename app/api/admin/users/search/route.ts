@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import crypto from "crypto";
 import { verifyAuthToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { isAdminEmail } from "@/lib/authorization";
+import { isAdmin, isAdminEmail } from "@/lib/authorization";
 
 export type AdminTier = "tier_1" | "tier_2" | "tier_3";
 
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const isAdmin =
-      isAdminEmail(caller.email) ||
-      ["admin", "super_admin", "compliance_admin", "support_admin"].includes(
-        caller.role,
-      );
+    // Admin-family roles admitted by the shared isAdmin helper plus the
+    // compliance/support admin tiers that this endpoint also serves.
+    const isPrivileged =
+      isAdmin(caller) ||
+      ["compliance_admin", "support_admin"].includes(caller.role);
 
-    if (!isAdmin) {
+    if (!isPrivileged) {
       return NextResponse.json(
         { error: "Forbidden: Admin access required" },
         { status: 403 },

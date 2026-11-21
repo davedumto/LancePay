@@ -5,7 +5,22 @@
 
 import { prisma } from "@/lib/db";
 
-export const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((email) => email.toLowerCase().trim()).filter(Boolean);
+function adminEmails(): string[] {
+  return (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.toLowerCase().trim())
+    .filter(Boolean);
+}
+
+export const ADMIN_EMAILS = adminEmails();
+
+/**
+ * Roles that grant admin privileges. The User.role column is the primary,
+ * revocable source of truth for admin identity; ADMIN_EMAILS remains as a
+ * break-glass bootstrap list for accounts that have not been provisioned a
+ * role yet.
+ */
+export const ADMIN_ROLES = new Set(["admin", "superadmin", "super_admin"]);
 
 export interface AuditLogAccessContext {
   userId: string;
@@ -23,7 +38,24 @@ export interface AuditLogAccessContext {
  * @returns true if user is an admin
  */
 export function isAdminEmail(email: string): boolean {
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
+  return adminEmails().includes(email.toLowerCase().trim());
+}
+
+/**
+ * Single source of truth for admin identity.
+ *
+ * A user is an admin when their `User.role` is an admin role
+ * ({@link ADMIN_ROLES}) OR their email appears in the ADMIN_EMAILS
+ * break-glass list. Prefer passing the full user record; `email`/`role`
+ * are both optional so partial selects still work.
+ *
+ * @param user - Object with optional `role` and `email` fields
+ * @returns true if the user should be treated as an admin
+ */
+export function isAdmin(user: { role?: string | null; email?: string | null }): boolean {
+  if (user.role && ADMIN_ROLES.has(user.role)) return true;
+  if (user.email && isAdminEmail(user.email)) return true;
+  return false;
 }
 
 /**
@@ -44,9 +76,10 @@ export async function checkAuditLogAccess(
   invoiceId: string,
   userId: string,
   userEmail: string,
+  userRole?: string | null,
 ): Promise<AuditLogAccessContext> {
   // Short-circuit admin check
-  if (isAdminEmail(userEmail)) {
+  if (isAdmin({ email: userEmail, role: userRole })) {
     return {
       userId,
       userEmail,
