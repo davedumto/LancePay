@@ -11,6 +11,10 @@ pub mod rebalancer;
 pub mod trustline;
 pub mod upgrade_utils;
 
+const INSTANCE_BUMP_AMOUNT: u32 = 518_400; // ~30 days
+const INSTANCE_LIFETIME_THRESHOLD: u32 = 120_960; // ~7 days
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum Status {
@@ -35,6 +39,11 @@ pub struct MilestoneEscrow;
 #[contractimpl]
 impl MilestoneEscrow {
     pub fn init(env: Env, client: Address, freelancer: Address, arbiter: Address, token: Address) {
+        if env.storage().instance().has(&DataKey::Client) {
+            panic!("Already initialized");
+        }
+        client.require_auth();
+
         env.storage().instance().set(&DataKey::Client, &client);
         env.storage()
             .instance()
@@ -45,10 +54,27 @@ impl MilestoneEscrow {
         env.storage()
             .instance()
             .set(&DataKey::Status, &Status::Pending);
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     pub fn fund_milestone(env: Env, from: Address, amount: i128) {
         from.require_auth();
+
+        if amount <= 0 {
+            panic!("Amount must be greater than zero");
+        }
+
+        let status: Status = env
+            .storage()
+            .instance()
+            .get(&DataKey::Status)
+            .unwrap_or(Status::Pending);
+        if matches!(status, Status::Completed) {
+            panic!("Milestone already completed");
+        }
 
         let client: Address = env.storage().instance().get(&DataKey::Client).unwrap();
         if from != client {
@@ -64,10 +90,17 @@ impl MilestoneEscrow {
 
         token_client.transfer(&from, &env.current_contract_address(), &amount);
 
-        env.storage().instance().set(&DataKey::Amount, &amount);
+        let current_amount: i128 = env.storage().instance().get(&DataKey::Amount).unwrap_or(0);
+        let new_amount = current_amount.checked_add(amount).expect("Amount overflow");
+
+        env.storage().instance().set(&DataKey::Amount, &new_amount);
         env.storage()
             .instance()
             .set(&DataKey::Status, &Status::Funded);
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     pub fn release_funds(env: Env, caller: Address) {
@@ -81,8 +114,10 @@ impl MilestoneEscrow {
         }
 
         let status: Status = env.storage().instance().get(&DataKey::Status).unwrap();
-        if matches!(status, Status::Completed) {
-            panic!("Funds already released");
+        match status {
+            Status::Pending => panic!("Escrow is still pending funding"),
+            Status::Completed => panic!("Funds already released"),
+            Status::Funded => {}
         }
 
         let freelancer: Address = env.storage().instance().get(&DataKey::Freelancer).unwrap();
@@ -100,6 +135,10 @@ impl MilestoneEscrow {
             .instance()
             .set(&DataKey::Status, &Status::Completed);
         env.storage().instance().set(&DataKey::Amount, &0i128);
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     pub fn status(env: Env) -> Status {
@@ -122,6 +161,7 @@ mod test {
     #[test]
     fn test_init() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register_contract(None, MilestoneEscrow);
         let client = MilestoneEscrowClient::new(&env, &contract_id);
 
