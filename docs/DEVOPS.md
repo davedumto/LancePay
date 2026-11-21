@@ -369,6 +369,12 @@ export async function rateLimit(ip: string, limit = 10, window = 60) {
 
 ## 4. Security Best Practices
 
+### Security Headers & Middleware Split
+
+The production edge middleware enforces a strict separation between API endpoints and HTML pages:
+- **API Routes (`/api/*`)**: Protected by rate limiting and core headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`). HTML CSP and nonces are excluded to minimize compute overhead and header payload size.
+- **Page Routes**: Deliver dynamic per-request cryptographic nonces with full CSP allowing Privy authentication (`auth.privy.io`, `*.privy.io`), MoonPay on-ramp frames, and the configured Stellar Horizon endpoint (`NEXT_PUBLIC_STELLAR_HORIZON_URL`), alongside CSP violation reporting via `/api/csp-report`. Deprecated `X-XSS-Protection` is omitted in favor of modern standard CSP and Permissions-Policy.
+
 ### Authentication with Privy
 
 Privy handles auth securely. You verify the session server-side:
