@@ -6,14 +6,19 @@ import { Decimal } from '@prisma/client/runtime/library'
 export const MONEY_SCALE = 2
 export const MAX_MONEY_AMOUNT = new Decimal('99999999.99')
 
-const MONEY_PATTERN = /^\d+(\.\d{1,2})?$/
+const MONEY_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
+
+export interface ParseMoneyOptions {
+  allowZero?: boolean
+  allowNegative?: boolean
+}
 
 /**
- * Parses a client-supplied positive monetary amount (number or numeric string)
- * into a Decimal. Returns null for anything that is not a positive amount with
- * at most two decimal places that fits the column.
+ * Parses a client-supplied monetary amount into a Decimal while preserving the
+ * database column's scale and range constraints. Callers can explicitly allow
+ * zero or signed values for flows such as credits and refunds.
  */
-export function parsePositiveMoney(value: unknown): Decimal | null {
+export function parseMoney(value: unknown, options: ParseMoneyOptions = {}): Decimal | null {
   let raw: string
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return null
@@ -24,11 +29,24 @@ export function parsePositiveMoney(value: unknown): Decimal | null {
     return null
   }
 
-  if (!MONEY_PATTERN.test(raw)) return null
+  const isNegative = raw.startsWith('-')
+  const unsignedRaw = isNegative ? raw.slice(1) : raw
+  if (!MONEY_PATTERN.test(unsignedRaw)) return null
+  if (isNegative && !options.allowNegative) return null
 
   const amount = new Decimal(raw)
-  if (amount.lte(0) || amount.gt(MAX_MONEY_AMOUNT)) return null
+  if (amount.isZero() && !options.allowZero) return null
+  if (amount.abs().gt(MAX_MONEY_AMOUNT)) return null
   return amount
+}
+
+/**
+ * Parses a client-supplied positive monetary amount (number or numeric string)
+ * into a Decimal. Returns null for anything that is not a positive amount with
+ * at most two decimal places that fits the column.
+ */
+export function parsePositiveMoney(value: unknown): Decimal | null {
+  return parseMoney(value)
 }
 
 /**

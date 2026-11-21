@@ -1,13 +1,16 @@
 const DEFAULT_PLATFORM_FEE_RATE = 0.005 // 0.5%
 const DEFAULT_WITHDRAWAL_FEE_RATE = 0.005 // 0.5%
+export const MAX_REPORT_FEE_RATE = 0.2
 
-function parseFeeRate(value: string | undefined, fallback: number): number {
+export function parseFeeRate(value: string | undefined, fallback: number): number {
   if (!value) return fallback
 
-  const parsed = Number.parseFloat(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return fallback
+  const normalized = value.trim().endsWith('%')
+    ? Number.parseFloat(value) / 100
+    : Number.parseFloat(value)
+  if (!Number.isFinite(normalized) || normalized < 0 || normalized > MAX_REPORT_FEE_RATE) return fallback
 
-  return parsed
+  return normalized
 }
 
 /**
