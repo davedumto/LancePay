@@ -58,17 +58,9 @@ export async function PUT(request: NextRequest) {
       if (!code) {
         return NextResponse.json({ error: '2FA code required' }, { status: 401 })
       }
-      if (user.twoFactorSecret) {
-        const secret = decrypt(user.twoFactorSecret)
-        const verified = speakeasy.totp.verify({
-          secret: secret,
-          encoding: 'base32',
-          token: code,
-          window: 1
-        })
-        if (!verified) {
-          return NextResponse.json({ error: 'Invalid 2FA code' }, { status: 401 })
-        }
+      const twoFactor = verifyTwoFactorForRequest(user, code)
+      if (!twoFactor.ok) {
+        return NextResponse.json({ error: twoFactor.error }, { status: twoFactor.status })
       }
     }
 

@@ -11,13 +11,48 @@ interface AuditMetadata {
   [key: string]: unknown;
 }
 
+/**
+ * Recursively sorts object keys so the signed payload is independent of
+ * JSON key order. Arrays keep their order; primitives pass through.
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, canonicalize(record[key])]),
+    );
+  }
+  return value;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(canonicalize(value ?? {}));
+}
+
+/**
+ * Signed payload layout (HMAC-SHA256 keyed by AUDIT_SECRET):
+ *
+ *   `${invoiceId}:${eventType}:${timestamp}:${canonicalJSON(metadata)}`
+ *
+ * - `timestamp` is the event's ISO-8601 `createdAt`, persisted on the
+ *   AuditEvent row by `logAuditEvent` so signatures remain verifiable
+ *   after the fact.
+ * - `canonicalJSON` is `JSON.stringify` over metadata with all object
+ *   keys sorted recursively, so verification does not depend on the key
+ *   order the metadata happened to be stored or retrieved in.
+ */
 export function generateSignature(
   invoiceId: string,
   eventType: string,
   timestamp: string,
   metadata: AuditMetadata | null,
 ): string {
-  const payload = `${invoiceId}:${eventType}:${timestamp}:${JSON.stringify(metadata || {})}`;
+  const payload = `${invoiceId}:${eventType}:${timestamp}:${stableStringify(metadata || {})}`;
   return createHmac("sha256", AUDIT_SECRET).update(payload).digest("hex");
 }
 
@@ -79,6 +114,9 @@ export async function logAuditEvent(
       actorId,
       metadata: metadata ?? undefined,
       signature,
+      // Persist the exact timestamp that was signed so verifySignature can
+      // reproduce the payload from the stored row.
+      createdAt: new Date(timestamp),
     },
   });
 }
