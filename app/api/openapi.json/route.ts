@@ -19,8 +19,58 @@ export interface RouteMetadata {
     required?: boolean
     content: Record<string, { schema: Record<string, unknown> }>
   }
-  responses: Record<string, { description: string; content?: Record<string, { schema: Record<string, unknown> }> }>
+  responses: Record<
+    string,
+    {
+      description: string
+      content?: Record<string, { schema: Record<string, unknown> }>
+      headers?: Record<string, { description: string; schema: Record<string, unknown> }>
+    }
+  >
   apiVersion?: string
+}
+
+/**
+ * Standard 429 response shared by every rate-limited public endpoint.
+ * X-RateLimit-Reset is epoch seconds; Retry-After is seconds until reset.
+ */
+const RATE_LIMIT_429_RESPONSE = {
+  description: 'Rate limit exceeded',
+  headers: {
+    'X-RateLimit-Limit': {
+      description: 'Maximum requests allowed in the current window',
+      schema: { type: 'integer' },
+    },
+    'X-RateLimit-Remaining': {
+      description: 'Requests remaining in the current window',
+      schema: { type: 'integer' },
+    },
+    'X-RateLimit-Reset': {
+      description: 'Epoch seconds at which the current window resets',
+      schema: { type: 'integer' },
+    },
+    'X-RateLimit-Policy': {
+      description: 'Identifier of the rate-limit policy that was applied',
+      schema: { type: 'string' },
+    },
+    'Retry-After': {
+      description: 'Seconds to wait before retrying',
+      schema: { type: 'integer' },
+    },
+  },
+  content: {
+    'application/json': {
+      schema: {
+        type: 'object',
+        properties: {
+          error: { type: 'string' },
+          limit: { type: 'integer' },
+          remaining: { type: 'integer' },
+          resetAt: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  },
 }
 
 export const CANONICAL_PUBLIC_ROUTES: RouteMetadata[] = [
@@ -165,7 +215,7 @@ export function buildOpenApiSpec(version = '2026-10-18'): Record<string, unknown
       tags: route.tags,
       parameters: route.parameters,
       requestBody: route.requestBody,
-      responses: route.responses,
+      responses: { '429': RATE_LIMIT_429_RESPONSE, ...route.responses },
     }
   }
 
@@ -175,7 +225,10 @@ export function buildOpenApiSpec(version = '2026-10-18'): Record<string, unknown
       title: 'LancePay Public API',
       version,
       description:
-        'Canonical OpenAPI 3.1 specification for LancePay developer platform, SDKs, and payment services.',
+        'Canonical OpenAPI 3.1 specification for LancePay developer platform, SDKs, and payment services. ' +
+        'Rate-limited endpoints return 429 with X-RateLimit-Limit, X-RateLimit-Remaining, ' +
+        'X-RateLimit-Reset (epoch seconds), X-RateLimit-Policy and Retry-After headers; ' +
+        'the same headers are also sent on successful responses.',
       contact: {
         name: 'LancePay Support',
         url: 'https://lancepay.com/support',

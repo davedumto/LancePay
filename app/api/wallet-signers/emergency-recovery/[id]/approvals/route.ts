@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { isUniqueConstraintError } from '@/app/api/_lib/collective-wallet-auth'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { isAdmin } from '@/lib/authorization'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -21,7 +22,7 @@ async function loadEligibleRecovery(request: NextRequest, recoveryId: string) {
   if (!actor) {
     return { response: NextResponse.json({ error: 'User not found' }, { status: 404 }) } as const
   }
-  if (actor.role !== 'admin') {
+  if (!isAdmin(actor)) {
     return { response: NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 }) } as const
   }
 

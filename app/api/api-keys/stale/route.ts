@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { isAdmin } from '@/lib/authorization'
 
 const DEFAULT_STALENESS_DAYS = 90
 
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
     // A key is stale if:
     // - lastUsedAt IS NULL (never used), OR
     // - lastUsedAt is older than the threshold
-    const where = user.role === 'admin'
+    const where = isAdmin(user)
       ? {
           OR: [{ lastUsedAt: null }, { lastUsedAt: { lt: thresholdDate } }],
         }

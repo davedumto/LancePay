@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { NextRequest } from 'next/server'
+import { middleware } from '@/middleware'
 import {
   RouteRateLimiter,
   buildRateLimitResponse,
+  checkRequestRateLimit,
   isKycRateLimitBypassed,
   kycSubmitHourly,
   kycSubmitDaily,
   kycSubmitGlobal,
   kycStatusLimiter,
+  rateLimitExceededBody,
+  rateLimitHeaders,
 } from '@/lib/rate-limit'
 
 describe('RouteRateLimiter', () => {
@@ -70,7 +75,9 @@ describe('buildRateLimitResponse', () => {
     const response = buildRateLimitResponse(result)
     expect(response.headers.get('X-RateLimit-Limit')).toBe('3')
     expect(response.headers.get('X-RateLimit-Remaining')).toBe('0')
-    expect(response.headers.get('X-RateLimit-Reset')).toBe(resetAt.toString())
+    expect(response.headers.get('X-RateLimit-Reset')).toBe(
+      Math.floor(resetAt / 1000).toString(),
+    )
     expect(Number(response.headers.get('Retry-After'))).toBeGreaterThan(0)
   })
 
@@ -80,6 +87,110 @@ describe('buildRateLimitResponse', () => {
     const body = await response.json()
     expect(body.error).toMatch(/rate limit/i)
     expect(body.resetAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  })
+})
+
+describe('middleware / route-limiter parity', () => {
+  function authRequest(ip: string) {
+    return new NextRequest('http://localhost/api/auth/session', {
+      headers: { 'x-real-ip': ip },
+    })
+  }
+
+  it('produces identical results through both entry points', () => {
+    const ip = `198.51.100.${Math.floor(Math.random() * 200) + 1}`
+    const routeLimiter = new RouteRateLimiter({
+      id: 'api-auth',
+      maxRequests: 30,
+      windowMs: 60_000,
+    })
+
+    // Exhaust the api-auth window via the middleware entry point.
+    let last: ReturnType<typeof checkRequestRateLimit> = null
+    for (let i = 0; i < 30; i++) {
+      last = checkRequestRateLimit(authRequest(ip))
+      expect(last?.allowed).toBe(true)
+    }
+
+    // The route limiter sharing the same policy id sees the same window.
+    const viaRoute = routeLimiter.check(ip)
+    const viaMiddleware = checkRequestRateLimit(authRequest(ip))
+
+    expect(viaRoute.allowed).toBe(false)
+    expect(viaMiddleware?.allowed).toBe(false)
+    expect(viaRoute.policyId).toBe(viaMiddleware?.policyId)
+    expect(viaRoute.limit).toBe(viaMiddleware?.limit)
+    expect(viaRoute.remaining).toBe(viaMiddleware?.remaining)
+    expect(viaRoute.resetAt).toBe(viaMiddleware?.resetAt)
+    routeLimiter.reset(ip)
+  })
+
+  it('middleware and route limiter emit the same 429 body shape and header units', async () => {
+    const ip = `203.0.113.${Math.floor(Math.random() * 200) + 1}`
+
+    // Drive the middleware policy to exhaustion.
+    let blocked: Response | null = null
+    for (let i = 0; i < 31; i++) {
+      const res = middleware(authRequest(ip))
+      if (res.status === 429) {
+        blocked = res
+        break
+      }
+    }
+    expect(blocked).not.toBeNull()
+
+    const middlewareBody = await blocked!.json()
+    const routeResponse = buildRateLimitResponse({
+      policyId: 'api-auth',
+      allowed: false,
+      limit: 30,
+      remaining: 0,
+      resetAt: Date.now() + 60_000,
+    })
+    const routeBody = await routeResponse.json()
+
+    // Identical body shape.
+    expect(Object.keys(middlewareBody).sort()).toEqual(Object.keys(routeBody).sort())
+    expect(middlewareBody).toMatchObject({
+      error: expect.any(String),
+      limit: 30,
+      remaining: 0,
+      resetAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    })
+
+    // X-RateLimit-Reset is epoch seconds (~10 digits), never milliseconds.
+    const resetHeader = blocked!.headers.get('X-RateLimit-Reset')
+    expect(resetHeader).toMatch(/^\d{10}$/)
+    expect(Number(resetHeader)).toBeGreaterThan(1_000_000_000)
+    expect(Number(resetHeader)).toBeLessThan(10_000_000_000)
+
+    // Shared helpers agree with what the middleware emitted.
+    const expected = rateLimitHeaders({
+      policyId: 'api-auth',
+      allowed: false,
+      limit: 30,
+      remaining: 0,
+      resetAt: Number(resetHeader) * 1000,
+    })
+    expect(blocked!.headers.get('X-RateLimit-Limit')).toBe(expected['X-RateLimit-Limit'])
+    expect(blocked!.headers.get('X-RateLimit-Policy')).toBe('api-auth')
+    expect(Number(blocked!.headers.get('Retry-After'))).toBeGreaterThan(0)
+
+    // Body produced by the shared helper matches the emitted shape.
+    expect(rateLimitExceededBody({
+      policyId: 'api-auth',
+      allowed: false,
+      limit: 30,
+      remaining: 0,
+      resetAt: Date.now() + 60_000,
+    })).toEqual({
+      error: expect.any(String),
+      limit: 30,
+      remaining: 0,
+      resetAt: expect.any(String),
+    })
+
+    new RouteRateLimiter({ id: 'api-auth', maxRequests: 30, windowMs: 60_000 }).reset(ip)
   })
 })
 

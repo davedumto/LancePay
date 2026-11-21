@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import { logger } from '@/lib/logger'
+import { isAdmin } from '@/lib/authorization'
 
 // POST /api/routes-d/admin/sample-data/seed — Seed sample data for testing (admin only)
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    if (user.role !== 'admin') {
+    if (!isAdmin(user)) {
       return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 })
     }
 
