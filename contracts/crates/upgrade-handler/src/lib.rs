@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, Env};
 
 #[contract]
@@ -27,5 +28,23 @@ impl UpgradeHandler {
         // 2. Identify persistent data (use persistent storage).
         // 3. Clear obsolete entries.
         true
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::Env;
+
+    #[test]
+    fn protocol_gate_and_storage_helpers_are_callable() {
+        let env = Env::default();
+        let id = env.register_contract(None, UpgradeHandler);
+        let client = UpgradeHandlerClient::new(&env, &id);
+
+        assert!(client.check_protocol_version(&0));
+        assert!(!client.check_protocol_version(&u32::MAX));
+        assert!(client.optimize_storage());
+        client.extend_instance_ttl(&0, &518_400);
     }
 }

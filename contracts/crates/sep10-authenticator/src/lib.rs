@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
 
 #[contract]
@@ -27,5 +28,30 @@ impl Sep10Authenticator {
 
         // Return a mock JWT session token
         String::from_str(&env, "eyJhbGciOiJIUzI1Ni...VALID_SESSION_TOKEN")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    #[test]
+    fn challenge_and_verification_round_trip() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, Sep10Authenticator);
+        let client = Sep10AuthenticatorClient::new(&env, &id);
+        let user = Address::generate(&env);
+
+        let challenge = client.request_challenge(&user);
+        assert_eq!(
+            challenge,
+            String::from_str(&env, "AAAA......MOCK_SEP10_CHALLENGE_XDR......")
+        );
+        assert_eq!(
+            client.verify_challenge(&user, &challenge),
+            String::from_str(&env, "eyJhbGciOiJIUzI1Ni...VALID_SESSION_TOKEN")
+        );
     }
 }

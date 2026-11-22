@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
 
 #[contract]
@@ -41,5 +42,23 @@ impl TrustlineHandler {
         let usdc_issuer = user.clone();
 
         Self::ensure_trustline(env, user, usdc_code, usdc_issuer);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    #[test]
+    fn configures_a_usdc_trustline() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, TrustlineHandler);
+        let client = TrustlineHandlerClient::new(&env, &id);
+        let user = Address::generate(&env);
+
+        assert!(client.ensure_trustline(&user, &String::from_str(&env, "USDC"), &user));
+        client.setup_usdc_trustline(&user);
     }
 }

@@ -14,6 +14,25 @@ Soroban smart contract for milestone-based freelancer escrow payments on the Ste
 
 ---
 
+## 1.1 Workspace Layout
+
+This directory is a Cargo workspace with one deployable contract per crate. Each crate builds its own WASM, so exported function names cannot collide with those of another contract. `crates/shared` holds lifecycle types and TTL constants and exports no contract functions.
+
+| Crate | Contract | Exported functions | WASM artifact |
+|---|---|---|---|
+| `milestone-escrow` | `MilestoneEscrow` | `init`, `fund_milestone`, `release_funds`, `status`, `get_amount` | `milestone_escrow.wasm` |
+| `sep10-authenticator` | `Sep10Authenticator` | `request_challenge`, `verify_challenge` | `sep10_authenticator.wasm` |
+| `dispute-resolution` | `DisputeResolutionCourt` | `initiate_dispute`, `submit_evidence`, `adjudicate` | `dispute_resolution.wasm` |
+| `gasless-handler` | `GaslessHandler` | `sponsor_transaction` | `gasless_handler.wasm` |
+| `transaction-monitor` | `TransactionMonitor` | `process_tx_event`, `get_invoice_status` | `transaction_monitor.wasm` |
+| `multisig-governance` | `MultisigGovernance` | `configure_multisig`, `propose_sensitive_tx`, `execute_with_second_sig` | `multisig_governance.wasm` |
+| `path-payment` | `PathPayment` | `find_strict_receive_paths`, `execute_path_payment` | `path_payment.wasm` |
+| `liquidity-rebalancer` | `LiquidityRebalancer` | `check_and_rebalance` | `liquidity_rebalancer.wasm` |
+| `trustline-handler` | `TrustlineHandler` | `ensure_trustline`, `setup_usdc_trustline` | `trustline_handler.wasm` |
+| `upgrade-handler` | `UpgradeHandler` | `check_protocol_version`, `extend_instance_ttl`, `optimize_storage` | `upgrade_handler.wasm` |
+
+---
+
 ## 2. Smart Contract Methods
 
 | Function | Parameters | Description |
@@ -47,19 +66,24 @@ Soroban smart contract for milestone-based freelancer escrow payments on the Ste
 ## 3. Build, Pinning & Deployment Lifecycle
 
 ### 3.1 Building the WASM
-Compile the contract into WebAssembly targeting `wasm32-unknown-unknown`:
+Compile every contract into WebAssembly targeting `wasm32-unknown-unknown`:
 ```bash
 cd contracts
-stellar contract build
-# Or: cargo build --target wasm32-unknown-unknown --release
+cargo build --workspace --target wasm32-unknown-unknown --release
 ```
-Artifact output location:
+Build a single contract with its package name:
+```bash
+cargo build -p dispute-resolution --target wasm32-unknown-unknown --release
 ```
-target/wasm32-unknown-unknown/release/milestone_escrow.wasm
+Artifacts are written to `target/wasm32-unknown-unknown/release/<crate>.wasm`. List the exported functions of each artifact and verify that none collide:
+```bash
+node scripts/list-wasm-exports.mjs target/wasm32-unknown-unknown/release/milestone_escrow.wasm
+node scripts/check-wasm-exports.mjs
 ```
+`check-wasm-exports.mjs` also fails when an expected contract WASM is missing. It runs in CI after the workspace build.
 
 ### 3.2 WASM Hash Pinning
-To guarantee deterministic deployments and prevent supply-chain tampering, compute and pin the SHA256 bytecode hash before uploading:
+To guarantee deterministic deployments and prevent supply-chain tampering, compute and pin the SHA256 bytecode hash of the crate you are deploying before uploading:
 ```bash
 # On macOS / Linux
 shasum -a 256 target/wasm32-unknown-unknown/release/milestone_escrow.wasm
@@ -68,13 +92,14 @@ shasum -a 256 target/wasm32-unknown-unknown/release/milestone_escrow.wasm
 Store this pinned hash in release notes and continuous delivery manifests.
 
 ### 3.3 Installing & Deploying with `stellar-cli`
-Install the bytecode on the target network to receive the on-chain WASM hash:
+Install the bytecode of the chosen crate on the target network to receive the on-chain WASM hash:
 ```bash
 stellar contract install \
   --wasm target/wasm32-unknown-unknown/release/milestone_escrow.wasm \
   --source <deployer-identity> \
   --network testnet
 ```
+Replace `milestone_escrow` with the artifact name from the workspace table for the other contracts.
 
 Deploy a contract instance referencing the pinned WASM hash:
 ```bash
@@ -173,7 +198,7 @@ The application interacts with deployed contracts via environment variables conf
 ## 6. Upgrades, Governance & TTL Policy
 
 ### 6.1 Admin Key & Governance Ownership
-The platform admin identity is held by a multi-signature governance account (`contracts/src/multisig_governance.rs`). Individual clients or freelancers cannot invoke administrative upgrades or contract modifications.
+The platform admin identity is held by a multi-signature governance account (`crates/multisig-governance`). Individual clients or freelancers cannot invoke administrative upgrades or contract modifications.
 
 ### 6.2 Contract Upgrade Procedure
 Soroban Protocol 20+ contracts upgrade executable bytecode in-place using WASM hash replacement:

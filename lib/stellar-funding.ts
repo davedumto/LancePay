@@ -11,6 +11,55 @@ import {
   Transaction,
 } from '@stellar/stellar-sdk'
 
+/** Canonical and deprecated names for the funding wallet secret. */
+export const FUNDING_SECRET_ENV = 'STELLAR_FUNDING_WALLET_SECRET'
+export const DEPRECATED_FUNDING_SECRET_ENV = 'STELLAR_FUNDING_SECRET'
+
+type WarnFn = (message: string) => void
+
+let fundingSecretWarningEmitted = false
+
+function warnFundingSecretOnce(message: string): void {
+  if (fundingSecretWarningEmitted) return
+  fundingSecretWarningEmitted = true
+  console.warn(message)
+}
+
+/**
+ * Resolve the funding wallet secret from a single place.
+ *
+ * The canonical name wins when both are set. The legacy name is accepted as a
+ * deprecated alias with one warning so existing deployments keep working while
+ * operators migrate. The optional `warn` argument makes the warning observable
+ * in tests without resetting module state.
+ */
+export function resolveFundingSecret(
+  env: NodeJS.ProcessEnv = process.env,
+  warn: WarnFn = warnFundingSecretOnce,
+): string | undefined {
+  const canonical = env[FUNDING_SECRET_ENV]?.trim()
+  const deprecated = env[DEPRECATED_FUNDING_SECRET_ENV]?.trim()
+
+  if (canonical) {
+    if (deprecated) {
+      warn(
+        `${DEPRECATED_FUNDING_SECRET_ENV} is set alongside ${FUNDING_SECRET_ENV}; ` +
+          `using ${FUNDING_SECRET_ENV} and ignoring the deprecated alias.`,
+      )
+    }
+    return canonical
+  }
+
+  if (deprecated) {
+    warn(
+      `${DEPRECATED_FUNDING_SECRET_ENV} is deprecated; use ${FUNDING_SECRET_ENV} instead.`,
+    )
+    return deprecated
+  }
+
+  return undefined
+}
+
 /**
  * Runtime config for Stellar network operations.
  * Values are loaded lazily to avoid import-time failures in serverless environments.
@@ -82,17 +131,17 @@ function getConfig(): StellarRuntimeConfig {
   const network = (process.env.STELLAR_NETWORK || 'testnet').toLowerCase()
   const isMainnet = network === 'mainnet' || network === 'public'
 
-  const fundingSecret = process.env.STELLAR_FUNDING_WALLET_SECRET
+  const fundingSecret = resolveFundingSecret()
   if (!fundingSecret) {
     throw new StellarFundingError(
-      'Missing STELLAR_FUNDING_WALLET_SECRET environment variable.',
+      `Missing ${FUNDING_SECRET_ENV} environment variable (or its deprecated alias ${DEPRECATED_FUNDING_SECRET_ENV}).`,
       'ENV_MISSING_FUNDING_SECRET'
     )
   }
 
   if (!StrKey.isValidEd25519SecretSeed(fundingSecret)) {
     throw new StellarFundingError(
-      'Invalid STELLAR_FUNDING_WALLET_SECRET format.',
+      `Invalid ${FUNDING_SECRET_ENV} format.`,
       'ENV_INVALID_FUNDING_SECRET'
     )
   }
@@ -122,8 +171,13 @@ function getServer(horizonUrl: string): Horizon.Server {
   return created
 }
 
-function getFundingKeypair(fundingSecret: string): Keypair {
+function keypairFromSecret(fundingSecret: string): Keypair {
   return Keypair.fromSecret(fundingSecret)
+}
+
+/** The single accessor for the configured funding keypair. */
+export function getFundingKeypair(): Keypair {
+  return keypairFromSecret(getConfig().fundingSecret)
 }
 
 /**
@@ -391,7 +445,7 @@ export async function fundNewWallet(destination: string): Promise<FundResult> {
 
   const cfg = getConfig()
   const server = getServer(cfg.horizonUrl)
-  const fundingKeypair = getFundingKeypair(cfg.fundingSecret)
+  const fundingKeypair = keypairFromSecret(cfg.fundingSecret)
 
   try {
     const exists = await destinationExists(server, destination)
@@ -471,9 +525,7 @@ export async function fundNewWallet(destination: string): Promise<FundResult> {
  * Useful for operational monitoring or debugging (never exposes the secret).
  */
 export function getFundingWalletPublicKey(): string {
-  const cfg = getConfig()
-  const kp = getFundingKeypair(cfg.fundingSecret)
-  return kp.publicKey()
+  return getFundingKeypair().publicKey()
 }
 
 async function isFundingWalletLowBalance(params: {
@@ -527,7 +579,7 @@ export async function fundNewWalletWithSponsoredReserves(
 
   const cfg = getConfig()
   const server = getServer(cfg.horizonUrl)
-  const fundingKeypair = getFundingKeypair(cfg.fundingSecret)
+  const fundingKeypair = keypairFromSecret(cfg.fundingSecret)
 
   try {
     // Check if destination already exists
@@ -637,7 +689,7 @@ export async function submitFeeBumpTransaction(
 ): Promise<{ status: 'success' | 'failed'; txHash?: string; reason?: string }> {
   const cfg = getConfig()
   const server = getServer(cfg.horizonUrl)
-  const fundingKeypair = getFundingKeypair(cfg.fundingSecret)
+  const fundingKeypair = keypairFromSecret(cfg.fundingSecret)
 
   try {
     // Decode inner transaction

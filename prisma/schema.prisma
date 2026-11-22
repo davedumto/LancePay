@@ -816,7 +816,10 @@ model AuditEvent {
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   actor   User?   @relation(fields: [actorId], references: [id])
 
-  @@index([invoiceId])
+  // Per-invoice audit reads order by createdAt; the composite index supplies
+  // that order directly. The actor index backs the admin activity timeline.
+  @@index([invoiceId, createdAt])
+  @@index([actorId])
   @@index([eventType])
   @@index([createdAt])
 }

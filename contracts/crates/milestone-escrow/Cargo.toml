@@ -1,0 +1,15 @@
+[package]
+name = "milestone-escrow"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "milestone_escrow"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "21.0.0"
+lancepay-contract-shared = { path = "../shared" }
+
+[dev-dependencies]
+soroban-sdk = { version = "21.0.0", features = ["testutils"] }

@@ -49,7 +49,7 @@ WASM_TARGET="target/wasm32-unknown-unknown/release/milestone_escrow.wasm"
 if [ "${DRY_RUN}" = "true" ] || [ -z "${CLI_BIN}" ]; then
   echo "Notice: Running in dry-run/mock mode (or stellar CLI not present on host PATH)."
   # Compile via cargo directly to verify build integrity
-  cargo check --target wasm32-unknown-unknown 2>/dev/null || cargo check
+  cargo check --workspace --target wasm32-unknown-unknown 2>/dev/null || cargo check --workspace
   MOCK_WASM_HASH="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   MOCK_CONTRACT_ID="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
   echo "Simulated WASM hash pinning: ${MOCK_WASM_HASH}"

@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String};
 
 /// Represents the state of a dispute in the resolution process.
@@ -88,6 +89,39 @@ impl DisputeResolutionCourt {
         env.events().publish(
             (String::from_str(&env, "dispute_resolved"), dispute_id),
             split_ratio,
+        );
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    #[test]
+    fn adjudicate_accepts_a_valid_split() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, DisputeResolutionCourt);
+        let client = DisputeResolutionCourtClient::new(&env, &id);
+        let arbiter = Address::generate(&env);
+
+        client.adjudicate(&String::from_str(&env, "dispute-1"), &60, &arbiter);
+        assert!(client.initiate_dispute(&String::from_str(&env, "escrow-1"), &arbiter));
+    }
+
+    #[test]
+    #[should_panic(expected = "split_ratio must be 0-100")]
+    fn adjudicate_rejects_an_out_of_range_split() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, DisputeResolutionCourt);
+        let client = DisputeResolutionCourtClient::new(&env, &id);
+
+        client.adjudicate(
+            &String::from_str(&env, "dispute-1"),
+            &101,
+            &Address::generate(&env),
         );
     }
 }

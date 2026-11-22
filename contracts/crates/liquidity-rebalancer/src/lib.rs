@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
 
 #[contract]
@@ -41,5 +42,23 @@ impl LiquidityRebalancer {
             (String::from_str(env, "rebalance_executed"), wallet.clone()),
             amount_xlm,
         );
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    #[test]
+    fn rebalances_only_below_the_threshold() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, LiquidityRebalancer);
+        let client = LiquidityRebalancerClient::new(&env, &id);
+        let wallet = Address::generate(&env);
+
+        assert!(!client.check_and_rebalance(&wallet, &10_0000000, &30_0000000));
+        assert!(client.check_and_rebalance(&wallet, &20_0000000, &30_0000000));
     }
 }

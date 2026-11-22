@@ -1,0 +1,7 @@
+[package]
+name = "lancepay-contract-shared"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+soroban-sdk = "21.0.0"

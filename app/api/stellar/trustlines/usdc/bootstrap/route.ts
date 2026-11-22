@@ -12,6 +12,7 @@ import {
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { verifyAuthToken } from '@/lib/auth'
+import { getFundingKeypair } from '@/lib/stellar-funding'
 import { HORIZON_URL, STELLAR_NETWORK } from '@/lib/stellar'
 
 const bootstrapSchema = z.object({
@@ -38,6 +39,16 @@ async function getAuthenticatedUser(request: NextRequest): Promise<{ id: string;
   })
 
   return user
+}
+
+/**
+ * The trustline bootstrap can use a dedicated sponsor key. When it is absent
+ * it shares the single funding keypair accessor instead of reading a second
+ * env name, so funding and bootstrap cannot drift apart.
+ */
+export function resolveSponsorKeypair(): Keypair {
+  const sponsorSecret = process.env.STELLAR_SPONSOR_SECRET
+  return sponsorSecret ? Keypair.fromSecret(sponsorSecret) : getFundingKeypair()
 }
 
 export function isRetryableHorizonError(err: unknown): boolean {
@@ -150,12 +161,8 @@ export async function POST(request: NextRequest) {
       logger.warn({ walletAddress, err: loadErr }, 'Horizon account preflight check warning')
     }
 
-    // 3. Obtain sponsor keypair
-    const sponsorSecret =
-      process.env.STELLAR_SPONSOR_SECRET ||
-      process.env.STELLAR_FUNDING_SECRET ||
-      Keypair.random().secret()
-    const sponsorKeypair = Keypair.fromSecret(sponsorSecret)
+    // 3. Obtain sponsor keypair from the one funding accessor (or its dedicated override)
+    const sponsorKeypair = resolveSponsorKeypair()
 
     // Upsert sentinel before submission
     const sentinel = await prisma.trustlineBootstrap.upsert({
