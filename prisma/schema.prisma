@@ -4,7 +4,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime queries: Neon *pooled* connection string (PgBouncer, `-pooler` host).
+  url       = env("DATABASE_URL")
+  // Migrations / introspection: Neon *direct* connection string. PgBouncer's
+  // transaction mode cannot run Prisma Migrate, so it must bypass the pooler.
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
