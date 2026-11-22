@@ -44,7 +44,12 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Add other necessary build-time env vars here
+          # Build-time environment variables:
+          # - NEXT_PUBLIC_PRIVY_APP_ID: Required by PrivyProvider and PrivyClient during static page/route optimization.
+          # - PRIVY_APP_SECRET: Placeholder for PrivyClient initialization during route module evaluation.
+          # - DATABASE_URL: Dummy PostgreSQL connection string for Prisma client initialization (avoids exposing production database secrets).
+          # - NEXT_PUBLIC_SITE_URL: Canonical base URL for app metadata and OpenGraph tags.
+          NEXT_PUBLIC_PRIVY_APP_ID: "clerk-disabled-privy-app-id-placeholder"
+          PRIVY_APP_SECRET: "placeholder-privy-app-secret"
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy?sslmode=disable"
+          NEXT_PUBLIC_SITE_URL: "https://lancepay.com"

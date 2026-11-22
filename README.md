@@ -65,6 +65,7 @@ For contributors and developers:
 
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** — How to contribute to this project
 - **[Code Style Guide](./docs/CODE_STYLE.md)** — Code standards and best practices
+- **[Module Architecture](./docs/MODULES.md)** — Architecture guide covering app routes, components, hooks, and lib domain services
 
 ---
 

@@ -1,147 +1,131 @@
-# FreelancerPay402 - Module Architecture
+# LancePay - Module & Codebase Architecture
 
-## Folder Structure
+## 1. Directory Layout
+
+The LancePay repository is organized as a unified Next.js (App Router) full-stack application. It does not use an isolated `modules/` directory; instead, application code is partitioned into domain-driven layers across `app/`, `components/`, `hooks/`, and `lib/`.
 
 ```
 LancePay/
-├── app/                          # Next.js App Router
-│   ├── (auth)/                   # Auth route group (no layout)
-│   │   ├── login/page.tsx
-│   │   └── signup/page.tsx
-│   ├── (dashboard)/              # Dashboard route group (with sidebar)
-│   │   ├── layout.tsx
-│   │   ├── page.tsx              # /dashboard
-│   │   ├── invoices/
-│   │   │   ├── page.tsx          # /dashboard/invoices
-│   │   │   ├── new/page.tsx      # /dashboard/invoices/new
-│   │   │   └── [id]/page.tsx     # /dashboard/invoices/:id
-│   │   ├── withdrawals/
-│   │   │   └── page.tsx          # /dashboard/withdrawals
-│   │   └── settings/
-│   │       └── page.tsx          # /dashboard/settings
-│   ├── pay/
-│   │   └── [invoiceId]/page.tsx  # Public payment page
-│   ├── api/                      # API Routes
-│   │   ├── auth/
-│   │   ├── user/
-│   │   ├── invoices/
-│   │   ├── bank-accounts/
-│   │   ├── withdrawals/
-│   │   ├── pay/
-│   │   └── webhooks/
-│   ├── layout.tsx                # Root layout
-│   ├── page.tsx                  # Landing page
-│   └── globals.css
+├── app/                          # Next.js App Router (Pages, Layouts & API)
+│   ├── (auth)/                   # Authentication route group (login, signup)
+│   ├── (dashboard)/              # Authenticated user dashboard route group
+│   ├── pay/                      # Public invoice checkout & payment page
+│   ├── api-docs/                 # Swagger UI and OpenAPI documentation
+│   └── api/                      # Backend REST, webhook & GraphQL routes
+│       ├── routes-b/             # Secondary domain & extended feature routes
+│       ├── routes-d/             # Operational, admin & security routes
+│       ├── auth/                 # Core user authentication & session management
+│       ├── invoices/             # Core invoice creation, updating, and querying
+│       ├── withdrawals/          # Core off-ramp and withdrawal requests
+│       ├── webhooks/             # External webhook ingesters (MoonPay, Yellow Card, Privy)
+│       ├── graphql/              # GraphQL schema gateway and execution
+│       └── cron/                 # Vercel cron jobs (overdue invoice handling)
 │
-├── modules/                      # Feature modules
-│   ├── auth/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── types.ts
-│   ├── dashboard/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── types.ts
-│   ├── invoices/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── actions.ts
-│   │   └── types.ts
-│   ├── payments/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── types.ts
-│   ├── withdrawals/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── types.ts
-│   └── settings/
-│       ├── components/
-│       ├── hooks/
-│       └── types.ts
+├── components/                   # React UI components
+│   ├── ui/                       # Base design system primitives (Button, Input, Badge, etc.)
+│   ├── layout/                   # Structural components (Navbar, Sidebar, Footer)
+│   ├── dashboard/                # Dashboard widgets, stats grids, and overview cards
+│   ├── invoices/                 # Invoice builder, viewer, and state badges
+│   └── payments/                 # Payment modal, QR codes, and currency selectors
 │
-├── components/                   # Shared UI components
-│   ├── ui/                       # Base components (Button, Input, etc.)
-│   ├── layout/                   # Layout components (Sidebar, Navbar)
-│   └── common/                   # Common components (Logo, LoadingSpinner)
+├── hooks/                        # Custom React hooks
+│   ├── usePayments.ts            # Client-side payment execution & status polling
+│   ├── useTransactionHistory.ts   # On-chain and database transaction pagination
+│   ├── useCountUp.ts             # Animated number ticker for financial balances
+│   └── useInactivityTimeout.ts   # Session inactivity auto-logout protection
 │
-├── lib/                          # Shared utilities
-│   ├── db.ts                     # Prisma client
-│   ├── auth.ts                   # Privy server helpers
-│   ├── redis.ts                  # Upstash Redis
-│   ├── blockchain.ts             # Viem/Alchemy helpers
-│   ├── utils.ts                  # General utilities
-│   └── validations.ts            # Zod schemas
+├── lib/                          # Core business logic and service integrations
+│   ├── db.ts                     # Prisma client singleton (PostgreSQL / Neon)
+│   ├── logger.ts                 # Structured Pino logger
+│   ├── email.ts                  # Transactional email dispatcher (Resend)
+│   ├── pdf.tsx                   # Server-side PDF invoice generation (@react-pdf)
+│   └── [Domain modules...]       # Stellar, payments, compliance, auth, etc.
 │
-├── hooks/                        # Shared hooks
-│   └── use-toast.ts
-│
-├── types/                        # Global types
-│   └── index.ts
-│
-├── prisma/
-│   └── schema.prisma             # Database schema
-│
-└── docs/
-    ├── DEVOPS.md
-    └── MODULES.md
+├── contracts/                    # Soroban smart contracts (Rust SDK)
+├── docs/                         # Technical documentation & architecture guides
+└── prisma/                       # Prisma database schema & migration files
 ```
 
-## Module Responsibilities
+---
 
-### 1. Auth Module (`modules/auth/`)
-- **Purpose**: Handle authentication with Privy (Google OAuth)
-- **Components**: LoginButton, AuthGuard, UserMenu
-- **Hooks**: useAuth, useUser, useWallet
-- **No conflicts**: Only module that interacts with Privy SDK
+## 2. API Route Architecture
+
+Backend endpoints in `app/api` are categorized into three distinct tiers:
+
+### 2.1 Top-Level API Routes (`app/api/*`)
+Directly service primary user workflows and public entry points:
+- `/api/auth/*`: User login, session verification, and Privy OAuth synchronization.
+- `/api/invoices/*`: Core invoice CRUD, client view tracking, and status transitions.
+- `/api/pay/*`: Public payment resolution and hosted checkout sessions.
+- `/api/withdrawals/*`: Bank withdrawal requests and status callbacks.
+- `/api/webhooks/*`: MoonPay, Yellow Card, and Privy signature verification and event handling.
+- `/api/graphql/*`: Public and filtered GraphQL gateway schemas.
+- `/api/cron/*`: Scheduled background maintenance (e.g. overdue invoice cancellation).
+
+### 2.2 Secondary Domain Routes (`app/api/routes-b/*`)
+Handles extended business logic and sub-domain features associated with invoices and collaboration:
+- **Invoice Line Extensions**: Partial payments, tax lines, currency conversions, and PDF regeneration.
+- **Reporting & Summaries**: Monthly and yearly invoice performance rollups.
+- **Collaboration & Workspace**: Pinned notes, team announcements, search history, and language preferences.
+- **Subscriptions & Billing**: Recurring payment schedules and client subscription tracking.
+
+### 2.3 Operational & Administrative Routes (`app/api/routes-d/*`)
+Reserved for administrative, platform health, security controls, and enterprise integrations:
+- **Security & Access**: IP allowlisting, trusted devices, session revocations, and password recovery.
+- **Compliance & Watchlists**: Sanctions screening, address cooldown statuses, and chargeback audits.
+- **System Health & Maintenance**: Prometheus metrics, cache statistics, database backup triggers, and job queue management.
+- **Enterprise Integrations**: SCIM v2 directory synchronization, SAML/SSO configuration, and Plaid/Circle test harness sinks.
+
+---
+
+## 3. Core `lib/` Modules by Domain
+
+The `lib/` folder contains domain services and utility modules. Upstash Redis and Viem/Alchemy are not used as standalone infrastructure files; caching and ledger logic reside in dedicated domain files.
+
+### 3.1 Stellar & Blockchain Infrastructure
+- `lib/stellar.ts`: Stellar SDK initialization, Horizon client, transaction submission, and account loading.
+- `lib/stellar-funding.ts`: Automated account creation, XLM reserve funding, and trustline establishment.
+- `lib/claimable-balances.ts`: Shared constants and error mappers (including `op_no_trust` handling) for claimable balance workflows.
+- `lib/sep24.ts`: Stellar Ecosystem Proposal 24 interactive deposit and withdrawal protocol handler.
+- `lib/anchors.ts` & `lib/assets.ts`: Stellar anchor metadata and supported asset configurations (XLM, USDC, EURC).
+- `lib/fee-estimation.ts` & `lib/fee-rates.ts`: Real-time network base fee calculations and surge pricing adjustments.
+
+### 3.2 Payments, FX & Off-Ramping
+- `lib/offramp.ts`: Yellow Card API client for USDC-to-NGN off-ramp and Nigerian bank transfers.
+- `lib/withdrawal-ledger.ts`: Double-entry accounting ledger tracking withdrawals and fee reserves.
+- `lib/money.ts`: High-precision financial arithmetic, currency formatting, and subunit conversions.
+- `lib/pricing.ts` & `lib/fee-rates.ts`: Freelancer fee calculations, platform margins (<1%), and caps.
+- `lib/fx-rates.ts` & `lib/exchange-rate.ts`: USD/NGN foreign exchange feeds and provider quote comparison.
+- `lib/invoice-fx-lock.ts`: Guaranteed exchange rate locking during open checkout windows.
+- `lib/quote-conversion.ts`: Quote generation and fee decomposition for international clients.
+- `lib/manual-payment-reconciliation.ts`: Reconciliation engine for bank transfers and manual receipts.
+
+### 3.3 Authentication, Authorization & Security
 - **Single Auth Architecture**: All client and API authentication runs exclusively through Privy (via `verifyAuthToken` in `lib/auth.ts`). `next-auth` is completely removed from dependencies and routes.
+- `lib/auth.ts`: Privy server authentication token verification and user extraction.
+- `lib/authorization.ts`: Role-based access control (RBAC) and invoice ownership guards.
+- `lib/two-factor.ts`: TOTP two-factor authentication setup and speakeasy token validation.
+- `lib/crypto.ts`: Key derivation, symmetric payload encryption, and cryptographic helpers.
+- `lib/rate-limit.ts`: Token bucket and sliding window rate limiting.
+- `lib/client-ip.ts`: Trusted proxy headers parser and client IP extraction.
+- `lib/csp-nonce.ts`: Content Security Policy nonce generator for script tag isolation.
+- `lib/privy-webhook-verify.ts` & `lib/webhook-signature.ts`: Cryptographic HMAC and public-key webhook verification.
 
-### 2. Dashboard Module (`modules/dashboard/`)
-- **Purpose**: Main dashboard UI after login
-- **Components**: BalanceCard, RecentTransactions, QuickActions, StatsGrid
-- **Hooks**: useBalance, useRecentActivity
-- **Depends on**: Auth (for user data)
+### 3.4 Compliance, Risk & Trust
+- `lib/kyc-config.ts`: Identity verification tiers, document requirements, and verification thresholds.
+- `lib/bank-verification.ts`: Nigerian NUBAN account validation and account name matching.
+- `lib/trust-score.ts`: Dynamic user trust score computation based on payment history and dispute frequency.
+- `lib/client-reputation.ts`: Client credit risk and chargeback probability scoring.
+- `lib/audit.ts`: Immutable security audit log persistence.
+- `lib/badges.ts`: Freelancer reputation and verification badge state machine.
+- `lib/account-deletion.ts`: GDPR/NDPR compliance routines for complete account data erasure.
 
-### 3. Invoices Module (`modules/invoices/`)
-- **Purpose**: Invoice CRUD and management
-- **Components**: InvoiceList, InvoiceForm, InvoiceCard, PaymentLinkShare
-- **Hooks**: useInvoices, useCreateInvoice, useInvoice
-- **Actions**: createInvoice, updateInvoice, deleteInvoice
-- **Depends on**: Auth (for user context)
-
-### 4. Payments Module (`modules/payments/`)
-- **Purpose**: Public payment page for clients
-- **Components**: PaymentPage, OnrampWidget, PaymentSuccess
-- **Hooks**: usePaymentStatus
-- **No auth required**: Public-facing
-
-### 5. Withdrawals Module (`modules/withdrawals/`)
-- **Purpose**: Bank withdrawals and history
-- **Components**: WithdrawalModal, BankSelector, ExchangeRateDisplay, WithdrawalHistory
-- **Hooks**: useWithdrawals, useExchangeRate, useBankAccounts
-- **Depends on**: Auth, Settings (for bank accounts)
-
-### 6. Settings Module (`modules/settings/`)
-- **Purpose**: User profile and bank account management
-- **Components**: ProfileForm, BankAccountList, AddBankAccountModal
-- **Hooks**: useProfile, useBankAccountMutations
-- **Depends on**: Auth
-
-## API Routes by Module
-
-| Module | API Routes | Auth Required |
-|--------|------------|---------------|
-| Auth | `/api/auth/*`, `/api/webhooks/privy` | No (webhooks) |
-| Dashboard | `/api/user/balance`, `/api/user/profile` | Yes |
-| Invoices | `/api/invoices/*` | Yes |
-| Payments | `/api/pay/[id]` | No (public) |
-| Withdrawals | `/api/withdrawals/*`, `/api/exchange-rate` | Yes |
-| Settings | `/api/bank-accounts/*` | Yes |
-
-## Conflict Prevention Rules
-
-1. **Module isolation**: Each module has its own `types.ts` - no shared types between modules
-2. **API ownership**: Each API route belongs to one module only
-3. **Component naming**: Prefix with module name if exported (e.g., `InvoiceCard`, not `Card`)
-4. **Hook naming**: Include module context (e.g., `useInvoices`, not `useList`)
-5. **Shared code**: Goes in `lib/` or `components/ui/` - never in modules
+### 3.5 Core System & Utilities
+- `lib/db.ts`: Prisma ORM client instance with connection pooling.
+- `lib/logger.ts`: Centralized Pino logger instance with environment-aware formatting.
+- `lib/email.ts`: Transactional email templates and delivery via Resend.
+- `lib/pdf.tsx`: React-PDF invoice document layout and streaming PDF buffer generation.
+- `lib/validations.ts`: Zod validation schemas for all inbound API payloads.
+- `lib/shared-cache.ts`: Shared in-memory and distributed cache interface.
+- `lib/persisted-queries.ts`: Pre-registered GraphQL query hash registry.
+- `lib/utils.ts`: Tailwind class merging (`cn`) and general string/date utilities.

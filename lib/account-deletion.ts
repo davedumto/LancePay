@@ -14,6 +14,8 @@ export const ACCOUNT_DELETION_GRACE_MS = ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 *
  */
 export const DELETION_STATUS = {
   PENDING: 'pending',
+  IN_PROGRESS: 'in-progress',
+  BLOCKED: 'blocked',
   CANCELLED: 'cancelled',
   COMPLETED: 'completed',
 } as const

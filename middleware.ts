@@ -122,8 +122,11 @@ export function middleware(request: NextRequest) {
     );
 
     const blocked = NextResponse.json(
-      { error: 'Rate limit exceeded. Please try again shortly.' },
-      { status: 429 }
+      rateLimitExceededBody(rateLimit),
+      {
+        status: 429,
+        headers: rateLimitHeaders(rateLimit),
+      }
     );
     blocked.headers.set('Retry-After', String(retryAfterSeconds));
     applyRateLimitHeaders(blocked, rateLimit);

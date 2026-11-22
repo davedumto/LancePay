@@ -1,5 +1,12 @@
-directive @internal on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-directive @private on FIELD_DEFINITION | OBJECT
+"""
+Directive Contract:
+- @internal: Marks types, fields, arguments, input objects, or enums intended exclusively for backend, worker, or administrative use. Stripped from the public gateway SDL.
+- @private: Marks sensitive user or security data (e.g., credentials, secrets, PII) that must never be exposed through public GraphQL clients. Stripped from the public gateway SDL.
+
+Any AST node decorated with @internal or @private—whether declared on the same line or across multiple lines, on fields, arguments, or nested types—is pruned by the schema filtering pipeline before publication.
+"""
+directive @internal on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @private on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """
 Core user account in LancePay
