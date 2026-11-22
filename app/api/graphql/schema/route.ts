@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import {
+  parse,
+  print,
+  visit,
+  type DirectiveNode,
+} from 'graphql'
 import { logger } from '@/lib/logger'
 
 export function getSchemaFilePath(): string {
@@ -11,50 +17,70 @@ export function getSchemaFilePath(): string {
   return path.join(process.cwd(), 'lib/graphql/schema.graphql')
 }
 
+function hasRestrictedDirective(node: { directives?: readonly DirectiveNode[] }): boolean {
+  return Boolean(
+    node.directives?.some(
+      (d) => d.name.value === 'internal' || d.name.value === 'private',
+    ),
+  )
+}
+
 export function filterPublicSchema(rawSdl: string): string {
-  const lines = rawSdl.split('\n')
-  const filteredLines: string[] = []
-  let insideInternalType = false
-  let currentBraceDepth = 0
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const trimmed = line.trim()
-
-    // Skip directive declarations for internal directives
-    if (/^directive\s+@(internal|private)\b/.test(trimmed)) {
-      continue
-    }
-
-    // Check if this line starts a type marked with @internal or @private
-    if (/^(type|input|interface|union|enum)\s+\w+.*@(internal|private)\b/.test(trimmed)) {
-      insideInternalType = true
-      currentBraceDepth = (line.match(/{/g) || []).length - (line.match(/}/g) || []).length
-      // If single line type, reset immediately
-      if (currentBraceDepth <= 0 && line.includes('{') && line.includes('}')) {
-        insideInternalType = false
+  const ast = parse(rawSdl)
+  const filtered = visit(ast, {
+    DirectiveDefinition(node) {
+      if (node.name.value === 'internal' || node.name.value === 'private') {
+        return null
       }
-      continue
-    }
+    },
+    ObjectTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    InputObjectTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    InterfaceTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    UnionTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    EnumTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    ScalarTypeDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    ObjectTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    InputObjectTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    InterfaceTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    UnionTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    EnumTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    ScalarTypeExtension(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    FieldDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    InputValueDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+    EnumValueDefinition(node) {
+      if (hasRestrictedDirective(node)) return null
+    },
+  })
 
-    if (insideInternalType) {
-      currentBraceDepth += (line.match(/{/g) || []).length - (line.match(/}/g) || []).length
-      if (currentBraceDepth <= 0) {
-        insideInternalType = false
-      }
-      continue
-    }
-
-    // Skip individual fields marked with @internal or @private
-    if (/@(internal|private)\b/.test(line)) {
-      continue
-    }
-
-    filteredLines.push(line)
-  }
-
-  // Trim trailing empty lines
-  return filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n'
+  return print(filtered).trim() + '\n'
 }
 
 export function computeSchemaHash(sdl: string): string {
@@ -100,7 +126,19 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const publicSdl = filterPublicSchema(rawSchema)
+    let publicSdl: string
+    try {
+      publicSdl = filterPublicSchema(rawSchema)
+    } catch (parseErr) {
+      logger.error({ err: parseErr, schemaPath }, 'Failed to parse GraphQL schema SDL: failing closed')
+      return NextResponse.json(
+        {
+          error: 'Failed to parse GraphQL schema SDL: gateway schema unavailable',
+          code: 'SCHEMA_PARSE_ERROR',
+        },
+        { status: 500 },
+      )
+    }
     const schemaHash = computeSchemaHash(publicSdl)
     const etag = `"${schemaHash}"`
 
