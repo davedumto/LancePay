@@ -107,6 +107,15 @@ git push origin feat-add-currency-converter
 
 ---
 
+## 🧪 Test File Location Rules
+
+Vitest is configured to run tests matching the following include patterns (`vitest.config.ts`):
+- `tests/**/*.test.ts`: Integration, end-to-end, and cross-cutting test suites.
+- `app/**/__tests__/**/*.test.ts` & `app/**/*.test.ts`: Next.js App Router route and component tests.
+- `lib/**/*.test.ts`: Core utility and library unit tests.
+
+All new and existing unit/integration tests must reside within one of these paths (`tests/`, `app/`, or `lib/`) using the `.test.ts` naming convention. Test files placed outside these configured globs are not executed by the CI test runner and will fail the repository test guard check.
+
 ## 🔍 Pull Request Guidelines
 
 ### Before Submitting
