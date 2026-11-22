@@ -1,6 +1,10 @@
 /**
- * Simple test script for the fee-quote API logic
- * Run with: node test-fee-quote.js
+ * Fee Quote Calculation & Breakdown Simulation Script
+ *
+ * Simulates on-ramp, Stellar network, and off-ramp fee calculation
+ * logic and verifies net received USDC and effective NGN exchange rate.
+ *
+ * Usage: node scripts/test-fee-quote.js
  */
 
 const FEE_CONFIG = {
@@ -90,7 +94,4 @@ console.log(JSON.stringify({
   timestamp: new Date().toISOString()
 }, null, 2));
 
-
-
 console.log("\n=== All Tests Complete ===");
-

@@ -1,10 +1,14 @@
 /**
- * Test script for path payment strict-receive functionality
- * This validates that the implementation works correctly
+ * Stellar Path Payment Strict-Receive Verification Script
+ *
+ * Validates path-payment quote calculations and function signatures
+ * for multi-asset conversion into USDC.
+ *
+ * Usage: npx tsx scripts/test-path-payments.ts
  */
 
 import { Asset } from '@stellar/stellar-sdk'
-import { calculateStrictReceivePath, sendPathPayment, USDC_ASSET } from './lib/stellar'
+import { calculateStrictReceivePath, sendPathPayment, USDC_ASSET } from '../lib/stellar'
 
 async function testPathPaymentCalculation() {
   console.log('=== Testing Path Payment Calculation ===\n')

@@ -1,6 +1,10 @@
 /**
- * Simple test script for the P&L API logic
- * Run with: node test-p-and-l.js
+ * Profit & Loss (P&L) Calculation Simulation Script
+ *
+ * Simulates freelancer revenue, platform fee deductions (0.5%),
+ * withdrawal fees (0.5%), and net profit calculations across scenarios.
+ *
+ * Usage: node scripts/test-p-and-l.js
  */
 
 const PLATFORM_FEE_RATE = 0.005; // 0.5%

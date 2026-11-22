@@ -2,33 +2,42 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GET } from './route'
 import { NextRequest } from 'next/server'
 
-vi.mock('next-auth', () => ({
-  getServerSession: vi.fn(),
+vi.mock('@/lib/auth', () => ({
+  verifyAuthToken: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn(),
+    },
     anchorSession: {
       findUnique: vi.fn(),
     },
   },
 }))
 
-import { getServerSession } from 'next-auth'
+import { verifyAuthToken } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-const mockUser = { id: 'user-1', email: 'user@example.com' }
-const mockClaims = { userId: 'privy-1' }
+const mockUser = { id: 'user-1', privyId: 'privy-user-1', email: 'user@example.com' }
+const mockClaims = { userId: 'privy-user-1' }
 
-function makeRequest(id: string = 'session-1'): NextRequest {
+function makeRequest(id: string = 'session-1', token: string | null = 'mock-token'): NextRequest {
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['authorization'] = `Bearer ${token}`
+  }
   return new NextRequest(`http://localhost/api/anchor-sessions/${id}/status`, {
     method: 'GET',
+    headers,
   })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getServerSession).mockResolvedValue({ user: mockUser } as any)
+  vi.mocked(verifyAuthToken).mockResolvedValue(mockClaims as any)
+  vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as any)
 })
 
 describe('GET /api/anchor-sessions/[id]/status', () => {
@@ -39,7 +48,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -50,7 +58,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
     expect(data.id).toBe('session-1')
     expect(data.expiresAt).toBeDefined()
     expect(data.createdAt).toBeDefined()
-    expect(data.updatedAt).toBeDefined()
     expect(data).not.toHaveProperty('jwtToken')
   })
 
@@ -60,7 +67,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -77,7 +83,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: now,
-      updatedAt: now,
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -87,7 +92,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
     expect(data).toHaveProperty('status')
     expect(data).toHaveProperty('expiresAt')
     expect(data).toHaveProperty('createdAt')
-    expect(data).toHaveProperty('updatedAt')
   })
 
   // HAPPY PATH — EXPIRED SESSION
@@ -97,7 +101,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() - 3600000), // 1 hour ago
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -114,7 +117,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() - 1000), // Just expired
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -131,15 +133,11 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: now,
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
     const res = await GET(makeRequest('session-1'), { params: { id: 'session-1' } })
     const data = await res.json()
-    // Depending on timing, this might be expired or active, but we test the logic
-    // If expiresAt === now and now < now is false, it's active. If now <= now, it's expired.
-    // The code uses < so exactly now should be active
     expect(['active', 'expired']).toContain(data.status)
   })
 
@@ -150,7 +148,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: null,
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -161,18 +158,28 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
   })
 
   // AUTHENTICATION
-  it('returns 401 when no session exists', async () => {
-    vi.mocked(getServerSession).mockResolvedValue(null)
+  it('returns 401 when no auth token provided or token invalid', async () => {
+    vi.mocked(verifyAuthToken).mockResolvedValue(null)
 
-    const res = await GET(makeRequest('session-1'), { params: { id: 'session-1' } })
+    const res = await GET(makeRequest('session-1', null), { params: { id: 'session-1' } })
     expect(res.status).toBe(401)
     const data = await res.json()
     expect(data.error).toBe('Unauthorized')
     expect(data.message).toBe('Authentication required')
   })
 
+  it('returns 401 when user is not found in database', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+
+    const res = await GET(makeRequest('session-1'), { params: { id: 'session-1' } })
+    expect(res.status).toBe(401)
+    const data = await res.json()
+    expect(data.error).toBe('Unauthorized')
+    expect(data.message).toBe('User not found')
+  })
+
   it('401 response has correct error shape', async () => {
-    vi.mocked(getServerSession).mockResolvedValue(null)
+    vi.mocked(verifyAuthToken).mockResolvedValue(null)
 
     const res = await GET(makeRequest('session-1'), { params: { id: 'session-1' } })
     const data = await res.json()
@@ -207,7 +214,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'other-user-id',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -224,7 +230,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'other-user-id',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -240,7 +245,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -255,7 +259,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
 
@@ -275,7 +278,6 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
       userId: 'user-1',
       expiresAt: new Date(Date.now() + 3600000),
       createdAt: new Date(),
-      updatedAt: new Date(),
       jwtToken: 'secret-token-should-not-leak', // Simulating accidental inclusion
     }
     vi.mocked(prisma.anchorSession.findUnique).mockResolvedValue(mockSession as any)
@@ -284,7 +286,7 @@ describe('GET /api/anchor-sessions/[id]/status', () => {
     const data = await res.json()
     // Response should only have safe fields
     expect(data).not.toHaveProperty('jwtToken')
-    expect(Object.keys(data).sort()).toEqual(['createdAt', 'expiresAt', 'id', 'status', 'updatedAt'].sort())
+    expect(Object.keys(data).sort()).toEqual(['createdAt', 'expiresAt', 'id', 'status'].sort())
   })
 
   // ERROR HANDLING

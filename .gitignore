@@ -135,6 +135,9 @@ service-account.json
 # ═══════════════════════════════════════════════════════════════
 generated/
 .generated/
+lint_out.txt
+*.out.txt
+lint_out*.txt
 
 # ═══════════════════════════════════════════════════════════════
 # RUST / CARGO

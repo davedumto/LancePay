@@ -7,7 +7,7 @@
     "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**'",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**' --ignore-pattern 'scripts/**'",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
     "audit": "npm audit --audit-level=moderate"
@@ -38,7 +38,6 @@
     "lucide-react": "^0.469.0",
     "nanoid": "^6.0.2",
     "next": "^16.1.0",
-    "next-auth": "^4.24.15",
     "next-swagger-doc": "^0.4.1",
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",

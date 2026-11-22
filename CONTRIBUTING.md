@@ -218,6 +218,34 @@ See [CODE_STYLE.md](./docs/CODE_STYLE.md) for full guidelines.
 
 ---
 
+## 🛠️ Verification & Helper Scripts (`scripts/`)
+
+Standalone test, verification, and simulation scripts are located in the `scripts/` directory (excluded from Next.js type check and ESLint). Never place ad-hoc test scripts or scratch files in the repository root.
+
+Available scripts:
+- **`scripts/test-fee-quote.js`**: Simulates fee quotes, breakdown calculations (on-ramp, network, off-ramp), and effective NGN exchange rate math across tiers.
+  ```bash
+  node scripts/test-fee-quote.js
+  ```
+- **`scripts/test-p-and-l.js`**: Simulates profit-and-loss calculations, platform fees (0.5%), withdrawal fees (0.5%), and net earnings across typical and edge-case monthly volumes.
+  ```bash
+  node scripts/test-p-and-l.js
+  ```
+- **`scripts/test-path-payments.ts`**: Validates Stellar path payment strict-receive quotes and function signatures for multi-asset conversions.
+  ```bash
+  npx tsx scripts/test-path-payments.ts
+  ```
+- **`scripts/test-sponsored-reserves.ts`**: Validates Stellar sponsored reserves and fee-bump transaction structures for gasless onboarding.
+  ```bash
+  npx tsx scripts/test-sponsored-reserves.ts
+  ```
+- **`scripts/verify-moonpay-webhook.ts`**: Validates MoonPay HMAC signature verification and timestamp tamper resistance.
+  ```bash
+  npx tsx scripts/verify-moonpay-webhook.ts
+  ```
+
+---
+
 ## 🐛 Reporting Bugs
 
 Found a bug? Please create an issue with:

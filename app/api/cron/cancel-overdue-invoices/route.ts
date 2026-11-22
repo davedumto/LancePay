@@ -37,52 +37,58 @@ export async function GET(request: Request) {
 
         for (const invoice of eligibleInvoices) {
             try {
-                // Atomic update for status and lien release
-                const updatedInvoice = await prisma.invoice.update({
-                    where: { id: invoice.id },
-                    data: {
-                        status: 'cancelled',
-                        cancelledAt: new Date(),
-                        cancellationReason: 'Auto-cancelled: 90 days overdue',
-                        lienActive: false,
-                    },
-                })
-
-                // Log audit event
-                await logAuditEvent(
-                    invoice.id,
-                    'invoice.auto_cancelled',
-                    null, // system actor
-                    { reason: 'Auto-cancelled: 90 days overdue' }
-                )
-
-                // Calculate days overdue
-                const daysOverdue = Math.floor(
-                    (new Date().getTime() - new Date(invoice.dueDate!).getTime()) / (1000 * 60 * 60 * 24)
-                )
-
-                // Send cancellation email to freelancer
-                if (invoice.user?.name && invoice.user?.email) {
-                    const emailSent = await sendInvoiceCancelledEmail({
-                        to: invoice.user.email,
-                        freelancerName: invoice.user.name,
-                        invoiceNumber: invoice.invoiceNumber,
-                        amount: Number(invoice.amount),
-                        dueDate: invoice.dueDate!,
-                        daysOverdue,
-                        clientEmail: invoice.clientEmail,
+                // Execute status update and audit log in a single atomic transaction
+                await prisma.$transaction(async (tx) => {
+                    await tx.invoice.update({
+                        where: { id: invoice.id },
+                        data: {
+                            status: 'cancelled',
+                            cancelledAt: new Date(),
+                            cancellationReason: 'Auto-cancelled: 90 days overdue',
+                            lienActive: false,
+                        },
                     })
 
-                    if (!emailSent || !emailSent.success) {
-                        console.warn(`Failed to send cancellation email for invoice ${invoice.id}`)
+                    // Log audit event passing the transaction client
+                    await logAuditEvent(
+                        invoice.id,
+                        'invoice.auto_cancelled',
+                        null, // system actor
+                        { reason: 'Auto-cancelled: 90 days overdue' },
+                        tx
+                    )
+                })
+
+                // Fire-and-forget cancellation email after successful transaction commit
+                try {
+                    const daysOverdue = Math.floor(
+                        (new Date().getTime() - new Date(invoice.dueDate!).getTime()) / (1000 * 60 * 60 * 24)
+                    )
+
+                    if (invoice.user?.name && invoice.user?.email) {
+                        const emailSent = await sendInvoiceCancelledEmail({
+                            to: invoice.user.email,
+                            freelancerName: invoice.user.name,
+                            invoiceNumber: invoice.invoiceNumber,
+                            amount: Number(invoice.amount),
+                            dueDate: invoice.dueDate!,
+                            daysOverdue,
+                            clientEmail: invoice.clientEmail,
+                        })
+
+                        if (!emailSent || !emailSent.success) {
+                            console.warn(`Failed to send cancellation email for invoice ${invoice.id}`)
+                        }
                     }
+                } catch (emailError) {
+                    console.error(`Failed to send cancellation email for invoice ${invoice.id}:`, emailError)
                 }
 
                 cancelledIds.push(invoice.id)
                 cancelledCount++
             } catch (error) {
                 console.error(`Failed to automatically cancel invoice ${invoice.id}:`, error)
-                // Ensure email failures or individual invoice errors don't abort the entire run
+                // Transaction rollback ensures invoice remains in pending state without partial updates
             }
         }
 

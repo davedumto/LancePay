@@ -121,6 +121,7 @@ Runs daily at 2:00 AM UTC (`0 2 * * *`). It automatically cancels unpaid invoice
 - **Status:** Pending
 - **Due Date:** More than 90 days ago
 - **Exclusions:** Invoices with active escrow, active disputes, or `doNotAutoCancel: true` are never auto-cancelled.
+- **Transactional Guarantee:** Status updates (`cancelled`), lien releases, and audit log generation (`invoice.auto_cancelled`) are wrapped in an atomic database transaction (`prisma.$transaction`). If audit trail creation fails, the transaction rolls back so that the invoice remains `pending` without partial state corruption. Email notifications are dispatched fire-and-forget after commit.
 
 To manually test the auto-cancellation cron locally, run:
 ```bash

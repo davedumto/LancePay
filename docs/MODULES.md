@@ -101,6 +101,7 @@ The `lib/` folder contains domain services and utility modules. Upstash Redis an
 - `lib/manual-payment-reconciliation.ts`: Reconciliation engine for bank transfers and manual receipts.
 
 ### 3.3 Authentication, Authorization & Security
+- **Single Auth Architecture**: All client and API authentication runs exclusively through Privy (via `verifyAuthToken` in `lib/auth.ts`). `next-auth` is completely removed from dependencies and routes.
 - `lib/auth.ts`: Privy server authentication token verification and user extraction.
 - `lib/authorization.ts`: Role-based access control (RBAC) and invoice ownership guards.
 - `lib/two-factor.ts`: TOTP two-factor authentication setup and speakeasy token validation.
