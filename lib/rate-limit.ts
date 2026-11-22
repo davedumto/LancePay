@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { resolveClientIp } from '@/lib/client-ip'
+import { logger } from '@/lib/logger'
 
 type RateLimitEntry = {
   count: number
@@ -293,17 +294,57 @@ export const kycStatusLimiter = new RouteRateLimiter({
 })
 
 /**
- * Allowlist of user IDs that bypass KYC rate limits (e.g. internal test
- * accounts or support tooling). Loaded from the KYC_RATE_LIMIT_BYPASS_IDS
- * environment variable as a comma-separated list.
+ * Resolves the configured KYC bypass user IDs based on the environment.
+ * In production (NODE_ENV === 'production'), bypass IDs are strictly refused
+ * and ignored unless an explicit allow flag (ALLOW_KYC_RATE_LIMIT_BYPASS === 'true'
+ * or ALLOW_KYC_RATE_LIMIT_BYPASS_IN_PRODUCTION === 'true') is set.
  */
-const KYC_BYPASS_IDS: Set<string> = new Set(
-  (process.env.KYC_RATE_LIMIT_BYPASS_IDS ?? '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean),
-)
+export function getKycBypassIds(): Set<string> {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const allowInProd =
+    process.env.ALLOW_KYC_RATE_LIMIT_BYPASS === 'true' ||
+    process.env.ALLOW_KYC_RATE_LIMIT_BYPASS_IN_PRODUCTION === 'true'
 
-export function isKycRateLimitBypassed(userId: string): boolean {
-  return KYC_BYPASS_IDS.has(userId)
+  if (isProduction && !allowInProd) {
+    return new Set<string>()
+  }
+
+  const rawIds =
+    process.env.KYC_RATE_LIMIT_BYPASS_IDS ??
+    process.env.KYC_RATE_LIMIT_BYPASS_USER_IDS ??
+    ''
+
+  return new Set(
+    rawIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  )
+}
+
+/**
+ * Checks whether a user ID is exempt from KYC rate limits.
+ * Emits a structured warning log whenever a bypass is actively granted.
+ *
+ * @param userId - ID of the user requesting KYC operations
+ * @param limiterId - Optional identifier of the rate limiter being evaluated
+ */
+export function isKycRateLimitBypassed(userId: string, limiterId?: string): boolean {
+  if (!userId) return false
+
+  const bypassIds = getKycBypassIds()
+  const isBypassed = bypassIds.has(userId)
+
+  if (isBypassed) {
+    logger.warn(
+      {
+        userId,
+        limiterId: limiterId ?? 'kyc',
+        event: 'kyc_rate_limit_bypass',
+      },
+      'KYC rate limit bypass applied for user',
+    )
+  }
+
+  return isBypassed
 }

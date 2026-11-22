@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { verifyApiKey } from './auth'
+import { verifyApiKey, verifyAuthToken } from './auth'
+
+const { mockPrivyVerify } = vi.hoisted(() => ({
+  mockPrivyVerify: vi.fn(),
+}))
+
+vi.mock('@privy-io/server-auth', () => ({
+  PrivyClient: class {
+    verifyAuthToken = mockPrivyVerify
+  },
+}))
 
 vi.mock('./crypto', () => ({
   hashToken: vi.fn(),
@@ -9,6 +19,12 @@ vi.mock('./db', () => ({
     apiKey: {
       findUnique: vi.fn(),
       update: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
+    },
+    userSession: {
+      upsert: vi.fn(),
     },
   },
 }))
@@ -282,5 +298,98 @@ describe('verifyApiKey', () => {
 
       expect(result).not.toBeNull()
     })
+  })
+})
+
+describe('verifyAuthToken', () => {
+  const mockToken = 'mock-bearer-token'
+  const mockClaims = {
+    userId: 'privy-user-1',
+    sessionId: 'session-xyz-123456789012',
+    appId: 'test-app',
+    issuedAt: Date.now(),
+    expiration: Date.now() + 3600,
+  }
+
+  it('returns verified claims when token and session are active and valid', async () => {
+    mockPrivyVerify.mockResolvedValue(mockClaims)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-db-1' } as any)
+    vi.mocked(prisma.userSession.upsert).mockResolvedValue({
+      userId: 'user-db-1',
+      revokedAt: null,
+    } as any)
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toEqual(mockClaims)
+    expect(mockPrivyVerify).toHaveBeenCalledWith(mockToken)
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { privyId: 'privy-user-1' },
+      select: { id: true },
+    })
+    expect(prisma.userSession.upsert).toHaveBeenCalledWith({
+      where: { providerSessionId: mockClaims.sessionId },
+      create: {
+        providerSessionId: mockClaims.sessionId,
+        userId: 'user-db-1',
+        tokenHint: '123456789012',
+      },
+      update: { lastSeenAt: expect.any(Date) },
+      select: { userId: true, revokedAt: true },
+    })
+  })
+
+  it('returns claims directly if claims do not contain a sessionId', async () => {
+    const claimsWithoutSession = { userId: 'privy-user-1' }
+    mockPrivyVerify.mockResolvedValue(claimsWithoutSession)
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toEqual(claimsWithoutSession)
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('returns claims directly if user does not exist in db yet', async () => {
+    mockPrivyVerify.mockResolvedValue(mockClaims)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toEqual(mockClaims)
+    expect(prisma.userSession.upsert).not.toHaveBeenCalled()
+  })
+
+  it('returns null if session is revoked', async () => {
+    mockPrivyVerify.mockResolvedValue(mockClaims)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-db-1' } as any)
+    vi.mocked(prisma.userSession.upsert).mockResolvedValue({
+      userId: 'user-db-1',
+      revokedAt: new Date(),
+    } as any)
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toBeNull()
+  })
+
+  it('returns null if session userId does not match current user', async () => {
+    mockPrivyVerify.mockResolvedValue(mockClaims)
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-db-1' } as any)
+    vi.mocked(prisma.userSession.upsert).mockResolvedValue({
+      userId: 'different-user-db-2',
+      revokedAt: null,
+    } as any)
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toBeNull()
+  })
+
+  it('returns null when PrivyClient throws an error (invalid/expired token)', async () => {
+    mockPrivyVerify.mockRejectedValue(new Error('Invalid token'))
+
+    const result = await verifyAuthToken(mockToken)
+
+    expect(result).toBeNull()
   })
 })
