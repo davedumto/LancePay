@@ -125,7 +125,7 @@ impl MultisigGovernance {
         let is_authorized = env
             .storage()
             .instance()
-            .get::<DataKey, bool>(&DataKey::Signer(co_signer))
+            .get::<DataKey, bool>(&DataKey::Signer(co_signer.clone()))
             .unwrap_or(false);
 
         if !is_authorized {

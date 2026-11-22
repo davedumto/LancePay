@@ -14,7 +14,6 @@ pub mod upgrade_utils;
 const INSTANCE_BUMP_AMOUNT: u32 = 518_400; // ~30 days
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 120_960; // ~7 days
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
 pub enum Status {
@@ -173,5 +172,75 @@ mod test {
         client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
 
         assert_eq!(client.status(), Status::Pending);
+        assert_eq!(client.get_amount(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Already initialized")]
+    fn test_duplicate_init_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, MilestoneEscrow);
+        let client = MilestoneEscrowClient::new(&env, &contract_id);
+
+        let client_addr = Address::generate(&env);
+        let freelancer_addr = Address::generate(&env);
+        let arbiter_addr = Address::generate(&env);
+        let token_addr = Address::generate(&env);
+
+        client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
+        client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
+    }
+
+    #[test]
+    #[should_panic(expected = "Escrow is still pending funding")]
+    fn test_release_funds_before_funding_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, MilestoneEscrow);
+        let client = MilestoneEscrowClient::new(&env, &contract_id);
+
+        let client_addr = Address::generate(&env);
+        let freelancer_addr = Address::generate(&env);
+        let arbiter_addr = Address::generate(&env);
+        let token_addr = Address::generate(&env);
+
+        client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
+        client.release_funds(&client_addr);
+    }
+
+    #[test]
+    #[should_panic(expected = "Amount must be greater than zero")]
+    fn test_fund_zero_amount_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, MilestoneEscrow);
+        let client = MilestoneEscrowClient::new(&env, &contract_id);
+
+        let client_addr = Address::generate(&env);
+        let freelancer_addr = Address::generate(&env);
+        let arbiter_addr = Address::generate(&env);
+        let token_addr = Address::generate(&env);
+
+        client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
+        client.fund_milestone(&client_addr, &0i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only client can fund")]
+    fn test_unauthorized_funder_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, MilestoneEscrow);
+        let client = MilestoneEscrowClient::new(&env, &contract_id);
+
+        let client_addr = Address::generate(&env);
+        let freelancer_addr = Address::generate(&env);
+        let arbiter_addr = Address::generate(&env);
+        let token_addr = Address::generate(&env);
+        let stranger_addr = Address::generate(&env);
+
+        client.init(&client_addr, &freelancer_addr, &arbiter_addr, &token_addr);
+        client.fund_milestone(&stranger_addr, &500i128);
     }
 }

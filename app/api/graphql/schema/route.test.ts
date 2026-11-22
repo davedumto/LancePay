@@ -60,6 +60,94 @@ type Query {
     expect(publicSdl).not.toContain('directive @private')
   })
 
+  it('filters multi-line field definitions with directives on following lines', () => {
+    const multiLineSdl = `
+directive @internal on FIELD_DEFINITION | OBJECT
+directive @private on FIELD_DEFINITION | OBJECT
+
+type Invoice {
+  id: ID!
+  invoiceNumber: String!
+  internalAuditSecret: String
+    @internal
+  privateBankRef: String
+    @private
+  publicRef: String
+}
+
+type SecretReport
+  @internal {
+  id: ID!
+  data: String!
+}
+`
+    const publicSdl = filterPublicSchema(multiLineSdl)
+
+    expect(publicSdl).toContain('type Invoice')
+    expect(publicSdl).toContain('invoiceNumber: String!')
+    expect(publicSdl).toContain('publicRef: String')
+    expect(publicSdl).not.toContain('internalAuditSecret')
+    expect(publicSdl).not.toContain('privateBankRef')
+    expect(publicSdl).not.toContain('SecretReport')
+  })
+
+  it('filters directives on arguments and handles nested input types', () => {
+    const complexSdl = `
+directive @internal on FIELD_DEFINITION | OBJECT | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INPUT_OBJECT
+directive @private on FIELD_DEFINITION | OBJECT | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INPUT_OBJECT
+
+input NestedChildInput {
+  childId: ID!
+  sensitiveToken: String
+    @internal
+}
+
+input ParentInput {
+  name: String!
+  nested: NestedChildInput
+  privateConfig: String @private
+}
+
+input InternalAdminInput @internal {
+  bypassKey: String!
+}
+
+type Query {
+  findItems(
+    visibleParam: String
+    internalToken: String @internal
+    multiLineSecret: String
+      @private
+  ): [String!]!
+}
+`
+    const publicSdl = filterPublicSchema(complexSdl)
+
+    expect(publicSdl).toContain('input NestedChildInput')
+    expect(publicSdl).toContain('childId: ID!')
+    expect(publicSdl).not.toContain('sensitiveToken')
+    expect(publicSdl).toContain('input ParentInput')
+    expect(publicSdl).toContain('name: String!')
+    expect(publicSdl).toContain('nested: NestedChildInput')
+    expect(publicSdl).not.toContain('privateConfig')
+    expect(publicSdl).not.toContain('InternalAdminInput')
+    expect(publicSdl).toContain('findItems(visibleParam: String): [String!]!')
+    expect(publicSdl).not.toContain('internalToken')
+    expect(publicSdl).not.toContain('multiLineSecret')
+  })
+
+  it('fails closed with 500 SCHEMA_PARSE_ERROR when schema has invalid SDL syntax', async () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('type Invalid { unclosed')
+
+    const req = makeRequest()
+    const res = await GET(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(json.code).toBe('SCHEMA_PARSE_ERROR')
+  })
+
   it('serves filtered public GraphQL SDL with long cache headers and ETag', async () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true)
     vi.spyOn(fs, 'readFileSync').mockReturnValue(sampleRawSdl)
