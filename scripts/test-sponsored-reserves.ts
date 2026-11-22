@@ -1,9 +1,13 @@
 /**
- * Test script for sponsored reserves and fee-bump functionality
- * Validates implementation without requiring actual funding
+ * Stellar Sponsored Reserves & Fee-Bump Verification Script
+ *
+ * Validates account creation without XLM base reserve (sponsored reserves)
+ * and transaction acceleration structures (fee-bump transactions).
+ *
+ * Usage: npx tsx scripts/test-sponsored-reserves.ts
  */
 
-import { fundNewWalletWithSponsoredReserves, submitFeeBumpTransaction } from './lib/stellar-funding'
+import { fundNewWalletWithSponsoredReserves, submitFeeBumpTransaction } from '../lib/stellar-funding'
 
 async function testSponsoredReservesStructure() {
   console.log('=== Testing Sponsored Reserves Structure ===\n')

@@ -134,11 +134,6 @@ export function middleware(request: NextRequest) {
       const nonce = crypto.randomUUID();
       applyPageSecurityHeaders(blocked, nonce);
     }
-    const blocked = NextResponse.json(rateLimitExceededBody(rateLimit), {
-      status: 429,
-      headers: rateLimitHeaders(rateLimit),
-    });
-    applySecurityHeaders(blocked, nonce);
     return blocked;
   }
 

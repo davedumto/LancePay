@@ -1,32 +1,9 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { Providers } from "./providers";
 import { Toaster } from "sonner";
 import { DevModeBanner } from "@/components/DevModeBanner";
 import { getNonce } from "@/lib/csp-nonce";
 import "./globals.css";
-
-// Optimize fonts with next/font/google and swap display strategy
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-sans",
-  display: "swap",
-});
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "700"],
-  variable: "--font-display",
-  display: "swap",
-});
-
-const spaceMono = Space_Mono({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://lancepay.com";
 const defaultOgImage = `${siteUrl}/og-image.jpg`;
@@ -115,11 +92,19 @@ export default async function RootLayout({
 }) {
   const nonce = await getNonce();
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={`${inter.variable} ${spaceGrotesk.variable} ${spaceMono.variable}`}
-    >
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&family=Space+Mono:wght@400;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body suppressHydrationWarning>
         <Providers>{children}</Providers>
         <Toaster position="top-right" richColors />

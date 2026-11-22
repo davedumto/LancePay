@@ -94,6 +94,7 @@ LancePay/
 - **Components**: LoginButton, AuthGuard, UserMenu
 - **Hooks**: useAuth, useUser, useWallet
 - **No conflicts**: Only module that interacts with Privy SDK
+- **Single Auth Architecture**: All client and API authentication runs exclusively through Privy (via `verifyAuthToken` in `lib/auth.ts`). `next-auth` is completely removed from dependencies and routes.
 
 ### 2. Dashboard Module (`modules/dashboard/`)
 - **Purpose**: Main dashboard UI after login
