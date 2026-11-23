@@ -14,7 +14,8 @@
 6. [Scalability Strategy](#6-scalability-strategy)
 7. [Monitoring & Observability](#7-monitoring--observability)
 8. [Disaster Recovery](#8-disaster-recovery)
-9. [Cost Optimization](#9-cost-optimization)
+9. [Inbound Webhooks](WEBHOOKS_INBOUND.md) (signatures, secrets and replay windows)
+10. [Cost Optimization](#9-cost-optimization)
 
 ---
 
@@ -429,6 +430,8 @@ export const config = {
 ```
 
 ### Webhook Security
+
+For the signatures, secret variables, replay windows and idempotency keys actually implemented by each inbound handler, see [WEBHOOKS_INBOUND.md](WEBHOOKS_INBOUND.md). The example below is illustrative only.
 
 ```typescript
 // app/api/webhooks/privy/route.ts

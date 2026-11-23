@@ -1,26 +1,8 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
 
-pub mod auth;
-pub mod dispute_resolution;
-pub mod gasless;
-pub mod monitor;
-pub mod multisig_governance;
-pub mod path_payment;
-pub mod rebalancer;
-pub mod trustline;
-pub mod upgrade_utils;
-
-const INSTANCE_BUMP_AMOUNT: u32 = 518_400; // ~30 days
-const INSTANCE_LIFETIME_THRESHOLD: u32 = 120_960; // ~7 days
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[contracttype]
-pub enum Status {
-    Pending = 0,
-    Funded = 1,
-    Completed = 2,
-}
+pub use lancepay_contract_shared::Status;
+use lancepay_contract_shared::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
 
 #[contracttype]
 pub enum DataKey {

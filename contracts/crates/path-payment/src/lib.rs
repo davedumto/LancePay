@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
 #[contracttype]
@@ -73,5 +74,30 @@ impl PathPayment {
         );
 
         true
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
+
+    #[test]
+    fn finds_both_mock_paths_and_executes() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, PathPayment);
+        let client = PathPaymentClient::new(&env, &id);
+        let assets = Vec::new(&env);
+
+        let paths =
+            client.find_strict_receive_paths(&assets, &String::from_str(&env, "USDC"), &100);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths.get(0).unwrap().source_amount, 500);
+        assert!(client.execute_path_payment(
+            &Address::generate(&env),
+            &paths.get(0).unwrap(),
+            &500
+        ));
     }
 }

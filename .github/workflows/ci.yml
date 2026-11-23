@@ -53,3 +53,29 @@ jobs:
           PRIVY_APP_SECRET: "placeholder-privy-app-secret"
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy?sslmode=disable"
           NEXT_PUBLIC_SITE_URL: "https://lancepay.com"
+
+  contract-exports:
+    name: Contract exports
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Run contract unit tests
+        run: cargo test --workspace
+
+      - name: Build contract WASMs
+        run: cargo build --workspace --target wasm32-unknown-unknown --release
+
+      - name: List exports and reject collisions
+        run: node scripts/check-wasm-exports.mjs
+
+      - name: Test the export parser
+        run: node --test scripts/list-wasm-exports.test.mjs

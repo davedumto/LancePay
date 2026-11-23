@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 #[contracttype]
@@ -42,11 +43,17 @@ impl MultisigGovernance {
         // The first configuration establishes the immutable governance admin.
         // Later signer rotations must be approved by that stored identity, not
         // by a caller-controlled `contract_owner` argument.
-        if let Some(admin) = env.storage().instance().get::<DataKey, Address>(&DataKey::Admin) {
+        if let Some(admin) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::Admin)
+        {
             admin.require_auth();
         } else {
             contract_owner.require_auth();
-            env.storage().instance().set(&DataKey::Admin, &contract_owner);
+            env.storage()
+                .instance()
+                .set(&DataKey::Admin, &contract_owner);
         }
 
         // Note: In production, this would execute Stellar SetOptions operations:
@@ -139,5 +146,39 @@ impl MultisigGovernance {
         );
 
         true // Transaction executed successfully
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    #[test]
+    fn configured_cosigner_can_execute() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, MultisigGovernance);
+        let client = MultisigGovernanceClient::new(&env, &id);
+        let owner = Address::generate(&env);
+        let signer = Address::generate(&env);
+        let third = Address::generate(&env);
+
+        client.configure_multisig(&owner, &signer, &third);
+        assert!(!client.propose_sensitive_tx(&owner, &1_000));
+        assert!(client.execute_with_second_sig(&signer, &42));
+    }
+
+    #[test]
+    #[should_panic(expected = "co_signer is not authorized")]
+    fn unknown_cosigner_is_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, MultisigGovernance);
+        let client = MultisigGovernanceClient::new(&env, &id);
+        let owner = Address::generate(&env);
+
+        client.configure_multisig(&owner, &Address::generate(&env), &Address::generate(&env));
+        client.execute_with_second_sig(&Address::generate(&env), &42);
     }
 }

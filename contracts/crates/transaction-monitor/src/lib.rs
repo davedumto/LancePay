@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, Env, String};
 
 #[contracttype]
@@ -41,5 +42,31 @@ impl TransactionMonitor {
     pub fn get_invoice_status(env: Env, _invoice_id: String) -> String {
         // Mock return 'PAID'
         String::from_str(&env, "PAID")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{Env, String};
+
+    #[test]
+    fn processed_event_has_stable_status() {
+        let env = Env::default();
+        let id = env.register_contract(None, TransactionMonitor);
+        let client = TransactionMonitorClient::new(&env, &id);
+
+        assert_eq!(
+            client.process_tx_event(
+                &String::from_str(&env, "tx-hash"),
+                &String::from_str(&env, "inv-1")
+            ),
+            TxStatus::Processed
+        );
+        assert_eq!(
+            client.get_invoice_status(&String::from_str(&env, "inv-1")),
+            String::from_str(&env, "PAID")
+        );
+        assert_eq!(TxStatus::Processed as u32, 1);
     }
 }

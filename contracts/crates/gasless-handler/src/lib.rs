@@ -1,3 +1,4 @@
+#![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
 
 #[contract]
@@ -30,5 +31,25 @@ impl GaslessHandler {
         // Check daily limit for user?
         // Check if op is allowed?
         true
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
+
+    #[test]
+    fn sponsorship_returns_the_inner_transaction() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, GaslessHandler);
+        let client = GaslessHandlerClient::new(&env, &id);
+        let xdr = String::from_str(&env, "inner-tx-xdr");
+
+        assert_eq!(
+            client.sponsor_transaction(&xdr, &Address::generate(&env)),
+            xdr
+        );
     }
 }
