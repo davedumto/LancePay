@@ -145,7 +145,10 @@ NEXT_PUBLIC_APP_ENV=production  # development | staging | production
 # ═══════════════════════════════════════════════════════════════
 # DATABASE (Neon)
 # ═══════════════════════════════════════════════════════════════
-DATABASE_URL="postgresql://user:pass@ep-xxx.us-east-1.aws.neon.tech/lancepay?sslmode=require"
+# Pooled (PgBouncer) endpoint: runtime queries
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.us-east-1.aws.neon.tech/lancepay?sslmode=require"
+# Direct endpoint: Prisma Migrate (prisma/schema.prisma `directUrl`)
+DIRECT_URL="postgresql://user:pass@ep-xxx.us-east-1.aws.neon.tech/lancepay?sslmode=require"
 
 # ═══════════════════════════════════════════════════════════════
 # PRIVY (Google Auth + Embedded Wallets)
@@ -236,19 +239,54 @@ npx prisma init
 npx prisma migrate dev --name init
 ```
 
+#### Connection strings: `DATABASE_URL` and `DIRECT_URL`
+
+Neon exposes two endpoints per branch. Copy both from the Neon console (Connect → toggle *Connection pooling*):
+
+| Variable | Endpoint | Used for |
+|----------|----------|----------|
+| `DATABASE_URL` | **Pooled** – host contains `-pooler` (PgBouncer, transaction mode) | Runtime queries from the app (`lib/db.ts`) |
+| `DIRECT_URL` | **Direct** – no `-pooler` | `prisma migrate`, `db push`, introspection |
+
+`prisma/schema.prisma` wires them as `url = env("DATABASE_URL")` and `directUrl = env("DIRECT_URL")`. Prisma Migrate needs session-level features that PgBouncer's transaction mode does not provide, so migrations must use `DIRECT_URL`. Set both in Vercel for every environment, and in CI wherever `prisma migrate deploy` runs.
+
+#### Serverless pool settings (`lib/db.ts`, `lib/db-url.ts`)
+
+Each Vercel function instance has its own Prisma pool. Prisma's default pool size (`num_cpus * 2 + 1`) multiplied by many concurrent instances can exhaust Neon's direct connection limit during a traffic burst. `lib/db.ts` therefore tunes `DATABASE_URL` at startup:
+
+| Parameter | Default | Override | Why |
+|-----------|---------|----------|-----|
+| `connection_limit` | `1` | `DB_CONNECTION_LIMIT` | One connection per instance; PgBouncer multiplexes them |
+| `pool_timeout` | `10` s | `DB_POOL_TIMEOUT` | Fail fast instead of queueing behind a saturated pool |
+| `connect_timeout` | `15` s | `DB_CONNECT_TIMEOUT` | Covers Neon compute cold starts after autosuspend |
+| `pgbouncer` | `true` (pooled hosts only) | – | Disables prepared statements, which PgBouncer transaction mode does not support |
+
+A parameter already present in `DATABASE_URL` is never overridden. A missing or unparseable URL is passed through untouched, so the error surfaces from Prisma at connect time rather than breaking `next build`.
+
+#### Decision: Prisma Neon driver adapter (`@prisma/adapter-neon`)
+
+We evaluated the Neon driver adapter (which sends queries over Neon's WebSocket/HTTP serverless driver) and **decided not to adopt it for now**:
+
+- Our API routes run on the Vercel **Node.js runtime**, where TCP connections through the Neon pooler work and are the best-supported path. The adapter's main benefit is edge/WebSocket-only runtimes, which we do not use.
+- The pooled endpoint plus `connection_limit=1` already removes the connection-exhaustion risk this change targets.
+- The adapter adds a dependency (`@prisma/adapter-neon`, plus `ws` on Node) and moves query execution off Prisma's native engine, a behaviour change that needs its own load and regression testing.
+- `@neondatabase/serverless` remains installed but is not used by Prisma.
+
+Revisit if we move routes to the Edge runtime or see latency from TCP connection setup. Adopting it would be: add `@prisma/adapter-neon`, build `new PrismaNeon({ connectionString })` in `lib/db.ts` and pass it as `adapter`, and keep `directUrl` for migrations.
+
 ```typescript
 // lib/db.ts
 import { PrismaClient } from '@prisma/client'
-import { neonConfig } from '@neondatabase/serverless'
-
-// Enable connection pooling for serverless
-neonConfig.fetchConnectionCache = true
+import { buildDatabaseUrl } from './db-url'
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
+
+const datasourceUrl = buildDatabaseUrl(process.env.DATABASE_URL)
 
 export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
+    ...(datasourceUrl ? { datasourceUrl } : {}),
     log: process.env.NODE_ENV === 'development' ? ['query'] : [],
   })
 
