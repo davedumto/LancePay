@@ -6,7 +6,7 @@ import { BalanceCard } from '@/components/dashboard/balance-card'
 import { AssetList } from '@/components/dashboard/asset-list'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { TransactionList } from '@/components/dashboard/transaction-list'
-import { AssetMetadata } from '@/lib/assets'
+import type { AssetMetadata } from '@/lib/assets'
 
 interface Transaction {
   id: string;

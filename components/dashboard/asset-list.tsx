@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { AssetMetadata } from '@/lib/assets';
+import type { AssetMetadata } from '@/lib/assets';
 
 interface AssetListProps {
     assets: {

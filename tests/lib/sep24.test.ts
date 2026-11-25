@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { initiateSep24Session } from '@/lib/sep24'
+import { getSep10Token } from '@/lib/sep10'
+
+vi.mock('@/lib/sep10', () => ({
+  getSep10Token: vi.fn(),
+}))
 
 const ANCHOR_ENV = {
-  MONEYGRAM_CLIENT_ID: 'mg-client',
-  MONEYGRAM_CLIENT_SECRET: 'mg-secret',
-  MONEYGRAM_SEP24_ENDPOINT: 'https://anchor.example.com',
+  MONEYGRAM_SEP24_ENDPOINT: 'https://anchor.example.com/sep24',
+  MONEYGRAM_WEB_AUTH_ENDPOINT: 'https://anchor.example.com/auth',
+  MONEYGRAM_SIGNING_KEY: 'GANCHORSIGNINGKEY',
 }
+
+const SEP10_TOKEN = 'sep10-bearer-jwt'
 
 function okResponse(): Response {
   return new Response(
@@ -17,12 +24,17 @@ function okResponse(): Response {
   )
 }
 
-function lastRequest(): { url: string; body: Record<string, unknown> } {
+function lastRequest(): {
+  url: string
+  body: Record<string, unknown>
+  headers: Record<string, string>
+} {
   const calls = vi.mocked(fetch).mock.calls
   const [url, init] = calls[calls.length - 1]
   return {
     url: String(url),
     body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    headers: (init?.headers ?? {}) as Record<string, string>,
   }
 }
 
@@ -31,12 +43,17 @@ describe('initiateSep24Session', () => {
     for (const [key, value] of Object.entries(ANCHOR_ENV)) {
       vi.stubEnv(key, value)
     }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse()))
+    vi.mocked(getSep10Token).mockResolvedValue(SEP10_TOKEN)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(okResponse())),
+    )
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
+    vi.mocked(getSep10Token).mockReset()
   })
 
   it('posts to the deposit interactive endpoint for direction=deposit', async () => {
@@ -85,6 +102,21 @@ describe('initiateSep24Session', () => {
     })
   })
 
+  it('authenticates with the SEP-10 bearer JWT, not basic credentials', async () => {
+    await initiateSep24Session('moneygram', {
+      direction: 'withdraw',
+      account: 'user-1',
+    })
+
+    const { headers } = lastRequest()
+    expect(headers.Authorization).toBe(`Bearer ${SEP10_TOKEN}`)
+    expect(headers.Authorization).not.toMatch(/^Basic /)
+    expect(getSep10Token).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'moneygram' }),
+      'user-1',
+    )
+  })
+
   it('never sends the custom userId field', async () => {
     await initiateSep24Session('moneygram', {
       direction: 'withdraw',
@@ -116,17 +148,33 @@ describe('initiateSep24Session', () => {
         account: 'user-1',
       }),
     ).rejects.toThrow('Invalid SEP-24 direction')
+    expect(getSep10Token).not.toHaveBeenCalled()
   })
 
-  it('throws when anchor credentials are missing', async () => {
-    vi.stubEnv('MONEYGRAM_CLIENT_SECRET', '')
+  it('fails closed when anchor configuration cannot be resolved', async () => {
+    // Without all env overrides, resolution requires the stellar.toml, which
+    // the mocked fetch cannot provide (it returns the SEP-24 JSON shape).
+    vi.stubEnv('MONEYGRAM_SIGNING_KEY', '')
 
     await expect(
       initiateSep24Session('moneygram', {
         direction: 'withdraw',
         account: 'user-1',
       }),
-    ).rejects.toThrow('Anchor credentials not configured')
+    ).rejects.toThrow(/SEP-1 anchor fields/)
+    expect(getSep10Token).not.toHaveBeenCalled()
+  })
+
+  it('propagates SEP-10 authentication failures', async () => {
+    vi.mocked(getSep10Token).mockRejectedValue(new Error('SEP-10 challenge failed'))
+
+    await expect(
+      initiateSep24Session('moneygram', {
+        direction: 'withdraw',
+        account: 'user-1',
+      }),
+    ).rejects.toThrow('SEP-10 challenge failed')
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('propagates non-OK anchor responses with the direction in the message', async () => {
