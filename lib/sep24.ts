@@ -1,16 +1,21 @@
 /**
  * SEP-24 (Stellar Ecosystem Proposal 24) utilities for interactive anchor sessions.
  *
- * Direction selects the SEP-24 endpoint:
- * - 'deposit'  → POST /sep24/transactions/deposit/interactive
- * - 'withdraw' → POST /sep24/transactions/withdraw/interactive
+ * Direction selects the SEP-24 endpoint (relative to the anchor's
+ * TRANSFER_SERVER_SEP0024):
+ * - 'deposit'  → POST /transactions/deposit/interactive
+ * - 'withdraw' → POST /transactions/withdraw/interactive
  *
  * Anchor sessions opened by this app are for cash-out (withdrawal) flows —
  * pass direction: 'withdraw'. A 'deposit' direction starts a deposit flow and
  * must only be used for on-ramp sessions.
+ *
+ * Authentication uses SEP-10: a challenge is exchanged for a JWT which is
+ * sent as `Authorization: Bearer` (see lib/sep10.ts).
  */
 
 import { AnchorId, getAnchorConfig } from './anchors'
+import { getSep10Token } from './sep10'
 
 export type Sep24Direction = 'deposit' | 'withdraw'
 
@@ -39,7 +44,7 @@ function isSep24Direction(value: unknown): value is Sep24Direction {
 
 /**
  * Initiates a SEP-24 interactive session with an anchor.
- * Calls the anchor's /sep24/transactions/{direction}/interactive endpoint —
+ * Calls the anchor's /transactions/{direction}/interactive endpoint —
  * 'deposit' or 'withdraw' selects the matching SEP-24 flow.
  *
  * The request body sends the fields SEP-24 requires: asset_code, account and
@@ -49,30 +54,28 @@ function isSep24Direction(value: unknown): value is Sep24Direction {
  * @param anchorId - The anchor identifier (moneygram or yellowcard)
  * @param params - Session parameters including the required direction
  * @returns JWT token and interactive URL
- * @throws Error if anchor configuration is missing, direction is invalid, or the API call fails
+ * @throws Error if anchor configuration is missing, direction is invalid, the
+ *   SEP-10 token cannot be obtained, or the API call fails
  */
 export async function initiateSep24Session(
   anchorId: AnchorId,
   params: Sep24SessionParams
 ): Promise<Sep24SessionResult> {
-  const config = getAnchorConfig(anchorId)
+  const config = await getAnchorConfig(anchorId)
   if (!config) {
     throw new Error(`Anchor configuration not found for: ${anchorId}`)
-  }
-
-  if (!config.clientId || !config.clientSecret) {
-    throw new Error(`Anchor credentials not configured for: ${anchorId}`)
   }
 
   if (!isSep24Direction(params.direction)) {
     throw new Error(`Invalid SEP-24 direction: ${String(params.direction)}`)
   }
 
-  // Build the SEP-24 interactive endpoint URL for the requested direction
-  const sep24Endpoint = `${config.sep24Endpoint}/sep24/transactions/${params.direction}/interactive`
+  // SEP-10 web authentication: exchange a signed challenge for a bearer JWT.
+  const sep10Token = await getSep10Token(config, params.account)
 
-  // Prepare authentication header using client credentials
-  const auth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')
+  // Build the SEP-24 interactive endpoint URL for the requested direction.
+  // TRANSFER_SERVER_SEP0024 is the server root; endpoints are relative to it.
+  const sep24Endpoint = `${config.sep24Endpoint}/transactions/${params.direction}/interactive`
 
   // SEP-24 field names (snake_case), not custom provider fields.
   const body: Record<string, unknown> = {
@@ -93,7 +96,7 @@ export async function initiateSep24Session(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${auth}`,
+        'Authorization': `Bearer ${sep10Token}`,
       },
       body: JSON.stringify(body),
     })

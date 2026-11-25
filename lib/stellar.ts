@@ -701,71 +701,49 @@ export interface StellarTransaction {
 }
 
 /**
+ * Maximum number of records fetchFullTransactionHistory will collect. Acts as
+ * a guard so very large accounts cannot exhaust memory in the array variant;
+ * the streaming variant is unaffected.
+ */
+export const MAX_TRANSACTION_HISTORY_RECORDS =
+  Number.parseInt(process.env.STELLAR_MAX_TRANSACTION_HISTORY_RECORDS ?? '', 10) ||
+  10_000;
+
+/**
  * Fetch full transaction history for a potentially large account using cursor-based pagination.
+ * Implemented on top of streamFullTransactionHistory so a single pagination
+ * loop exists. Date filtering is inclusive on both bounds: records with
+ * created_at >= startDate and <= endDate are returned.
  * @param publicKey Stellar account public key
- * @param startDate Optional start date filter
- * @param endDate Optional end date filter
- * @returns List of formatted transactions
+ * @param startDate Optional inclusive start date filter
+ * @param endDate Optional inclusive end date filter
+ * @returns List of formatted transactions, capped at MAX_TRANSACTION_HISTORY_RECORDS
  */
 export async function fetchFullTransactionHistory(
   publicKey: string,
   startDate?: Date,
   endDate?: Date,
 ): Promise<StellarTransaction[]> {
+  const records: StellarTransaction[] = [];
   try {
-    const allRecords: any[] = [];
-    let response = await server
-      .payments()
-      .forAccount(publicKey)
-      .order("desc")
-      .limit(100)
-      .call();
-
-    while (response.records.length > 0) {
-      // Check if we've reached a record older than startDate
-      if (startDate) {
-        const oldestRecordDate = new Date(
-          response.records[response.records.length - 1].created_at,
+    for await (const record of streamFullTransactionHistory(
+      publicKey,
+      startDate,
+      endDate,
+    )) {
+      if (records.length >= MAX_TRANSACTION_HISTORY_RECORDS) {
+        console.warn(
+          `Transaction history for ${publicKey} exceeded ${MAX_TRANSACTION_HISTORY_RECORDS} records; truncating.`,
         );
-        if (oldestRecordDate < startDate) {
-          // Some records in current page might still be valid, filter below
-          allRecords.push(...response.records);
-          break;
-        }
+        break;
       }
-
-      allRecords.push(...response.records);
-
-      // Get next page
-      response = await response.next();
+      records.push(record);
     }
-
-    const formatted = allRecords.map(
-      (r: any) =>
-        ({
-          transaction_hash: r.transaction_hash,
-          type: r.type,
-          created_at: r.created_at,
-          transaction_successful: r.transaction_successful,
-          from: r.from,
-          to: r.to,
-          amount: r.amount,
-          asset_code: r.asset_code,
-          asset_type: r.asset_type,
-        }) as StellarTransaction,
-    );
-
-    // Filter by date if provided
-    return formatted.filter((t) => {
-      const date = new Date(t.created_at);
-      if (startDate && date < startDate) return false;
-      if (endDate && date > endDate) return false;
-      return true;
-    });
   } catch (error) {
     console.error("Error fetching Stellar transaction history:", error);
     return [];
   }
+  return records;
 }
 
 /**

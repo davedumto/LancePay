@@ -1,0 +1,6 @@
+# SEP-1 stellar.toml fixture missing SIGNING_KEY
+VERSION = "0.1.0"
+NETWORK_PASSPHRASE = "Public Global Stellar Network ; September 2015"
+
+WEB_AUTH_ENDPOINT = "https://anchor.example.com/auth"
+TRANSFER_SERVER_SEP0024 = "https://anchor.example.com/sep24"

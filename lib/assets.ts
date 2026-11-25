@@ -1,4 +1,16 @@
+import { USDC_ASSET } from './stellar';
 
+/**
+ * Asset metadata for LancePay.
+ *
+ * The USDC issuer is derived from USDC_ASSET in lib/stellar.ts so there is a
+ * single source of truth — when NEXT_PUBLIC_USDC_ISSUER is unset, USDC_ASSET
+ * falls back to the configured/testnet issuer and the metadata below always
+ * matches it (previously the metadata issuer was undefined in that case, so
+ * real USDC balances rendered as unverified tokens).
+ *
+ * Icons are self-hosted under /public/icons rather than hotlinked.
+ */
 export interface AssetMetadata {
     code: string;
     issuer?: string;
@@ -14,15 +26,15 @@ export const KNOWN_ASSETS: AssetMetadata[] = [
         code: "XLM",
         name: "Stellar Lumens",
         domain: "stellar.org",
-        icon: "https://cryptologos.cc/logos/stellar-xlm-logo.png",
+        icon: "/icons/xlm.png",
         isVerified: true
     },
     {
         code: "USDC",
-        issuer: process.env.NEXT_PUBLIC_USDC_ISSUER, 
+        issuer: USDC_ASSET.getIssuer(),
         name: "USD Coin",
         domain: "centre.io",
-        icon: "https://cryptologos.cc/logos/usd-coin-usdc-logo.png",
+        icon: "/icons/usdc.png",
         isVerified: true
     }
 ];
